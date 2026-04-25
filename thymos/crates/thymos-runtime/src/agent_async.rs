@@ -20,8 +20,7 @@ use thymos_core::{
 use thymos_ledger::{Entry, EntryPayload};
 
 use super::agent::{
-    emit_event, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent,
-    Termination,
+    emit_event, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Termination,
 };
 use crate::{Run, Runtime, Step};
 
@@ -273,10 +272,7 @@ pub async fn run_agent_streaming(
                                                     error: error.clone(),
                                                 },
                                             );
-                                            since_last.push(HistoryItem::Failed {
-                                                intent,
-                                                error,
-                                            });
+                                            since_last.push(HistoryItem::Failed { intent, error });
                                             continue;
                                         }
                                     };

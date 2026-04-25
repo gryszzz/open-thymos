@@ -240,28 +240,25 @@ pub fn run_agent(
                     rationale: intent.body.rationale.clone(),
                 },
             );
-            let result = match run.submit_with_trace(intent.clone(), writ, step_idx, event_tx.as_ref())
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    failures += 1;
-                    let error = err.to_string();
-                    emit_event(
-                        event_tx.as_ref(),
-                        AgentTraceEvent::ExecutionFailed {
-                            step_index: step_idx,
-                            intent_id: intent.id.to_string(),
-                            tool: intent.body.target.clone(),
-                            error: error.clone(),
-                        },
-                    );
-                    since_last.push(HistoryItem::Failed {
-                        intent,
-                        error,
-                    });
-                    continue;
-                }
-            };
+            let result =
+                match run.submit_with_trace(intent.clone(), writ, step_idx, event_tx.as_ref()) {
+                    Ok(result) => result,
+                    Err(err) => {
+                        failures += 1;
+                        let error = err.to_string();
+                        emit_event(
+                            event_tx.as_ref(),
+                            AgentTraceEvent::ExecutionFailed {
+                                step_index: step_idx,
+                                intent_id: intent.id.to_string(),
+                                tool: intent.body.target.clone(),
+                                error: error.clone(),
+                            },
+                        );
+                        since_last.push(HistoryItem::Failed { intent, error });
+                        continue;
+                    }
+                };
 
             match result {
                 Step::Committed(commit_id) => {

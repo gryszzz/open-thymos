@@ -144,11 +144,8 @@ impl Cognition for OpenAiCognition {
         } else {
             match self.tool_protocol {
                 ToolProtocol::Native => {
-                    let tool_messages = build_tool_results(
-                        ctx,
-                        &self.last_tool_call_ids,
-                        &mut self.correlations,
-                    );
+                    let tool_messages =
+                        build_tool_results(ctx, &self.last_tool_call_ids, &mut self.correlations);
                     self.messages.extend(tool_messages);
                 }
                 ToolProtocol::JsonBlock => {
@@ -255,9 +252,7 @@ impl Cognition for OpenAiCognition {
                         let name = function
                             .get("name")
                             .and_then(|v| v.as_str())
-                            .ok_or_else(|| {
-                                Error::Other("tool_call function missing name".into())
-                            })?
+                            .ok_or_else(|| Error::Other("tool_call function missing name".into()))?
                             .to_string();
                         let args_str = function
                             .get("arguments")
@@ -314,15 +309,16 @@ impl Cognition for OpenAiCognition {
         self.last_tool_call_ids = new_tool_call_ids;
         self.last_json_block_ids = new_json_block_ids;
 
-        let final_answer = if intents.is_empty() && (finish_reason == "stop" || finish_reason.is_empty()) {
-            if text_content.is_empty() {
-                None
+        let final_answer =
+            if intents.is_empty() && (finish_reason == "stop" || finish_reason.is_empty()) {
+                if text_content.is_empty() {
+                    None
+                } else {
+                    Some(text_content)
+                }
             } else {
-                Some(text_content)
-            }
-        } else {
-            None
-        };
+                None
+            };
 
         Ok(CognitionStep {
             intents,
@@ -493,8 +489,8 @@ fn build_system_prompt_jsonblock(writ: &Writ, tools: &ToolRegistry) -> String {
     let mut tool_lines = Vec::new();
     for name in tools.names() {
         if let Ok(t) = tools.get(name) {
-            let schema_str = serde_json::to_string(&t.input_schema())
-                .unwrap_or_else(|_| "{}".into());
+            let schema_str =
+                serde_json::to_string(&t.input_schema()).unwrap_or_else(|_| "{}".into());
             tool_lines.push(format!(
                 "  - {name}: {desc}\n      args schema: {schema}",
                 name = t.meta().name,
@@ -575,8 +571,7 @@ fn build_tool_results_jsonblock(
 
         let line = match matching_intent_id.and_then(|id| outcomes.remove(&id)) {
             Some(HistoryOutcome::Committed(output)) => {
-                let pretty =
-                    serde_json::to_string_pretty(&output).unwrap_or_else(|_| "<>".into());
+                let pretty = serde_json::to_string_pretty(&output).unwrap_or_else(|_| "<>".into());
                 format!("  [{n}] committed → {pretty}", n = idx + 1)
             }
             Some(HistoryOutcome::Rejected(reason)) => {
@@ -589,7 +584,10 @@ fn build_tool_results_jsonblock(
         };
         lines.push(line);
     }
-    lines.push("Continue. Emit JSON blocks for the next actions, or reply with plain text to finish.".into());
+    lines.push(
+        "Continue. Emit JSON blocks for the next actions, or reply with plain text to finish."
+            .into(),
+    );
     correlations.retain(|_, v| !expected_block_ids.contains(v));
     lines.join("\n")
 }

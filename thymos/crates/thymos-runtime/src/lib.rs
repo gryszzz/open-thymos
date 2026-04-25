@@ -22,8 +22,7 @@ use thymos_tools::{ToolInvocation, ToolRegistry};
 
 pub mod agent;
 pub use agent::{
-    run_agent, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent,
-    Termination,
+    run_agent, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Termination,
 };
 
 #[cfg(feature = "async")]
@@ -41,15 +40,22 @@ pub use agent_async::run_agent_streaming;
 /// child cannot in turn delegate further unless its key is here.
 #[derive(Clone, Default)]
 pub struct DelegationKeyring {
-    inner: std::sync::Arc<std::sync::RwLock<
-        std::collections::HashMap<thymos_core::crypto::PublicKey, thymos_core::crypto::SigningKey>,
-    >>,
+    inner: std::sync::Arc<
+        std::sync::RwLock<
+            std::collections::HashMap<
+                thymos_core::crypto::PublicKey,
+                thymos_core::crypto::SigningKey,
+            >,
+        >,
+    >,
     /// Signed child writs awaiting pickup by the agent loop, keyed by the
     /// child trajectory id. When the loop is ready to drive a delegated
     /// child run, it calls `take_pending_child_writ` to retrieve and consume.
-    pending_writs: std::sync::Arc<std::sync::Mutex<
-        std::collections::HashMap<thymos_core::TrajectoryId, thymos_core::writ::Writ>,
-    >>,
+    pending_writs: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<thymos_core::TrajectoryId, thymos_core::writ::Writ>,
+        >,
+    >,
 }
 
 impl DelegationKeyring {
@@ -71,11 +77,7 @@ impl DelegationKeyring {
         &self,
         pubkey: &thymos_core::crypto::PublicKey,
     ) -> Option<thymos_core::crypto::SigningKey> {
-        self.inner
-            .read()
-            .unwrap()
-            .get(pubkey)
-            .map(|k| k.clone())
+        self.inner.read().unwrap().get(pubkey).map(|k| k.clone())
     }
 
     pub fn len(&self) -> usize {
@@ -92,7 +94,10 @@ impl DelegationKeyring {
         trajectory_id: thymos_core::TrajectoryId,
         writ: thymos_core::writ::Writ,
     ) {
-        self.pending_writs.lock().unwrap().insert(trajectory_id, writ);
+        self.pending_writs
+            .lock()
+            .unwrap()
+            .insert(trajectory_id, writ);
     }
 
     /// Take the signed child writ for `trajectory_id`, if one was stashed by

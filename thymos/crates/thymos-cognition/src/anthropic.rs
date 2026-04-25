@@ -697,9 +697,10 @@ fn build_tool_results(
             Some(HistoryOutcome::Rejected(reason)) => {
                 (format!("Rejected by runtime. Reason: {reason:?}"), true)
             }
-            Some(HistoryOutcome::Failed(error)) => {
-                (format!("Execution failed after staging. Error: {error}"), true)
-            }
+            Some(HistoryOutcome::Failed(error)) => (
+                format!("Execution failed after staging. Error: {error}"),
+                true,
+            ),
             None => (
                 "Proposal was not executed this turn (runtime deferred or suspended).".into(),
                 true,

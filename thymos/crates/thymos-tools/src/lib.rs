@@ -103,15 +103,14 @@ impl ShellCapabilityProfile {
             ]),
             Self::Build => Some(&[
                 "ls", "pwd", "cat", "head", "tail", "sed", "awk", "cut", "sort", "uniq", "wc",
-                "rg", "find", "stat", "git", "env", "printenv", "which", "echo", "printf",
-                "cargo", "rustc", "rustfmt", "make", "npm", "pnpm", "yarn", "bun", "go",
-                "pytest",
+                "rg", "find", "stat", "git", "env", "printenv", "which", "echo", "printf", "cargo",
+                "rustc", "rustfmt", "make", "npm", "pnpm", "yarn", "bun", "go", "pytest",
             ]),
             Self::Mutate => Some(&[
                 "ls", "pwd", "cat", "head", "tail", "sed", "awk", "cut", "sort", "uniq", "wc",
-                "rg", "find", "stat", "git", "env", "printenv", "which", "echo", "printf",
-                "cargo", "rustc", "rustfmt", "make", "npm", "pnpm", "yarn", "bun", "go",
-                "pytest", "cp", "mv", "mkdir", "touch", "chmod", "rm",
+                "rg", "find", "stat", "git", "env", "printenv", "which", "echo", "printf", "cargo",
+                "rustc", "rustfmt", "make", "npm", "pnpm", "yarn", "bun", "go", "pytest", "cp",
+                "mv", "mkdir", "touch", "chmod", "rm",
             ]),
             Self::Networked => None,
         }

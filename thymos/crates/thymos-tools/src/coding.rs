@@ -23,9 +23,7 @@ use thymos_core::{
     error::{Error, Result},
 };
 
-use crate::{
-    EffectClass, RiskClass, ToolContract, ToolContractMeta, ToolInvocation, ToolOutcome,
-};
+use crate::{EffectClass, RiskClass, ToolContract, ToolContractMeta, ToolInvocation, ToolOutcome};
 
 #[derive(Clone, Debug)]
 pub struct CodingSandbox {
@@ -68,17 +66,11 @@ impl CodingSandbox {
         let canonical = match absolute.canonicalize() {
             Ok(p) => p,
             Err(_) => {
-                let parent = absolute
-                    .parent()
-                    .ok_or_else(|| Error::ToolExecution(format!(
-                        "path '{}' has no parent",
-                        absolute.display()
-                    )))?;
+                let parent = absolute.parent().ok_or_else(|| {
+                    Error::ToolExecution(format!("path '{}' has no parent", absolute.display()))
+                })?;
                 let canonical_parent = parent.canonicalize().map_err(|e| {
-                    Error::ToolExecution(format!(
-                        "parent '{}' is invalid: {e}",
-                        parent.display()
-                    ))
+                    Error::ToolExecution(format!("parent '{}' is invalid: {e}", parent.display()))
                 })?;
                 let name = absolute.file_name().ok_or_else(|| {
                     Error::ToolExecution(format!("path '{}' has no file name", absolute.display()))
@@ -278,29 +270,29 @@ impl ToolContract for FsPatchTool {
             tool: "fs_patch".into(),
             detail: "args must be an object".into(),
         })?;
-        let mode = obj
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::ToolTypeMismatch {
-                tool: "fs_patch".into(),
-                detail: "missing string 'mode'".into(),
-            })?;
+        let mode =
+            obj.get("mode")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::ToolTypeMismatch {
+                    tool: "fs_patch".into(),
+                    detail: "missing string 'mode'".into(),
+                })?;
         match mode {
             "write" => {
-                obj.get("content")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::ToolTypeMismatch {
+                obj.get("content").and_then(|v| v.as_str()).ok_or_else(|| {
+                    Error::ToolTypeMismatch {
                         tool: "fs_patch".into(),
                         detail: "mode=write requires string 'content'".into(),
-                    })?;
+                    }
+                })?;
             }
             "replace" => {
-                obj.get("anchor")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| Error::ToolTypeMismatch {
+                obj.get("anchor").and_then(|v| v.as_str()).ok_or_else(|| {
+                    Error::ToolTypeMismatch {
                         tool: "fs_patch".into(),
                         detail: "mode=replace requires string 'anchor'".into(),
-                    })?;
+                    }
+                })?;
                 obj.get("replacement")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| Error::ToolTypeMismatch {
@@ -431,11 +423,7 @@ impl ToolContract for ListFilesTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(1)
             .clamp(1, 4) as usize;
-        let path = inv
-            .args
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path = inv.args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
         let root = self.sandbox.confine(path)?;
         if !root.is_dir() {
@@ -446,7 +434,14 @@ impl ToolContract for ListFilesTool {
         }
 
         let mut entries: Vec<Value> = Vec::new();
-        walk(&root, &root, 0, depth, &mut entries, self.sandbox.max_list_entries)?;
+        walk(
+            &root,
+            &root,
+            0,
+            depth,
+            &mut entries,
+            self.sandbox.max_list_entries,
+        )?;
 
         let truncated = entries.len() >= self.sandbox.max_list_entries;
         Ok(ToolOutcome {
@@ -674,11 +669,7 @@ impl ToolContract for GrepTool {
     fn execute(&self, inv: &ToolInvocation<'_>) -> Result<ToolOutcome> {
         let started = Instant::now();
         let pattern = inv.args["pattern"].as_str().unwrap();
-        let path = inv
-            .args
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path = inv.args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
         let extension = inv.args.get("extension").and_then(|v| v.as_str());
 
         let root = self.sandbox.confine(path)?;
@@ -845,9 +836,7 @@ impl ToolContract for TestRunTool {
             ("cargo".to_string(), a)
         } else if canonical.join("package.json").exists() {
             ("npm".to_string(), vec!["test".into(), "--silent".into()])
-        } else if canonical.join("pyproject.toml").exists()
-            || canonical.join("setup.py").exists()
-        {
+        } else if canonical.join("pyproject.toml").exists() || canonical.join("setup.py").exists() {
             let mut a: Vec<String> = vec![];
             if let Some(f) = filter {
                 a.push("-k".into());
@@ -915,8 +904,14 @@ fn run_with_timeout(
     match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
         Ok(Ok(output)) => Ok(ProcessOutput {
             exit_code: output.status.code().unwrap_or(-1),
-            stdout: truncate(String::from_utf8_lossy(&output.stdout).into_owned(), 16 * 1024),
-            stderr: truncate(String::from_utf8_lossy(&output.stderr).into_owned(), 16 * 1024),
+            stdout: truncate(
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                16 * 1024,
+            ),
+            stderr: truncate(
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                16 * 1024,
+            ),
         }),
         Ok(Err(e)) => Err(Error::ToolExecution(format!("spawn {program_owned}: {e}"))),
         Err(_) => Err(Error::ToolExecution(format!(

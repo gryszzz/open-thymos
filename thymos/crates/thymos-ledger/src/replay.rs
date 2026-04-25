@@ -205,7 +205,9 @@ mod tests {
         append_kv(&ledger, traj, "x", "y", 1);
 
         let entries = ledger.entries(traj).unwrap();
-        let report = replay(&entries, &ReplayConfig::pinned_to_current()).unwrap().1;
+        let report = replay(&entries, &ReplayConfig::pinned_to_current())
+            .unwrap()
+            .1;
         assert_eq!(report.commits_replayed, 1);
         assert_eq!(
             report.compiler_versions_seen,

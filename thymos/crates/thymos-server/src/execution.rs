@@ -139,14 +139,25 @@ impl ExecutionSession {
             .as_ref()
             .map(|summary| summary.steps_executed)
             .unwrap_or(0);
-        session.final_answer = record.summary.as_ref().and_then(|summary| summary.final_answer.clone());
-        session.counters.commits = record.summary.as_ref().map(|summary| summary.commits).unwrap_or(0);
+        session.final_answer = record
+            .summary
+            .as_ref()
+            .and_then(|summary| summary.final_answer.clone());
+        session.counters.commits = record
+            .summary
+            .as_ref()
+            .map(|summary| summary.commits)
+            .unwrap_or(0);
         session.counters.rejections = record
             .summary
             .as_ref()
             .map(|summary| summary.rejections)
             .unwrap_or(0);
-        session.counters.failures = record.summary.as_ref().map(|summary| summary.failures).unwrap_or(0);
+        session.counters.failures = record
+            .summary
+            .as_ref()
+            .map(|summary| summary.failures)
+            .unwrap_or(0);
         session.phase = if record.status == RunStatus::Running {
             ExecutionPhase::Intent
         } else {
@@ -213,7 +224,10 @@ impl ExecutionSession {
                     ExecutionPhase::Intent,
                     ExecutionLogLevel::Info,
                     format!("Step {} entered intent phase", step_index + 1),
-                    format!("Loaded {} fresh runtime observations into the planning loop.", since_last_count),
+                    format!(
+                        "Loaded {} fresh runtime observations into the planning loop.",
+                        since_last_count
+                    ),
                     Some(step_index),
                     None,
                     None,
@@ -486,7 +500,8 @@ impl ExecutionSession {
                 self.trajectory_id = Some(trajectory_id);
                 self.current_step = steps_executed;
                 self.counters.steps_started = self.counters.steps_started.max(steps_executed);
-                self.counters.intents_declared = self.counters.intents_declared.max(intents_submitted);
+                self.counters.intents_declared =
+                    self.counters.intents_declared.max(intents_submitted);
                 self.counters.commits = commits;
                 self.counters.rejections = rejections;
                 self.counters.failures = failures;
@@ -529,7 +544,10 @@ impl ExecutionSession {
         self.trajectory_id = Some(summary.trajectory_id.to_string());
         self.current_step = summary.steps_executed;
         self.counters.steps_started = self.counters.steps_started.max(summary.steps_executed);
-        self.counters.intents_declared = self.counters.intents_declared.max(summary.intents_submitted);
+        self.counters.intents_declared = self
+            .counters
+            .intents_declared
+            .max(summary.intents_submitted);
         self.counters.commits = summary.commits;
         self.counters.rejections = summary.rejections;
         self.counters.failures = summary.failures;
