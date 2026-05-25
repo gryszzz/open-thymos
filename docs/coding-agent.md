@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Coding Agent
-eyebrow: Primary product surface
+eyebrow: Operator surface
 subtitle: Thymos turns coding work into a controlled execution loop instead of a prompt-and-tool guessing game.
 permalink: /coding-agent/
 ---
@@ -37,7 +37,7 @@ Typical tools involved:
 - `test_run`
 - `shell`
 
-## Why it feels more agentic
+## Why it keeps progressing
 
 The important part is not that a model can call tools.
 
@@ -60,7 +60,7 @@ From any surface, the operator can see:
 - what failed
 - whether the runtime is recovering or waiting for approval
 
-That visibility is part of the product, not just debugging output.
+That visibility is part of the runtime contract, not just debugging output.
 
 ## Safety shape
 

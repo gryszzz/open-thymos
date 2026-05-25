@@ -138,7 +138,7 @@ impl ApiGateway {
     pub fn retry_after(&self, bearer: &str) -> u64 {
         if let Some(store) = &self.store {
             if let Some((_c, elapsed)) = store.rate_snapshot(bearer) {
-                return if elapsed >= 60 { 0 } else { 60 - elapsed };
+                return 60_u64.saturating_sub(elapsed);
             }
             return 0;
         }
@@ -146,11 +146,7 @@ impl ApiGateway {
         match state.get(bearer) {
             Some((_count, started)) => {
                 let elapsed = started.elapsed().as_secs();
-                if elapsed >= 60 {
-                    0
-                } else {
-                    60 - elapsed
-                }
+                60_u64.saturating_sub(elapsed)
             }
             None => 0,
         }

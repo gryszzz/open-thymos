@@ -1,132 +1,189 @@
 ---
 layout: default
 title: Architecture
-eyebrow: System design
-subtitle: Thymos is built around a shared runtime, a bounded agent loop, and one observable execution session per run.
+eyebrow: Runtime topology
+subtitle: OpenThymos separates cognition, authority, execution, ledgering, and replay into explicit runtime planes.
 permalink: /architecture/
 ---
 
-## The big idea
+# Architecture
 
-Thymos separates **proposing work** from **executing work**.
+OpenThymos is organized around one rule:
 
-The model proposes the next move.
-
-The runtime owns:
-
-- authority
-- tool execution
-- failure handling
-- logging
-- replay
-- completion state
-
-That separation is what lets multiple interfaces attach to the same backend run without inventing their own version of reality.
-
-## The execution flow
-
-```
-Cognition -> Intent -> Proposal -> Execution -> Result
+```text
+cognition proposes; the runtime governs; the ledger records
 ```
 
-### Intent
+The system is not a tool loop hidden behind a model call. It is a set of
+runtime planes that convert untrusted intent into authorized, policy-checked,
+ledgered execution.
 
-The model declares what it wants to do next.
+## Runtime Planes
 
-### Proposal
+| Plane | Crate | Authority |
+| --- | --- | --- |
+| Cognition plane | `thymos-cognition` | May emit `Intent`; may not execute tools. |
+| Compilation plane | `thymos-compiler` | May stage, suspend, or reject proposals. |
+| Governance plane | `thymos-policy`, writ types in `thymos-core` | May constrain authority through policy and writ validation. |
+| Execution plane | `thymos-runtime`, `thymos-tools` | May invoke typed tools after a staged proposal. |
+| Ledger plane | `thymos-ledger` | Records root, commit, rejection, approval, delegation, and branch entries. |
+| Projection plane | `World` in `thymos-core` | Folds committed deltas into current runtime state. |
+| Surface plane | `thymos-server`, `thymos-cli`, web console, VS Code client | Observes and controls runs without becoming the source of truth. |
 
-The runtime compiles the intent under the current writ, checks policy, and decides whether the action is allowed, rejected, or suspended for approval.
+## Control Flow
 
-### Execution
+The primary cycle is Intent -> Proposal -> Commit.
 
-If approved, the runtime invokes the real tool and captures the observed outcome.
+```text
+Provider Adapter
+      |
+      v
+   Intent
+      |
+      v
+Compiler + Policy Engine + Writ Validator + Tool Registry
+      |
+      +---- reject ----------> Ledger: Rejection
+      |
+      +---- require approval -> Ledger: PendingApproval
+      |
+      v
+   Proposal
+      |
+      v
+Tool Contract
+      |
+      v
+Observation + Structured Delta
+      |
+      v
+   Commit
+      |
+      v
+Append-only Ledger
+      |
+      v
+World Projection / Replay
+```
 
-### Result
+No client surface owns runtime truth. A command line client, web console, and
+editor extension all read the same run state and ledger-derived projection.
 
-The runtime records what actually happened: commit, rejection, suspension, failure, delegation, or completion.
+## Compile Boundary
 
-## The agent loop
+The compiler is the first authority boundary. It evaluates an intent against:
 
-The loop is intentionally simple:
+- intent kind support
+- writ signature validity
+- writ time window
+- writ tool scope
+- tool registry resolution
+- budget projection
+- tool argument type validation
+- tool preconditions
+- policy engine decision
 
-1. build context
-2. ask cognition for the next step
-3. execute allowed work
-4. observe the outcome
-5. feed the outcome back into the next step
-6. continue until complete, blocked, expired, or cancelled
+The compiler emits one of:
 
-This is how Thymos behaves like an agent without giving the model direct authority over the world.
+- staged proposal
+- suspended proposal requiring approval
+- typed rejection
 
-## The shared execution session
+Tool execution is unreachable unless compilation returns a staged proposal or
+an approved suspended proposal.
 
-Each run produces a live execution session with:
+## Effect Boundary
 
-- current status
-- current phase
-- operator state
-- counters for commits, rejections, failures, approvals, and recoveries
-- final answer
-- execution log
+Tools are invoked only through the runtime. A tool receives:
 
-The web console, CLI, shell, and VS Code sidebar all consume that same runtime session.
+- validated arguments
+- the current world projection
 
-## The main planes
+A tool returns:
 
-### Cognition plane
+- an observation
+- a structured delta
 
-`thymos-cognition`
+The runtime checks postconditions, trial-applies the delta, constructs a commit,
+and appends it to the ledger. The tool does not directly mutate authoritative
+state.
 
-Responsible for turning context into proposed next actions. Supports hosted and local providers.
+## Ledger Boundary
 
-### Runtime plane
+The ledger is append-only and content-addressed. Each entry contains:
 
-`thymos-runtime`
+- entry id
+- trajectory id
+- parent entry id
+- sequence number
+- entry kind
+- typed payload
 
-Responsible for running the agent loop, handling approvals, projecting world state, and turning runtime outcomes back into typed history.
+The replay verifier recomputes payload hashes, verifies parent linkage, checks
+sequence continuity, and folds commit deltas into a rebuilt world.
 
-### Governance plane
+## Projection Boundary
 
-`thymos-policy` and writ handling in `thymos-core`
+`World` is a projection, not a database of record. It is rebuilt from ledger
+entries by applying committed deltas in order. Branches first fold the ancestor
+trajectory up to the branch point, then fold branch-local commits.
 
-Responsible for capability enforcement, policy checks, budgets, time windows, and approval boundaries.
+Projection failures are invariant failures. They indicate an invalid delta, an
+invalid parent sequence, or incompatible runtime semantics.
 
-### Tool plane
+## Provider Boundary
 
-`thymos-tools`
+Providers are replaceable intent sources. Anthropic, OpenAI, Hugging Face,
+local OpenAI-compatible servers, LM Studio, and mock cognition adapters all
+enter the runtime through the same `Cognition::step` contract.
 
-Responsible for typed tools such as file reads, file patches, repo mapping, grep, tests, shell, HTTP, memory, and delegation.
+Provider outputs do not carry authority. Provider changes may affect which
+intents are proposed, but they must not change how proposals are compiled,
+authorized, executed, committed, or replayed.
 
-### Ledger plane
+## Coordination Boundary
 
-`thymos-ledger`
+Delegation creates child trajectories with child writs. A child writ must be a
+strict subset of the parent writ. Parent and child histories remain linked by
+ledger entries rather than hidden control flow.
 
-Responsible for durable trajectory history and replayable state.
+Multi-agent coordination is therefore a graph of bounded trajectories, not a
+set of unstructured model sessions.
 
-### Surface plane
+## Failure Semantics
 
-`thymos-server`, `thymos-cli`, `clients/vscode`, and the web app
+Failures are runtime events. They are not discarded control-flow exceptions.
 
-Responsible for exposing the same backend run to different operator surfaces.
+OpenThymos distinguishes:
 
-## Core invariants
+- compiler rejection
+- policy suspension
+- operator approval or denial
+- tool execution failure
+- postcondition failure
+- commit failure
+- cancellation
+- cognition termination
 
-- The model never directly mutates the world.
-- Authority is checked before execution happens.
-- Runtime truth is observable through structured events.
-- Failed execution is part of the run history, not hidden control flow.
-- Clients read shared run state instead of maintaining separate agent state.
-- The ledger remains the durable record of what happened.
+Only committed deltas change projected world state. Failed attempts may affect
+execution logs and summaries, but they do not become world state unless
+recorded as ledger entries.
 
-## Why this matters
+## Architecture Invariants
 
-Without a shared runtime, every surface becomes its own mini-agent product.
+- Cognition cannot execute a tool.
+- A proposal cannot exist without a writ id and policy trace.
+- A commit cannot exist without a proposal id, writ id, parent, sequence, delta,
+  observation list, and compiler version.
+- A ledger entry cannot be replayed if its hash, parent, or sequence is invalid.
+- A child writ cannot exceed its parent writ.
+- Provider adapters cannot modify ledger semantics.
+- Surfaces observe the runtime; they do not define the runtime.
 
-With Thymos:
+Related documents:
 
-- a task started in the CLI can be reviewed in the browser
-- an approval can be handled in VS Code
-- the same run can be resumed later
-- the system can expose one authoritative execution log
-
-That is the architectural point of the product.
+- [Specification](specification.md)
+- [Deterministic Execution](deterministic-execution.md)
+- [Execution Ledger](execution-ledger.md)
+- [Replay](replay.md)
+- [Runtime Invariants](runtime-invariants.md)

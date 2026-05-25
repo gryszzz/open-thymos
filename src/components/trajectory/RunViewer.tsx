@@ -312,17 +312,6 @@ export function RunViewer({ id }: { id: string }) {
   return (
     <main className="thymos-runtime-shell">
       <section className="thymos-console-panel thymos-runtime-header">
-        <div
-          aria-hidden="true"
-          className="thymos-console-orb"
-          style={{
-            inset: "-18% auto auto 62%",
-            width: 320,
-            height: 320,
-            background: `radial-gradient(circle, ${palette.glow}, transparent 70%)`,
-          }}
-        />
-
         <div className="thymos-console-topline">
           <span
             className="thymos-status-pill"

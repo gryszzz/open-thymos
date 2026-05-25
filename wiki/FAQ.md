@@ -8,7 +8,7 @@ No. It is an execution runtime.
 
 No. They can all attach to the same backend run.
 
-## What makes it agentic?
+## What makes it progress through work?
 
 The runtime keeps moving through the task: plan, execute, observe, recover, and continue.
 

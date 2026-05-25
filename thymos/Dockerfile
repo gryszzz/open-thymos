@@ -1,4 +1,4 @@
-# Multi-stage build for the Thymos server.
+# Multi-stage build for the OpenThymos server.
 #
 # Stage 1 caches cargo's registry + built dependencies as a dedicated layer
 # so that source-only edits don't invalidate third-party compilation.
@@ -34,12 +34,12 @@ ARG VERSION=dev
 ARG REVISION=unknown
 ARG CREATED=1970-01-01T00:00:00Z
 
-LABEL org.opencontainers.image.title="Thymos" \
-      org.opencontainers.image.description="Governed-cognition runtime for LLM agents. Separates cognition from execution via a typed Intent → Proposal → Ledger pipeline." \
+LABEL org.opencontainers.image.title="OpenThymos Runtime" \
+      org.opencontainers.image.description="Execution substrate for governed machine cognition. Separates cognition from execution through the typed Intent -> Proposal -> Commit protocol." \
       org.opencontainers.image.url="https://github.com/gryszzz/OpenThymos" \
       org.opencontainers.image.source="https://github.com/gryszzz/OpenThymos" \
       org.opencontainers.image.documentation="https://github.com/gryszzz/OpenThymos#readme" \
-      org.opencontainers.image.vendor="grysz" \
+      org.opencontainers.image.vendor="Exponet Labs" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.base.name="docker.io/library/debian:trixie-slim" \
       org.opencontainers.image.version="${VERSION}" \

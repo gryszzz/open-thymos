@@ -524,11 +524,11 @@ impl Marketplace {
                 }
                 // Kind filter.
                 if let Some(kind) = &query.kind {
-                    let matches = match (&pkg.kind, kind.as_str()) {
-                        (PackageKind::Manifest { .. }, "manifest") => true,
-                        (PackageKind::McpServer { .. }, "mcp_server") => true,
-                        _ => false,
-                    };
+                    let matches = matches!(
+                        (&pkg.kind, kind.as_str()),
+                        (PackageKind::Manifest { .. }, "manifest")
+                            | (PackageKind::McpServer { .. }, "mcp_server")
+                    );
                     if !matches {
                         return false;
                     }

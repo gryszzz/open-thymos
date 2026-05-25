@@ -176,20 +176,20 @@ fn in_process_worker_execute(req: ToolWorkerRequest) -> Result<ToolWorkerRespons
             wrapper,
             allowed_roots,
             isolate_home,
-        } => execute_shell_request(
-            &command,
-            cwd.as_deref(),
+        } => execute_shell_request(ShellExecutionRequest {
+            command: &command,
+            cwd: cwd.as_deref(),
             timeout_secs,
-            purpose.as_deref(),
-            &capability_profile,
+            purpose: purpose.as_deref(),
+            capability_profile: &capability_profile,
             restricted_env,
-            &env,
+            env: &env,
             max_output_bytes,
-            &blocked_patterns,
-            &wrapper,
-            &allowed_roots,
+            blocked_patterns: &blocked_patterns,
+            wrapper: &wrapper,
+            allowed_roots: &allowed_roots,
             isolate_home,
-        ),
+        }),
         ToolWorkerRequest::Http {
             url,
             method,
@@ -265,27 +265,29 @@ pub fn worker_entrypoint() -> Result<()> {
     Ok(())
 }
 
-fn execute_shell_request(
-    command: &str,
-    cwd: Option<&str>,
+struct ShellExecutionRequest<'a> {
+    command: &'a str,
+    cwd: Option<&'a str>,
     timeout_secs: u64,
-    purpose: Option<&str>,
-    capability_profile: &str,
+    purpose: Option<&'a str>,
+    capability_profile: &'a str,
     restricted_env: bool,
-    env: &BTreeMap<String, String>,
+    env: &'a BTreeMap<String, String>,
     max_output_bytes: usize,
-    blocked_patterns: &[String],
-    wrapper: &[String],
-    allowed_roots: &[String],
+    blocked_patterns: &'a [String],
+    wrapper: &'a [String],
+    allowed_roots: &'a [String],
     isolate_home: bool,
-) -> Result<ToolWorkerResponse> {
+}
+
+fn execute_shell_request(req: ShellExecutionRequest<'_>) -> Result<ToolWorkerResponse> {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    validate_shell_command(command, capability_profile, blocked_patterns)?;
-    let profile = ShellCapabilityProfile::parse(capability_profile)?;
-    let exec_cwd = resolve_working_dir(cwd, allowed_roots)?;
-    let isolated_home = if restricted_env && isolate_home {
+    validate_shell_command(req.command, req.capability_profile, req.blocked_patterns)?;
+    let profile = ShellCapabilityProfile::parse(req.capability_profile)?;
+    let exec_cwd = resolve_working_dir(req.cwd, req.allowed_roots)?;
+    let isolated_home = if req.restricted_env && req.isolate_home {
         Some(create_isolated_home_dir()?)
     } else {
         None
@@ -293,16 +295,16 @@ fn execute_shell_request(
 
     let result = (|| -> Result<ToolWorkerResponse> {
         let start = Instant::now();
-        let mut cmd = if wrapper.is_empty() {
+        let mut cmd = if req.wrapper.is_empty() {
             let mut c = Command::new("/bin/sh");
-            c.arg("-c").arg(command);
+            c.arg("-c").arg(req.command);
             c
         } else {
-            let mut c = Command::new(&wrapper[0]);
-            for arg in &wrapper[1..] {
+            let mut c = Command::new(&req.wrapper[0]);
+            for arg in &req.wrapper[1..] {
                 c.arg(arg);
             }
-            c.arg("/bin/sh").arg("-c").arg(command);
+            c.arg("/bin/sh").arg("-c").arg(req.command);
             c
         };
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -311,7 +313,7 @@ fn execute_shell_request(
             cmd.current_dir(dir);
         }
 
-        if restricted_env {
+        if req.restricted_env {
             cmd.env_clear();
             if let Ok(path) = std::env::var("PATH") {
                 cmd.env("PATH", path);
@@ -323,14 +325,14 @@ fn execute_shell_request(
             }
         }
 
-        for (k, v) in env {
+        for (k, v) in req.env {
             cmd.env(k, v);
         }
 
         let mut child = cmd
             .spawn()
             .map_err(|e| Error::ToolExecution(format!("spawn failed: {e}")))?;
-        let timeout = Duration::from_secs(timeout_secs);
+        let timeout = Duration::from_secs(req.timeout_secs);
 
         loop {
             if let Some(_status) = child
@@ -344,7 +346,8 @@ fn execute_shell_request(
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(Error::ToolExecution(format!(
-                    "command timed out after {timeout_secs}s"
+                    "command timed out after {}s",
+                    req.timeout_secs
                 )));
             }
 
@@ -356,26 +359,26 @@ fn execute_shell_request(
             .map_err(|e| Error::ToolExecution(format!("collect output failed: {e}")))?;
         let elapsed = start.elapsed();
 
-        let stdout_bytes = &output.stdout[..output.stdout.len().min(max_output_bytes)];
+        let stdout_bytes = &output.stdout[..output.stdout.len().min(req.max_output_bytes)];
         let stderr_bytes = &output.stderr[..output
             .stderr
             .len()
-            .min(max_output_bytes.saturating_sub(stdout_bytes.len()))];
+            .min(req.max_output_bytes.saturating_sub(stdout_bytes.len()))];
         let stdout = String::from_utf8_lossy(stdout_bytes).to_string();
         let stderr = String::from_utf8_lossy(stderr_bytes).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
-        let truncated = output.stdout.len() + output.stderr.len() > max_output_bytes;
+        let truncated = output.stdout.len() + output.stderr.len() > req.max_output_bytes;
 
         let receipt_payload = serde_json::json!({
             "worker_boundary": "subprocess_contract",
             "runtime": "thymos_secure_shell",
-            "purpose": purpose,
-            "capability_profile": capability_profile,
+            "purpose": req.purpose,
+            "capability_profile": req.capability_profile,
             "cwd": exec_cwd.as_ref().map(|p| p.display().to_string()),
-            "restricted_env": restricted_env,
+            "restricted_env": req.restricted_env,
             "isolated_home": isolated_home.as_ref().map(|p| p.display().to_string()),
-            "allowed_roots": allowed_roots,
-            "command_digest": blake3::hash(command.as_bytes()).to_hex().to_string(),
+            "allowed_roots": req.allowed_roots,
+            "command_digest": blake3::hash(req.command.as_bytes()).to_hex().to_string(),
             "profile": format!("{profile:?}").to_lowercase(),
         });
         let mut receipt = worker_receipt("shell", &receipt_payload);
@@ -581,10 +584,8 @@ fn validate_shell_command(
 fn resolve_working_dir(cwd: Option<&str>, allowed_roots: &[String]) -> Result<Option<PathBuf>> {
     let requested = if let Some(cwd) = cwd {
         Some(PathBuf::from(cwd))
-    } else if let Some(root) = allowed_roots.first() {
-        Some(PathBuf::from(root))
     } else {
-        None
+        allowed_roots.first().map(PathBuf::from)
     };
 
     let Some(requested) = requested else {
@@ -1805,7 +1806,7 @@ pub struct ToolManifest {
     pub executor: ManifestExecutor,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ManifestExecutor {
     /// Run a shell command template. `{arg}` placeholders are replaced with
@@ -1821,17 +1822,12 @@ pub enum ManifestExecutor {
     },
     /// No-op executor — tool resolves and validates but produces an empty
     /// delta with a canned observation. Useful for dry-run / schema testing.
+    #[default]
     Noop,
 }
 
 fn default_get() -> String {
     "GET".into()
-}
-
-impl Default for ManifestExecutor {
-    fn default() -> Self {
-        ManifestExecutor::Noop
-    }
 }
 
 /// A ToolContract implementation backed by a JSON manifest.

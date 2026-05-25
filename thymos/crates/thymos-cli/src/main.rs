@@ -6,6 +6,7 @@
 //!     thymos status <run-id>
 //!     thymos stream <run-id>
 //!     thymos world <run-id>
+//!     thymos replay <run-id>
 //!     thymos usage
 //!     thymos health
 
@@ -66,6 +67,26 @@ enum Commands {
     World {
         /// Run ID.
         run_id: String,
+    },
+    /// Verify and fold a run's execution ledger.
+    Replay {
+        /// Run ID.
+        run_id: String,
+        /// Accepted for protocol-shaped scripts; replay always verifies integrity.
+        #[arg(long)]
+        verify: bool,
+        /// Accepted for protocol-shaped scripts; replay always folds committed state.
+        #[arg(long)]
+        fold_world: bool,
+        /// Accepted for protocol-shaped scripts; replay reports ledger-visible policy outcomes.
+        #[arg(long)]
+        policy_trace: bool,
+        /// Require every replayed commit to match a compiler version.
+        #[arg(long)]
+        require_compiler: Option<String>,
+        /// Print the raw JSON replay report.
+        #[arg(long)]
+        json: bool,
     },
     /// Show API gateway usage stats.
     Usage,
@@ -150,12 +171,16 @@ async fn main() {
                 &client,
                 &cli.url,
                 cli.api_key.as_deref(),
-                &task,
-                max_steps,
-                &provider,
-                model,
-                scopes,
-                follow,
+                CmdRunOptions {
+                    start: StartRunOptions {
+                        task: &task,
+                        max_steps,
+                        provider: &provider,
+                        model: model.as_deref(),
+                        scopes: scopes.as_deref(),
+                    },
+                    follow,
+                },
             )
             .await
         }
@@ -165,6 +190,22 @@ async fn main() {
         Commands::Stream { run_id } => cmd_stream(&cli.url, &run_id).await,
         Commands::World { run_id } => {
             cmd_world(&client, &cli.url, cli.api_key.as_deref(), &run_id).await
+        }
+        Commands::Replay {
+            run_id,
+            require_compiler,
+            json,
+            ..
+        } => {
+            cmd_replay(
+                &client,
+                &cli.url,
+                cli.api_key.as_deref(),
+                &run_id,
+                require_compiler.as_deref(),
+                json,
+            )
+            .await
         }
         Commands::Usage => cmd_usage(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Health => cmd_health(&client, &cli.url).await,
@@ -313,27 +354,32 @@ pub(crate) async fn json_body_or_error(resp: reqwest::Response) -> Result<Value,
 
 /// POST /runs and return the new run id. Used by both the one-shot `run`
 /// command and the interactive shell's `run` / `auto` commands.
+#[derive(Clone, Copy)]
+pub(crate) struct StartRunOptions<'a> {
+    pub(crate) task: &'a str,
+    pub(crate) max_steps: u32,
+    pub(crate) provider: &'a str,
+    pub(crate) model: Option<&'a str>,
+    pub(crate) scopes: Option<&'a str>,
+}
+
 pub(crate) async fn start_run(
     client: &reqwest::Client,
     url: &str,
     api_key: Option<&str>,
-    task: &str,
-    max_steps: u32,
-    provider: &str,
-    model: Option<&str>,
-    scopes: Option<&str>,
+    options: StartRunOptions<'_>,
 ) -> Result<String, String> {
     let mut body = serde_json::json!({
-        "task": task,
-        "max_steps": max_steps,
+        "task": options.task,
+        "max_steps": options.max_steps,
         "cognition": {
-            "provider": provider,
+            "provider": options.provider,
         },
     });
-    if let Some(m) = model {
+    if let Some(m) = options.model {
         body["cognition"]["model"] = serde_json::json!(m);
     }
-    if let Some(s) = scopes {
+    if let Some(s) = options.scopes {
         let scope_list: Vec<&str> = s.split(',').collect();
         body["tool_scopes"] = serde_json::json!(scope_list);
     }
@@ -351,34 +397,25 @@ pub(crate) async fn start_run(
         .ok_or_else(|| format!("server response missing run_id: {parsed}"))
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct CmdRunOptions<'a> {
+    pub(crate) start: StartRunOptions<'a>,
+    pub(crate) follow: bool,
+}
+
 pub(crate) async fn cmd_run(
     client: &reqwest::Client,
     url: &str,
     api_key: Option<&str>,
-    task: &str,
-    max_steps: u32,
-    provider: &str,
-    model: Option<String>,
-    scopes: Option<String>,
-    follow: bool,
+    options: CmdRunOptions<'_>,
 ) -> Result<(), String> {
-    let run_id = start_run(
-        client,
-        url,
-        api_key,
-        task,
-        max_steps,
-        provider,
-        model.as_deref(),
-        scopes.as_deref(),
-    )
-    .await?;
+    let run_id = start_run(client, url, api_key, options.start).await?;
 
     println!("Run started: {run_id}");
-    println!("  task: {task}");
-    println!("  provider: {provider}");
+    println!("  task: {}", options.start.task);
+    println!("  provider: {}", options.start.provider);
     println!();
-    if follow {
+    if options.follow {
         println!("--- streaming ---");
         cmd_stream(url, &run_id).await?;
         // Print final status once the stream closes.
@@ -536,6 +573,87 @@ pub(crate) async fn cmd_world(
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let body = json_body_or_error(resp).await?;
     println!("{}", serde_json::to_string_pretty(&body).unwrap());
+    Ok(())
+}
+
+pub(crate) async fn cmd_replay(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    run_id: &str,
+    require_compiler: Option<&str>,
+    raw_json: bool,
+) -> Result<(), String> {
+    let mut req = client.get(format!("{url}/runs/{run_id}/replay"));
+    if let Some(version) = require_compiler {
+        req = req.query(&[("require_compiler", version)]);
+    }
+    for (k, v) in auth_headers(api_key) {
+        req = req.header(&k, &v);
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let body = json_body_or_error(resp).await?;
+    if raw_json {
+        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+        return Ok(());
+    }
+
+    let trajectory = body["trajectory_id"].as_str().unwrap_or("?");
+    let entries_seen = body["entries_seen"].as_u64().unwrap_or(0);
+    let commits = body["commits_replayed"].as_u64().unwrap_or(0);
+    let head_seq = body["head_seq"].as_u64().unwrap_or(0);
+    let head_commit = body["head_commit"].as_str().unwrap_or("(none)");
+    let final_world_hash = body["final_world_hash"].as_str().unwrap_or("?");
+    let resources = body["resources"].as_u64().unwrap_or(0);
+    let rejections = body["rejected_proposals"].as_u64().unwrap_or(0);
+    let approvals = body["pending_approvals"].as_u64().unwrap_or(0);
+
+    println!("OpenThymos replay");
+    println!("run:              {run_id}");
+    println!("trajectory:       {trajectory}");
+    println!();
+    println!("[integrity] verified");
+    println!("  entries seen:        {entries_seen}");
+    println!("  commits replayed:   {commits}");
+    println!("  rejected proposals: {rejections}");
+    println!("  pending approvals:  {approvals}");
+    println!("  head sequence:      {head_seq}");
+    println!("  head commit:        {head_commit}");
+    println!();
+    println!("[fold]");
+    println!("  resources:          {resources}");
+    println!("  final world hash:   {final_world_hash}");
+
+    if let Some(versions) = body["compiler_versions_seen"].as_array() {
+        let versions = versions
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>();
+        if !versions.is_empty() {
+            println!("  compiler versions:  {}", versions.join(", "));
+        }
+    }
+
+    if let Some(tool_calls) = body["tool_calls"].as_array() {
+        if !tool_calls.is_empty() {
+            println!();
+            println!("[tool calls]");
+            for call in tool_calls {
+                let seq = call["seq"].as_u64().unwrap_or(0);
+                let tool = call["tool"].as_str().unwrap_or("?");
+                let latency = call["latency_ms"].as_u64().unwrap_or(0);
+                let commit = call["commit_id"].as_str().unwrap_or("");
+                let commit_short: String = commit.chars().take(12).collect();
+                println!(
+                    "  seq={seq:<4} tool={tool:<16} latency={latency}ms commit={commit_short}"
+                );
+            }
+        }
+    }
+
+    println!();
+    println!("result: replay verified");
     Ok(())
 }
 
@@ -750,7 +868,7 @@ pub(crate) async fn cmd_runs_ls(
         println!("(no runs)");
         return Ok(());
     }
-    println!("{:<14}  {:<10}  {}", "RUN ID", "STATUS", "TASK");
+    println!("{:<14}  {:<10}  TASK", "RUN ID", "STATUS");
     for r in &runs {
         let id = r["run_id"].as_str().unwrap_or("?");
         let st = r["status"].as_str().unwrap_or("?");

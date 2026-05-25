@@ -102,6 +102,16 @@ Returns the current projected world state for the run.
 
 Returns the projected world state replayed up to a specific sequence number.
 
+### GET /runs/:id/replay
+
+Verifies the execution ledger for the run and folds committed deltas into a
+replay report.
+
+Useful query parameters:
+
+- `require_compiler`: reject commits whose recorded compiler version differs
+  from the given value
+
 ### POST /runs/:id/resume
 
 Resume a previously started or failed run.
@@ -177,6 +187,7 @@ Use:
 - `/runs/:id/execution` for current operator state
 - `/runs/:id/execution/stream` for live runtime updates
 - `/runs/:id/world` for current projected world state
+- `/runs/:id/replay` for ledger verification and deterministic fold reports
 - `/runs/:id/approvals/:channel` for human-in-the-loop actions
 
 Use `/runs/:id/stream` only when you specifically want raw cognition streaming.

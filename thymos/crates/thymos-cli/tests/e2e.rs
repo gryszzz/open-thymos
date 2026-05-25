@@ -167,6 +167,17 @@ async fn cli_health_and_run_flow_against_live_server() {
         "unexpected world body: {world_stdout}"
     );
 
+    let replay = run_cli(&url, &["replay", &run_id, "--verify", "--fold-world"]);
+    assert!(
+        replay.status.success(),
+        "replay failed:\nstdout:\n{}\nstderr:\n{}",
+        stdout(&replay),
+        stderr(&replay)
+    );
+    let replay_stdout = stdout(&replay);
+    assert!(replay_stdout.contains("OpenThymos replay"));
+    assert!(replay_stdout.contains("result: replay verified"));
+
     server.abort();
     let _ = server.await;
 }

@@ -1,5 +1,5 @@
 /* ============================================================
-   THYMOS — premium dark docs
+   THYMOS - infrastructure documentation
    Built by Exponet Labs
    ============================================================ */
 
@@ -24,9 +24,9 @@
   --cyan:        #4de0c4;
   --red:         #ff6f6f;
 
-  --radius:       12px;
-  --radius-lg:    18px;
-  --radius-xl:    26px;
+  --radius:       8px;
+  --radius-lg:    8px;
+  --radius-xl:    8px;
 
   --shadow-sm:   0 1px 2px rgba(0,0,0,.35);
   --shadow-md:   0 8px 24px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.03) inset;
@@ -55,8 +55,7 @@ html, body {
 
 body {
   background:
-    radial-gradient(1200px 700px at 50% -200px, rgba(255,181,71,0.09), transparent 60%),
-    radial-gradient(900px 500px at 90% 10%, rgba(139,92,246,0.07), transparent 65%),
+    linear-gradient(180deg, rgba(18, 24, 33, 0.62), rgba(5, 7, 11, 0.98) 36%, var(--bg)),
     var(--bg);
 }
 
@@ -75,30 +74,14 @@ code, pre, kbd { font-family: var(--font-mono); }
   position: fixed; inset: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 80%);
+    linear-gradient(to right, rgba(255,255,255,0.026) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.026) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255,181,71,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,181,71,0.05) 1px, transparent 1px);
+  background-size: 56px 56px, 56px 56px, 224px 224px, 224px 224px;
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
   z-index: 0;
-}
-
-.bg-glow {
-  position: fixed;
-  top: -200px; left: 50%;
-  width: 900px; height: 900px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  background:
-    radial-gradient(closest-side, rgba(255,181,71,.22), transparent 70%);
-  filter: blur(50px);
-  z-index: 0;
-  animation: pulse 10s ease-in-out infinite alternate;
-}
-
-@keyframes pulse {
-  from { opacity: .55; transform: translateX(-50%) scale(0.95); }
-  to   { opacity: .9;  transform: translateX(-50%) scale(1.05); }
 }
 
 main, header.nav, footer.footer { position: relative; z-index: 1; }
@@ -166,7 +149,7 @@ main, header.nav, footer.footer { position: relative; z-index: 1; }
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
   height: 36px; padding: 0 14px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 500;
   font-size: 13.5px;
   letter-spacing: .01em;
@@ -241,11 +224,11 @@ main.page {
 
 .prose h1, .prose h2, .prose h3, .prose h4 {
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   font-weight: 650;
 }
 
-.prose h1 { font-size: 40px; line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.02em; }
+.prose h1 { font-size: 40px; line-height: 1.1; margin: 0 0 10px; letter-spacing: 0; }
 .prose h2 { font-size: 24px; margin: 44px 0 14px; }
 .prose h3 { font-size: 18px; margin: 32px 0 10px; color: var(--text); }
 .prose h4 { font-size: 14px; margin: 22px 0 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .14em; }
@@ -381,9 +364,9 @@ main.page {
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 
 .hero h1 {
-  font-size: clamp(42px, 6vw, 72px);
+  font-size: 66px;
   line-height: 1.02;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   font-weight: 650;
   margin: 0;
   color: var(--text);
@@ -445,7 +428,10 @@ main.page {
 .triad .card::after {
   content: "";
   position: absolute; inset: 0;
-  background: radial-gradient(300px 150px at 0% 0%, rgba(255,181,71,.12), transparent 70%);
+  background:
+    linear-gradient(rgba(255,181,71,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,181,71,.055) 1px, transparent 1px);
+  background-size: 36px 36px;
   pointer-events: none;
   opacity: .7;
 }
@@ -480,7 +466,7 @@ main.page {
 .section-h .eyebrow { text-align: center; }
 .section-h h2 {
   font-size: 34px;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 6px 0 10px;
   color: var(--text);
 }
@@ -561,7 +547,7 @@ main.page {
 .fcard .icon {
   width: 34px; height: 34px;
   display: grid; place-items: center;
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(255,181,71,.14);
   color: var(--accent);
   margin-bottom: 12px;
@@ -610,14 +596,15 @@ main.page {
   padding: 44px;
   border-radius: var(--radius-xl);
   background:
-    radial-gradient(500px 200px at 90% 0%, rgba(139,92,246,0.18), transparent 65%),
-    radial-gradient(500px 200px at 0% 100%, rgba(255,181,71,0.18), transparent 65%),
-    linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.00));
+    linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.00)),
+    linear-gradient(rgba(255,181,71,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,181,71,.05) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
   border: 1px solid var(--border-2);
   text-align: center;
 }
 .cta-wrap h2 {
-  font-size: 30px; margin: 0 0 8px; letter-spacing: -0.02em;
+  font-size: 30px; margin: 0 0 8px; letter-spacing: 0;
   color: var(--text);
 }
 .cta-wrap p {
@@ -715,5 +702,6 @@ main.page {
   main.page { padding: 36px 22px 60px; }
   .hero { padding: 48px 0 20px; }
   .prose h1 { font-size: 32px; }
+  .hero h1 { font-size: 42px; }
   .footer-bottom { flex-direction: column; gap: 10px; text-align: center; }
 }

@@ -206,6 +206,35 @@ async fn world_on_completed_run_returns_projection() {
 }
 
 #[tokio::test]
+async fn replay_on_completed_run_verifies_ledger() {
+    let state = test_state();
+    let server = test_server(state);
+
+    let resp = server
+        .post("/runs")
+        .json(&json!({
+            "task": "replay projection test",
+            "cognition": { "provider": "mock" }
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::ACCEPTED);
+    let body: Value = resp.json();
+    let run_id = body["run_id"].as_str().unwrap().to_string();
+
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let resp = server.get(&format!("/runs/{run_id}/replay")).await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    assert_eq!(body["run_id"], run_id);
+    assert!(body["trajectory_id"].is_string());
+    assert!(body["entries_seen"].as_u64().unwrap() >= 1);
+    assert!(body["head_seq"].as_u64().is_some());
+    assert!(body["final_world_hash"].is_string());
+    assert!(body["tool_calls"].is_array());
+}
+
+#[tokio::test]
 async fn create_run_with_tenant_headers() {
     let server = test_server(test_state());
     let resp = server

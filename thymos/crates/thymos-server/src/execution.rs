@@ -182,7 +182,7 @@ impl ExecutionSession {
                     ExecutionLogLevel::Warning
                 },
                 "Recovered persisted run state",
-                &format!(
+                format!(
                     "Termination: {}. Commits: {}. Rejections: {}. Failures: {}.",
                     summary.terminated_by, summary.commits, summary.rejections, summary.failures
                 ),
@@ -601,6 +601,7 @@ impl ExecutionSession {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_log(
         &mut self,
         phase: ExecutionPhase,

@@ -12,7 +12,7 @@ No. Thymos is an execution runtime. A model can drive it, but the runtime owns e
 
 ## Is Thymos only for coding?
 
-No, but coding is the first and strongest surface today. The current product is optimized for repository work, file operations, tests, shell commands, and observable execution loops.
+No, but coding is the first reference surface today. The current runtime path is exercised through repository work, file operations, tests, shell commands, and observable execution loops.
 
 ## Do the CLI, web app, and VS Code extension each run their own agent?
 

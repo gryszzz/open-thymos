@@ -153,9 +153,6 @@ export default function RunsPage() {
   return (
     <main className="thymos-runtime-shell">
       <section className="thymos-console-panel thymos-runtime-hero">
-        <div className="thymos-console-orb thymos-console-orb-a" aria-hidden="true" />
-        <div className="thymos-console-orb thymos-console-orb-b" aria-hidden="true" />
-
         <div className="thymos-runtime-copy">
           <div className="thymos-eyebrow">Thymos Unified Runtime</div>
           <h1 className="thymos-runtime-title">

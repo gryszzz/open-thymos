@@ -173,7 +173,7 @@ impl RunStore {
         tenant_id: Option<&str>,
     ) -> Result<Vec<(String, RunRecord)>, String> {
         let conn = self.conn.lock().unwrap();
-        let (sql, use_tenant) = if let Some(_) = tenant_id {
+        let (sql, use_tenant) = if tenant_id.is_some() {
             (
                 "SELECT run_id, trajectory_id, task, status, summary_json, tenant_id FROM runs WHERE tenant_id = ?3 ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
                 true,

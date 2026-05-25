@@ -142,7 +142,7 @@ pub fn compile_with_context(
     // 6. Budget check — estimated cost for this call + accumulated usage.
     let estimate = tool.estimate_cost(&intent.body.args);
     let projected = ctx.budget_used.saturating_add(&estimate);
-    if let Err(_) = writ.check_budget(&projected) {
+    if writ.check_budget(&projected).is_err() {
         return Ok(Compiled::Rejected(RejectionReason::BudgetExhausted(
             format!(
                 "projected cost ({} tool_calls, {} tokens) exceeds writ budget",

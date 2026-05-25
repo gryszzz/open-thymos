@@ -1,42 +1,96 @@
 ---
 layout: default
 title: Roadmap
-eyebrow: Direction
-subtitle: Thymos is moving from a powerful runtime foundation toward a clearer product experience around that foundation.
+eyebrow: Protocol evolution
+subtitle: The long-term path for OpenThymos as governed cognition infrastructure.
 permalink: /roadmap/
 ---
 
-## Shipping now
+# Roadmap
 
-- shared backend runtime for agentic execution
-- structured flow: Intent -> Proposal -> Execution -> Result
-- autonomous loop with planning, execution, observation, and recovery
-- unified execution session for operator-facing clients
-- web console, CLI, shell, and VS Code sidebar connected to the same runtime
-- approvals, cancellation, resume, branching, and world replay
-- hosted and local cognition providers
-- worker-backed path for safer tool execution
+This roadmap tracks runtime semantics and infrastructure maturity. The root
+roadmap is maintained in [../ROADMAP.md](../ROADMAP.md).
 
-## Near-term focus
+## Phase I - Deterministic Runtime
 
-- smoother onboarding for first-time users
-- deeper run inspection and replay tools
-- more polished editor and terminal ergonomics
-- clearer production deployment guidance
-- better packaging around the runtime for teams
+Architectural goal: stabilize the Intent -> Proposal -> Commit cycle and make
+the ledger the source of execution truth.
 
-## Next layer
+Runtime capabilities:
 
-- stronger multi-tenant control plane patterns
-- richer approval and policy workflows
-- expanded tool marketplace and package distribution
-- better production-grade worker isolation
-- stronger operator analytics around runs, failures, and recovery behavior
+- signed capability writs
+- typed tool contracts
+- deterministic proposal compilation
+- local replay verification
+- world projection by ledger fold
 
-## Principles we are keeping
+Execution guarantee: no tool execution without a staged or approved proposal.
 
-- the model is a proposer, not the authority
-- the runtime owns execution truth
-- autonomy must stay observable
-- interfaces should stay attached to one backend reality
-- control and product polish should grow together
+Scaling implication: correctness remains local and inspectable before
+distributed concerns are introduced.
+
+## Phase II - Multi-Agent Coordination
+
+Architectural goal: represent delegation as explicit runtime structure.
+
+Runtime capabilities:
+
+- signed child writs
+- child trajectories
+- delegation DAG projection
+- coordination policies
+
+Execution guarantee: child authority is a strict subset of parent authority.
+
+Scaling implication: concurrent work becomes possible without losing lineage.
+
+## Phase III - Distributed Execution Ledger
+
+Architectural goal: separate ledger protocol from storage backend and support
+multi-node ingestion.
+
+Runtime capabilities:
+
+- Postgres-backed ledger mode
+- ledger export and import
+- hash-chain audit proofs
+- snapshot-assisted replay
+
+Execution guarantee: replay result is independent of storage backend.
+
+Scaling implication: the runtime can move from local history to distributed
+history without changing execution semantics.
+
+## Phase IV - Runtime Federation
+
+Architectural goal: allow independent runtimes to exchange authority and
+execution records.
+
+Runtime capabilities:
+
+- federated writ verification
+- remote trajectory references
+- cross-runtime audit queries
+- importable policy bundles
+
+Execution guarantee: federation cannot bypass local policy.
+
+Scaling implication: cooperation does not require one global control plane.
+
+## Phase V - Autonomous Governance Layers
+
+Architectural goal: allow governance agents to propose policy, writ, and
+runtime changes while remaining subordinate to protocol rules.
+
+Runtime capabilities:
+
+- governance proposal queues
+- policy simulation against historical ledgers
+- writ issuance workflows
+- governance audit projections
+
+Execution guarantee: governance actions are themselves proposal, approval, and
+commit events.
+
+Scaling implication: OpenThymos becomes an institutional runtime substrate,
+not merely an execution loop.

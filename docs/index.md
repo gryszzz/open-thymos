@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Thymos
+title: OpenThymos
 hide_title: true
 hero: true
 permalink: /
@@ -9,63 +9,65 @@ permalink: /
 <section class="hero">
   <div class="hero-eyebrow">
     <span class="dot"></span>
-    THYMOS · UNIFIED AI EXECUTION RUNTIME
+    OPENTHYMOS · GOVERNED COGNITION RUNTIME
   </div>
 
   <h1>
-    One runtime.<br />
-    Every interface sees the same run.
+    Execution substrate for governed machine cognition.
   </h1>
 
   <p class="lede">
-    Thymos is a shared execution system for coding agents. Start a task from
-    the CLI, a VS Code sidebar, a terminal shell, or a web console and attach
-    every surface to the same backend runtime, the same execution loop, and
-    the same live execution log.
+    OpenThymos converts untrusted cognition into auditable execution. Agents do
+    not act autonomously; they emit intents. The runtime compiles proposals,
+    enforces capability writs, applies policy, records commits, and replays the
+    ledger into deterministic runtime state.
   </p>
 
   <div class="hero-cta">
-    <a class="btn btn-primary" href="{{ '/getting-started' | relative_url }}">
-      Start in 5 minutes <span class="btn-arrow">→</span>
+    <a class="btn btn-primary" href="{{ '/specification' | relative_url }}">
+      Read the specification <span class="btn-arrow">→</span>
     </a>
-    <a class="btn btn-ghost" href="{{ '/interfaces' | relative_url }}">
-      See the interfaces
+    <a class="btn btn-ghost" href="{{ '/replay' | relative_url }}">
+      Study replay
+    </a>
+    <a class="btn btn-ghost" href="{{ '/package-distribution' | relative_url }}">
+      Pull package
     </a>
   </div>
 
   <div class="hero-meta">
-    <span class="mono">Intent -> Proposal -> Execution -> Result</span>
+    <span class="mono">Intent -> Proposal -> Commit</span>
     <span>·</span>
-    <span>CLI · VS Code · Terminal · Web</span>
+    <span>Capability writs</span>
     <span>·</span>
-    <span>Real tools · Real logs · Real runtime state</span>
+    <span>Execution ledger</span>
   </div>
 </section>
 
 <section class="section">
   <div class="triad reveal">
     <div class="card">
-      <h4>Agentic</h4>
-      <p>It keeps carrying work forward.</p>
+      <h4>Governed</h4>
+      <p>Authority is explicit.</p>
       <p class="sub">
-        Thymos plans, executes, observes, retries, and adapts until a task is
-        completed, blocked, or cancelled.
+        Signed writs define tool scope, budget, tenant boundary, effect
+        ceiling, time window, and delegation bounds.
       </p>
     </div>
     <div class="card">
-      <h4>Shared</h4>
-      <p>One run, many surfaces.</p>
+      <h4>Replayable</h4>
+      <p>History is structured.</p>
       <p class="sub">
-        The CLI, VS Code sidebar, terminal shell, and web console are all
-        windows into the same execution session.
+        Commits contain observations and deltas. Replay verifies the ledger and
+        folds state without fresh model or tool calls.
       </p>
     </div>
     <div class="card">
-      <h4>Observable</h4>
-      <p>Every phase is visible.</p>
+      <h4>Deterministic</h4>
+      <p>State is a fold.</p>
       <p class="sub">
-        Intent, proposal, execution, approval, commit, failure, retry, and
-        result are all first-class runtime events.
+        Runtime state is projected from content-addressed ledger entries, not
+        reconstructed from chat transcript memory.
       </p>
     </div>
   </div>
@@ -73,101 +75,62 @@ permalink: /
 
 <section class="section">
   <div class="section-h reveal">
-    <p class="eyebrow">What Thymos really is</p>
-    <h2>Not a chat UI. Not a loose tool loop.</h2>
+    <p class="eyebrow">Runtime model</p>
+    <h2>Cognition proposes. Runtime commits.</h2>
     <p>
-      Thymos is an execution runtime for agentic work. The model proposes the
-      next move, but the runtime owns authority, execution, observation,
-      logging, and completion state. That is why every surface can stay in
-      sync and every run can stay controlled.
+      A provider may be stochastic, local, hosted, or mock. It enters the
+      system through one narrow contract: produce intents. Everything after
+      that point is governed by compiler order, writ validation, tool
+      contracts, policy traces, and ledger semantics.
     </p>
   </div>
 
   <div class="cards reveal">
     <div class="fcard">
       <div class="icon">◎</div>
-      <h3>Structured flow</h3>
+      <h3>Specification</h3>
       <p>
-        Every task runs through the same four-step model:
-        Intent, Proposal, Execution, and Result.
+        Normative terms and execution semantics for the runtime protocol.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">⎇</div>
-      <h3>Shared execution session</h3>
+      <h3>Replay</h3>
       <p>
-        The backend exposes a live session with current phase, operator state,
-        counters, and an execution log for every run.
-      </p>
-    </div>
-    <div class="fcard">
-      <div class="icon">✦</div>
-      <h3>Real runtime recovery</h3>
-      <p>
-        Tool execution failures and transient cognition failures become visible
-        runtime events the agent can recover from.
+        Verification over ledger entries, parent chains, sequences, deltas,
+        and compiler versions.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">⬢</div>
-      <h3>Controlled autonomy</h3>
+      <h3>Capability writs</h3>
       <p>
-        Signed writs, policy checks, typed tools, and approvals let the agent
-        work forward without becoming unbounded.
+        Signed authority documents that bound what a cognitive subject may
+        propose and delegate.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">⟐</div>
-      <h3>Operator-grade visibility</h3>
+      <h3>Policy engine</h3>
       <p>
-        The log is not an afterthought. It is the main product surface for
-        understanding what the runtime is doing.
-      </p>
-    </div>
-    <div class="fcard">
-      <div class="icon">⎈</div>
-      <h3>Model flexibility</h3>
-      <p>
-        Hosted or local cognition can drive the same runtime:
-        Anthropic, OpenAI, LM Studio, Hugging Face, Ollama, and more.
-      </p>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="section-h reveal">
-    <p class="eyebrow">Use it your way</p>
-    <h2>Start anywhere. Stay on the same run.</h2>
-    <p>
-      Thymos is designed so different users can meet the runtime from the
-      interface they already prefer.
-    </p>
-  </div>
-
-  <div class="cards reveal">
-    <div class="fcard">
-      <div class="icon">⌘</div>
-      <h3>CLI</h3>
-      <p>
-        Launch, follow, inspect, diff, resume, and cancel runs from a terminal
-        without losing live execution state.
+        Ordered pure rules that permit, deny, or require approval before
+        execution reaches tools.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">▣</div>
-      <h3>Web console</h3>
+      <h3>Execution ledger</h3>
       <p>
-        Use the operator console for live execution state, world replay,
-        branching, and a premium execution-log view.
+        Append-only, content-addressed trajectory history for audit and
+        replay.
       </p>
     </div>
     <div class="fcard">
-      <div class="icon">▤</div>
-      <h3>VS Code sidebar</h3>
+      <div class="icon">⎈</div>
+      <h3>Provider boundary</h3>
       <p>
-        Review live run state and approvals without leaving the editor. The
-        sidebar is attached to the same backend run as everything else.
+        Hosted and local providers can propose intents without changing
+        runtime authority.
       </p>
     </div>
   </div>
@@ -177,19 +140,17 @@ permalink: /
   <div class="terminal reveal">
     <div class="terminal-bar">
       <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-      <span class="title">thymos execution session</span>
+      <span class="title">thymos replay run_847</span>
     </div>
     <div class="terminal-body" data-speed="14" data-type='[
-      {"text":"$ thymos run \"add a retry helper and verify it\" --provider mock --follow","cls":"cmd","pause":240},
-      {"text":"[running | intent] Planning step 1","cls":"muted","pause":180},
-      {"text":"[INFO:intent step 1 repo_map] Intent issued for repo_map","cls":"out","pause":200},
-      {"text":"[SUCCESS:proposal step 1 repo_map] Proposal staged for repo_map","cls":"out","pause":180},
-      {"text":"[INFO:execution step 1 repo_map] Execution started for repo_map","cls":"out","pause":180},
-      {"text":"[SUCCESS:result step 1 repo_map] Result committed for repo_map","cls":"ok","pause":180},
-      {"text":"[ERROR:result step 2 test_run] Execution failed for test_run","cls":"err","pause":200},
-      {"text":"[running | result] Recovering from a runtime failure","cls":"muted","pause":180},
-      {"text":"[SUCCESS:result step 3 fs_patch] Result committed for fs_patch","cls":"ok","pause":180},
-      {"text":"[completed | result] Task resolved and verified by runtime","cls":"hl","pause":0}
+      {"text":"$ thymos replay run_847 --verify --fold-world --policy-trace","cls":"cmd","pause":240},
+      {"text":"[load] entries=8 head=seq:7 kind:commit","cls":"muted","pause":180},
+      {"text":"[integrity] hash_chain=ok parent_chain=ok sequence=ok","cls":"ok","pause":200},
+      {"text":"[policy] proposal=prop_c4b1 decision=require_approval","cls":"out","pause":180},
+      {"text":"[approval] proposal=prop_c4b1 approved=true","cls":"out","pause":180},
+      {"text":"[fold] seq=5 commit=commit_f2e4b7 world=a9014cc2","cls":"ok","pause":180},
+      {"text":"[report] commits_replayed=4 final_world_hash=a9014cc2e1d44ef8","cls":"hl","pause":180},
+      {"text":"result: replay verified","cls":"ok","pause":0}
     ]'>
     </div>
   </div>
@@ -197,17 +158,18 @@ permalink: /
 
 <section class="section">
   <div class="cta-wrap reveal">
-    <h2>Learn the product from the outside in.</h2>
+    <h2>Begin with the protocol.</h2>
     <p>
-      Start with the onboarding path, then choose the interface, then go deep
-      on architecture and API details only when you need them.
+      Read the specification, then the architecture, then the replay and writ
+      documents. The implementation exists to preserve these runtime
+      semantics.
     </p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="{{ '/getting-started' | relative_url }}">
-        Get started <span class="btn-arrow">→</span>
+      <a class="btn btn-primary" href="{{ '/architecture' | relative_url }}">
+        Architecture <span class="btn-arrow">→</span>
       </a>
-      <a class="btn btn-ghost" href="{{ '/faq' | relative_url }}">
-        Read the FAQ
+      <a class="btn btn-ghost" href="{{ '/runtime-invariants' | relative_url }}">
+        Runtime invariants
       </a>
     </div>
   </div>

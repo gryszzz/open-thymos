@@ -6,7 +6,7 @@ const proofItems = [
   "Policy-gated execution",
   "Typed tools",
   "Trajectory ledger",
-  "Local or hosted backends",
+  "Provider abstraction",
   "Replayable runs",
 ];
 
@@ -126,17 +126,33 @@ const workflowColumns = [
 
 const launchNotes = [
   "Pre-alpha open runtime",
-  "Coding-agent surface ships now",
-  "Worker-backed secure tool fabric",
-  "Live run and ledger streaming",
+  "Rust execution kernel",
+  "GHCR package path",
+  "Ledger replay verifier",
+];
+
+const packageCards = [
+  {
+    label: "Canonical image",
+    title: "ghcr.io/gryszzz/openthymos-runtime",
+    body: "Release tags publish the runtime server and CLI as a traceable OCI artifact.",
+  },
+  {
+    label: "Compatibility alias",
+    title: "ghcr.io/gryszzz/thymos-server",
+    body: "Existing scripts keep working while the public package name moves to OpenThymos.",
+  },
+  {
+    label: "Immutable pull",
+    title: "Prefer semver or sha tags",
+    body: "Production automation should pin a release or source revision, not the moving latest tag.",
+  },
 ];
 
 export function ThymosLanding() {
   return (
     <main className="thymos-page">
       <div className="thymos-grid-haze" aria-hidden="true" />
-      <div className="thymos-radial-signal thymos-radial-signal-a" aria-hidden="true" />
-      <div className="thymos-radial-signal thymos-radial-signal-b" aria-hidden="true" />
 
       <div className="thymos-shell">
         <header className="thymos-header thymos-reveal">
@@ -144,10 +160,10 @@ export function ThymosLanding() {
 
           <nav className="thymos-nav" aria-label="Primary">
             <a href="#runtime">Runtime</a>
-            <a href="#mechanism">How it works</a>
-            <a href="#coding-agent">Coding agent</a>
+            <a href="#mechanism">Protocol</a>
+            <a href="#coding-agent">Tools</a>
+            <a href="#packages">Packages</a>
             <a href="#backends">Backends</a>
-            <a href="#workflow">Workflow</a>
           </nav>
 
           <a
@@ -164,7 +180,7 @@ export function ThymosLanding() {
           <div className="thymos-hero-copy">
             <div className="thymos-pill thymos-reveal thymos-delay-1">
               <span className="thymos-pill-dot" />
-              Governed execution runtime
+              Governed cognition runtime
             </div>
 
             <h1 className="thymos-reveal thymos-delay-2">{siteConfig.headline}</h1>
@@ -276,9 +292,8 @@ export function ThymosLanding() {
             <span className="thymos-kicker">What OpenThymos is</span>
             <h2>Where machine intelligence becomes bounded, auditable action.</h2>
             <p>
-              OpenThymos is not a chatbot shell with a few tools bolted on. It is a
-              model-agnostic execution runtime where cognition proposes, policy decides, and the
-              ledger preserves what actually happened.
+              OpenThymos is a model-agnostic execution runtime where cognition proposes, policy
+              decides, and the ledger preserves what actually happened.
             </p>
           </div>
 
@@ -504,6 +519,40 @@ export function ThymosLanding() {
           </div>
         </section>
 
+        <section className="thymos-section" id="packages">
+          <div className="thymos-section-head compact">
+            <span className="thymos-kicker">Package distribution</span>
+            <h2>Release artifacts should be boring, traceable, and pinned.</h2>
+            <p>
+              The release workflow publishes GitHub Packages container images and platform
+              binaries from the same source revision. Manual dispatches produce branch and SHA
+              images for staging.
+            </p>
+          </div>
+
+          <div className="thymos-package-grid">
+            {packageCards.map((item) => (
+              <article className="thymos-package-card" key={item.title}>
+                <span className="thymos-card-label">{item.label}</span>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="thymos-command-card thymos-package-command">
+            <span className="thymos-card-label">GitHub Packages</span>
+            <div className="thymos-command-line">
+              <span>$</span>
+              <code>docker pull ghcr.io/gryszzz/openthymos-runtime:&lt;tag&gt;</code>
+            </div>
+            <div className="thymos-command-line">
+              <span>$</span>
+              <code>docker run --rm -p 3001:3001 ghcr.io/gryszzz/openthymos-runtime:&lt;tag&gt;</code>
+            </div>
+          </div>
+        </section>
+
         <section className="thymos-section" id="workflow">
           <div className="thymos-section-head compact">
             <span className="thymos-kicker">Developer / operator workflow</span>
@@ -548,11 +597,11 @@ export function ThymosLanding() {
               </a>
               <a
                 className="thymos-secondary-action"
-                href={siteConfig.docsUrl}
+                href={siteConfig.packageDocsUrl}
                 target="_blank"
                 rel="noreferrer"
               >
-                Browse docs
+                Package protocol
               </a>
             </div>
           </div>

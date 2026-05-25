@@ -1,10 +1,9 @@
-title: Thymos
-tagline: Unified execution runtime for coding agents.
+title: OpenThymos
+tagline: Execution substrate for governed machine cognition.
 description: >-
-  Thymos is a shared execution runtime for agentic work across CLI, VS Code,
-  terminal, and web surfaces. It executes tasks through Intent, Proposal,
-  Execution, and Result with real tools, signed authority, and a live
-  observable execution session.
+  OpenThymos is a governed cognition runtime. Cognition proposes intents;
+  the runtime compiles proposals, enforces capability writs, applies policy,
+  records commits, and replays the execution ledger into deterministic state.
 url: "https://gryszzz.github.io"
 baseurl: "/OpenThymos"
 repo: "https://github.com/gryszzz/OpenThymos"

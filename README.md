@@ -2,93 +2,288 @@
 
 <img src="thymos/Thymos-logo.PNG" alt="Thymos" width="132" height="132" />
 
-# THYMOS
+# OpenThymos
 
-### Governed execution runtime for AI agents.
+### Execution substrate for governed machine cognition.
 
-**Intent -> Proposal -> Execution -> Result**
-
-Thymos turns model output into typed, policy-checked, ledgered execution.<br />
-One runtime. Many surfaces. Real tools. Replayable history.
+**Intent -> Proposal -> Commit**
 
 <p>
-  <a href="https://gryszzz.github.io/OpenThymos/"><strong>Website</strong></a>
-  ·
-  <a href="docs/getting-started.md"><strong>Get Started</strong></a>
-  ·
+  <a href="https://gryszzz.github.io/OpenThymos/"><strong>Documentation</strong></a>
+  |
+  <a href="docs/specification.md"><strong>Specification</strong></a>
+  |
   <a href="docs/architecture.md"><strong>Architecture</strong></a>
-  ·
-  <a href="docs/api-reference.md"><strong>API</strong></a>
-  ·
-  <a href="https://github.com/gryszzz/OpenThymos/wiki"><strong>Wiki</strong></a>
-</p>
-
-<p>
-  <img alt="Runtime" src="https://img.shields.io/badge/runtime-Rust-111827?style=for-the-badge" />
-  <img alt="Console" src="https://img.shields.io/badge/console-Next.js-0f172a?style=for-the-badge" />
-  <img alt="Mode" src="https://img.shields.io/badge/cognition-local%20%2B%20hosted-0b3b5a?style=for-the-badge" />
-  <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f2937?style=for-the-badge" />
+  |
+  <a href="docs/replay.md"><strong>Replay</strong></a>
+  |
+  <a href="docs/package-distribution.md"><strong>Packages</strong></a>
+  |
+  <a href="GOVERNANCE.md"><strong>Governance</strong></a>
 </p>
 
 </div>
 
 ---
 
-## The Signal
+OpenThymos is a governed cognition runtime for deterministic AI execution.
 
-Thymos is not a chatbot shell with a few tools bolted on.
+Agents do not act autonomously.
+They propose.
+Execution becomes auditable, replayable, and policy constrained.
 
-It is an execution layer for agentic software. A model proposes work, but the
-runtime owns authority, policy, tool execution, observation, recovery, and the
-durable record of what happened.
+The runtime treats cognition as an untrusted source of intent. A model,
+planner, or local rule engine may request an action, but it cannot directly
+mutate state, call a tool, spend budget, delegate authority, or erase history.
+Every effect must pass through a typed proposal, a capability writ, a policy
+trace, and an append-only execution ledger.
+
+OpenThymos is not a model wrapper. It is an execution system: a substrate for
+machines that need authority boundaries, reproducible state, and durable
+runtime semantics.
+
+## What OpenThymos Is
+
+OpenThymos defines a small runtime protocol:
 
 ```text
-              model output
-                   |
-                   v
-        +----------------------+
-        | typed Intent         |
-        +----------+-----------+
-                   |
-                   v
-        +----------------------+
-        | Proposal + policy    |
-        | writ + budget check  |
-        +----------+-----------+
-                   |
-                   v
-        +----------------------+
-        | real tool execution  |
-        | shell, files, HTTP   |
-        +----------+-----------+
-                   |
-                   v
-        +----------------------+
-        | ledgered Result      |
-        | replayable world     |
-        +----------------------+
+Intent -> Proposal -> Commit
 ```
 
-The core idea is simple:
+An `Intent` is emitted by cognition. It has no authority.
 
-> Model output becomes governed execution, not direct authority.
+A `Proposal` is compiled by the runtime. It binds the intent to a writ, a tool
+contract, a budget projection, and a policy trace.
 
-## High-Tech Capabilities
+A `Commit` is the only record that mutates world state. It contains the
+structured delta, the observed tool output, the writ id, the proposal id, the
+compiler version, and the parent ledger head.
 
-| Capability | What it gives you |
+The runtime is implemented as a Rust workspace under [`thymos`](thymos):
+
+| Plane | Crate | Responsibility |
+| --- | --- | --- |
+| Core protocol | `thymos-core` | Intent, Proposal, Commit, Writ, World, structured deltas |
+| Compiler | `thymos-compiler` | Deterministic proposal compilation and rejection |
+| Policy | `thymos-policy` | Pure policy evaluation and policy traces |
+| Runtime | `thymos-runtime` | IPC cycle, approvals, delegation, projection, resume |
+| Ledger | `thymos-ledger` | Append-only entries, hash chain, replay verifier |
+| Cognition | `thymos-cognition` | Provider abstraction for proposers |
+| Tools | `thymos-tools` | Typed tool contracts and observed effects |
+| Surfaces | `thymos-server`, `thymos-cli`, `clients/vscode`, `src` | Operator access to one shared run |
+
+## Why Current Agent Frameworks Fail
+
+Most agent systems collapse cognition and execution into one loop. A model
+chooses a tool, executes it, reads the result, and continues. That design is
+easy to demonstrate and hard to govern.
+
+It fails because execution is hidden inside a stochastic process:
+
+- tool calls are made before authority is modeled
+- policy is applied as application code instead of runtime semantics
+- provider behavior changes the execution path
+- state is reconstructed from logs after the fact, if at all
+- approvals are UI events rather than ledger events
+- failures, retries, and rejections are not part of the same history
+- replay cannot prove that the same proposal would have produced the same
+  world projection
+
+OpenThymos separates proposal from authority and authority from effect. The
+model can propose a next action, but the runtime decides whether the proposal
+can exist, whether it may execute, and how the result is committed.
+
+## Core Runtime Model
+
+The runtime cycle is deliberately narrow.
+
+```text
+1. Fold ledger entries into the current World projection.
+2. Pass task, writ, world, tools, and recent history to cognition.
+3. Accept one or more Intents.
+4. Compile each Intent against writ, tool registry, budget, time window, and policy.
+5. Stage, reject, or suspend the Proposal.
+6. Execute only staged proposals through typed tool contracts.
+7. Commit structured deltas and observations to the ledger.
+8. Feed committed, rejected, failed, or suspended outcomes back into cognition.
+```
+
+The compiler path is pure for a given `(Intent, Writ, World, ToolRegistry,
+PolicyEngine, CompileContext)`. Tool execution is the effect boundary. World
+state is not authoritative; it is a projection obtained by folding committed
+deltas from the ledger.
+
+## Deterministic Execution
+
+OpenThymos makes determinism a runtime property, not a prompt convention.
+
+The current implementation enforces:
+
+- canonical content hashes for intents, proposals, commits, writs, and ledger
+  entries
+- parent-chained ledger entries with contiguous sequence numbers
+- compiler-version recording on each commit
+- explicit tool contracts for argument validation, preconditions,
+  postconditions, estimated cost, and structured deltas
+- policy traces attached to proposals
+- world projection by deterministic ledger folding
+- provider abstraction where cognition produces intents but never effects
+
+Non-deterministic inputs are admitted only at controlled boundaries. Once an
+observation is committed, replay uses the ledgered observation and delta, not a
+new provider response or a new tool call.
+
+## Replayable Cognition
+
+Replay is a proof procedure over the execution ledger. The HTTP runtime exposes
+the verifier at `GET /runs/:id/replay`, and the CLI exposes the same verifier
+as `thymos replay`.
+
+```bash
+thymos replay run_847 --verify --fold-world --policy-trace
+```
+
+Replay verifies the hash chain, checks sequence continuity, reapplies committed
+deltas in order, compares the rebuilt world projection, and reports the
+compiler versions seen during the run. Suspensions, rejections, delegations,
+branches, and approvals remain visible as ledger entries rather than
+out-of-band control flow.
+
+The replay model is documented in [docs/replay.md](docs/replay.md). A complete
+terminal walkthrough is in
+[docs/demos/deterministic-replay.md](docs/demos/deterministic-replay.md).
+
+## Policy Engine
+
+The policy engine is a set of ordered pure functions:
+
+```text
+(Intent, Writ, World) -> PolicyDecision
+```
+
+A policy decision is one of:
+
+- `Permit`
+- `Deny(reason)`
+- `RequireApproval { channel, reason }`
+
+The compiler records the evaluated rule names and final decision in the
+proposal's policy trace. A proposal that requires approval is written to the
+ledger as `PendingApproval`; the runtime can later resume it through the same
+proposal id after an operator decision.
+
+## Capability Writs
+
+Authority in OpenThymos is carried by signed capability writs.
+
+A writ authorizes a subject to emit intents within declared tool scopes,
+tenant boundaries, effect ceilings, budgets, time windows, and delegation
+bounds. Child writs must be strict subsets of parent writs. Cross-tenant
+delegation is forbidden. Lateral minting is invalid.
+
+Writs make authority inspectable:
+
+- who issued the authority
+- which subject may act
+- which tools are in scope
+- which effects are allowed
+- how much budget remains
+- when the authority becomes valid and when it expires
+- whether the subject may subdivide authority
+
+See [docs/capability-writs.md](docs/capability-writs.md).
+
+## Runtime Guarantees
+
+OpenThymos uses formal runtime guarantees as design constraints.
+
+| Guarantee | Statement |
 | --- | --- |
-| **Shared runtime state** | CLI, VS Code, shell, and web console can attach to the same live run. |
-| **Typed action pipeline** | Every move flows through Intent, Proposal, Execution, and Result. |
-| **Signed authority** | Writs define who can do what, for how long, with which tool scopes and budgets. |
-| **Policy-gated effects** | Runtime checks happen before tools touch files, shell, HTTP, or state. |
-| **Live operator feed** | SSE streams expose cognition, execution sessions, approvals, failures, and completion. |
-| **Replayable trajectory ledger** | Runs become durable history, not terminal smoke. |
-| **Provider-neutral cognition** | Anthropic, OpenAI, LM Studio, Hugging Face, Ollama, local OpenAI-compatible servers, and mock runs can drive the same contract. |
-| **Production guardrails** | Production mode refuses unsafe defaults such as missing origin policy or in-process tool fabric. |
+| Deterministic replay | A valid ledger can be folded into the same world projection under the recorded commit sequence. |
+| Runtime isolation | Cognition cannot execute tools or mutate state directly. |
+| Execution integrity | Only staged proposals may reach the tool boundary; only commits may mutate projected world state. |
+| Capability constraints | Tool scopes, budgets, time windows, effect ceilings, tenant boundaries, and delegation bounds are checked before execution. |
+| Policy enforcement | Policy decisions are recorded as proposal traces and cannot be erased by a client surface. |
+| Provider abstraction | Providers can change intent generation but not runtime semantics. |
+| Auditability | Ledger entries preserve root, commit, rejection, pending approval, delegation, and branch records. |
+| Trace persistence | Execution sessions and audit entries expose runtime status without becoming the source of truth. |
+| Reproducibility | World state is derived from committed structured deltas, not from transient chat transcript state. |
 
-## Launch In 5 Minutes
+The complete invariant set is in
+[docs/runtime-invariants.md](docs/runtime-invariants.md).
 
-### 0. Install the terminal tools
+## Architecture Overview
+
+```text
+                         +-------------------+
+                         |   Cognition       |
+                         | provider adapter  |
+                         +---------+---------+
+                                   |
+                                   v
+                         +-------------------+
+                         | Intent            |
+                         | no authority      |
+                         +---------+---------+
+                                   |
+        +--------------------------+--------------------------+
+        |                                                     |
+        v                                                     v
++-------------------+                              +-------------------+
+| Compiler          |                              | World projection  |
+| writ, budget,     |<-----------------------------| ledger fold       |
+| policy, tools     |                              +-------------------+
++---------+---------+
+          |
+          v
++-------------------+      permit       +-------------------+
+| Proposal          |------------------>| Tool gateway      |
+| policy trace      |                   | typed contracts   |
++----+---------+----+                   +---------+---------+
+     |         |                                  |
+     | deny    | require approval                 v
+     v         v                         +-------------------+
++---------+ +-------------------+        | Observation +     |
+|Reject   | | PendingApproval   |        | structured delta  |
++----+----+ +---------+---------+        +---------+---------+
+     |                |                            |
+     +----------------+----------------------------+
+                      |
+                      v
+             +-------------------+
+             | Execution ledger  |
+             | append-only       |
+             +---------+---------+
+                       |
+                       v
+             +-------------------+
+             | Replay / fold     |
+             | audit projection  |
+             +-------------------+
+```
+
+Deeper architecture notes are in [docs/architecture.md](docs/architecture.md).
+Protocol-level diagrams are in [docs/diagrams.md](docs/diagrams.md).
+
+## Benchmark Framework
+
+OpenThymos benchmarks the runtime paths that matter for governed execution:
+
+- replay speed
+- execution overhead
+- provider swap latency
+- ledger folding performance
+- tool execution latency
+- state projection speed
+- execution DAG traversal
+- memory usage
+
+The benchmark plan and reporting format are documented in
+[docs/benchmarks.md](docs/benchmarks.md). Benchmark numbers should always
+include hardware, storage backend, provider mode, compiler version, sample
+ledger size, and whether the run was warm or cold.
+
+## Install And Verify
 
 ```bash
 ./scripts/install.sh
@@ -97,145 +292,41 @@ source "$HOME/.config/thymos/thymos.env"
 thymos doctor
 ```
 
-The installer builds and installs:
-
-| Binary | Purpose |
-| --- | --- |
-| `thymos` | Branded CLI, doctor dashboard, interactive shell, run controls. |
-| `thymos-server` | Local runtime server. |
-| `thymos-worker` | Worker process for safer shell / HTTP tool execution. |
-
-### 1. Boot the runtime
+Run the Rust runtime:
 
 ```bash
-git clone https://github.com/gryszzz/OpenThymos.git
-cd OpenThymos/thymos
+cd thymos
 cargo run -p thymos-server
 ```
 
-The server starts at `http://localhost:3001` with mock cognition by default,
-so you can exercise the full loop without an API key.
+Run the operator console:
 
 ```bash
-curl http://localhost:3001/health
-curl http://localhost:3001/ready
-```
-
-### 2. Open the operator console
-
-```bash
-cd ..
 npm install
 npm run dev
 ```
 
-Open:
+## GitHub Packages
 
-```text
-http://localhost:3000/runs
-```
-
-Terminal-first:
+OpenThymos publishes a container package through GitHub Packages on release
+tags:
 
 ```bash
-thymos config
-thymos shell
+docker pull ghcr.io/gryszzz/openthymos-runtime:<tag>
+docker run --rm -p 3001:3001 -v "$PWD/.thymos:/data" ghcr.io/gryszzz/openthymos-runtime:<tag>
 ```
 
-### 3. Fire a mock run
+The workflow also publishes `ghcr.io/gryszzz/thymos-server` as a compatibility
+alias. Package publication is defined in `.github/workflows/release.yml` and
+documented in [docs/package-distribution.md](docs/package-distribution.md).
+Manual workflow dispatches can publish branch and SHA-tagged package images;
+semver tags publish GitHub Releases and binary archives.
+
+Run the verification loop:
 
 ```bash
-cd thymos
-cargo run -p thymos-cli -- run "Inspect the repo and explain the runtime" --provider mock --follow
-```
-
-You now have a real Thymos run flowing through the runtime with live status,
-execution state, and replayable output.
-
-## Choose Your Control Surface
-
-| Surface | Best for | Start here |
-| --- | --- | --- |
-| **Web console** | Live operator view, execution log, world replay, branching | `npm run dev`, then open `/runs` |
-| **CLI** | Terminal-first launch, follow, status, world, diff, resume, cancel | `cargo run -p thymos-cli -- --help` |
-| **VS Code sidebar** | Editor-native approvals and run visibility | [`thymos/clients/vscode`](thymos/clients/vscode) |
-| **System shell** | Persistent terminal workflow against the shared runtime | `cargo run -p thymos-cli -- shell` |
-
-## Real Model Mode
-
-Use mock mode for zero-key local validation. When you are ready, point the same
-runtime at hosted or local cognition.
-
-```bash
-# Anthropic
-ANTHROPIC_API_KEY=... cargo run -p thymos-server
-
-# OpenAI
-OPENAI_API_KEY=... cargo run -p thymos-server
-
-# Local OpenAI-compatible server
-OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_API_KEY=local cargo run -p thymos-server
-```
-
-## Production Profile
-
-For production-shaped deployments, configure persistent stores, explicit
-browser origins, worker-backed tool execution, and bounded concurrency.
-
-```bash
-THYMOS_RUNTIME_MODE=production
-THYMOS_BIND_ADDR=0.0.0.0:3001
-THYMOS_LEDGER_PATH=/var/lib/thymos/thymos-ledger.db
-THYMOS_DB_PATH=/var/lib/thymos/thymos-runs.db
-THYMOS_GATEWAY_DB_PATH=/var/lib/thymos/thymos-gateway.db
-THYMOS_MARKETPLACE_DB_PATH=/var/lib/thymos/thymos-marketplace.db
-THYMOS_ALLOWED_ORIGINS=https://your-console.example.com
-THYMOS_TOOL_FABRIC=worker
-THYMOS_WORKER_BIN=/usr/local/bin/thymos-worker
-THYMOS_MAX_CONCURRENT_RUNS_GLOBAL=100
-THYMOS_MAX_CONCURRENT_RUNS_PER_TENANT=20
-```
-
-In production mode the server validates these settings at startup and refuses
-unsafe defaults.
-
-## Operator Experience
-
-When you submit a task, the runtime is designed to keep the work moving:
-
-1. Understand the goal.
-2. Plan the next step.
-3. Choose an allowed tool.
-4. Execute the tool for real.
-5. Observe the result.
-6. Recover from failures when possible.
-7. Continue until the task is complete, blocked, or cancelled.
-
-Every run exposes a shared **execution session** with status, phase, active
-tool, counters, final answer, execution log, and replayable world state.
-
-## Core Concepts
-
-| Concept | Meaning |
-| --- | --- |
-| **Intent** | What cognition wants to do next. |
-| **Proposal** | What the runtime has compiled and policy-checked under the current writ. |
-| **Execution** | The real tool invocation and observed result. |
-| **Result** | The recorded outcome: commit, rejection, suspension, delegation, failure, or completion. |
-| **Writ** | A signed capability document with scopes, budget, effect ceiling, and time window. |
-| **Trajectory ledger** | The append-only record of what actually happened during the run. |
-| **Execution session** | The live runtime state shared across CLI, VS Code, terminal, and web surfaces. |
-
-## Verify The Stack
-
-```bash
-# Local tooling, docs hygiene, and GitHub Pages configuration
 npm run doctor
-
-# Web app, static export, and docs
 npm run verify
-
-# Rust runtime, server, CLI, worker, ledger, marketplace, and tools
 cd thymos
 cargo test --workspace
 ```
@@ -244,37 +335,32 @@ cargo test --workspace
 
 | Path | Purpose |
 | --- | --- |
-| [`thymos`](thymos) | Rust runtime, server, CLI, worker, policy, ledger, marketplace, and core crates. |
-| [`src`](src) | Next.js web app and operator console. |
-| [`docs`](docs) | GitHub Pages documentation site. |
-| [`wiki`](wiki) | Source pages mirrored into the GitHub wiki. |
-| [`thymos/clients/vscode`](thymos/clients/vscode) | VS Code sidebar client. |
+| [`thymos`](thymos) | Rust runtime, compiler, ledger, policy engine, tools, server, CLI, worker, clients. |
+| [`src`](src) | Next.js operator console. |
+| [`docs`](docs) | Specification, architecture, replay, governance, threat model, and demos. |
+| [`wiki`](wiki) | GitHub wiki source pages. |
+| [`.github/workflows/release.yml`](.github/workflows/release.yml) | Release binaries and GitHub Packages container publication. |
+| [`GOVERNANCE.md`](GOVERNANCE.md) | Project authority and decision process. |
+| [`RFC_TEMPLATE.md`](RFC_TEMPLATE.md) | Protocol change template. |
+| [`ROADMAP.md`](ROADMAP.md) | Long-term runtime roadmap. |
 
-## GitHub Pages Site
+## Long-Term Vision
 
-The public site is deployed with GitHub Pages:
+OpenThymos is built for a future where machine cognition runs inside durable
+execution systems instead of ephemeral chat loops.
 
-- Website: `https://gryszzz.github.io/OpenThymos/`
-- Source: [`docs`](docs)
-- Static console export: generated by the Pages workflow from the Next.js app
+The long-term target is a federated runtime substrate:
 
-No custom domain is configured for this repository.
+- deterministic local execution
+- multi-agent coordination through explicit delegation
+- distributed execution ledgers
+- replay across runtime boundaries
+- portable provider semantics
+- capability writs as a shared authority format
+- policy engines that can be audited, versioned, and governed
+- autonomous governance layers that remain subordinate to recorded protocol
+  rules
 
-## Read Next
-
-- [Getting Started](docs/getting-started.md)
-- [Interfaces](docs/interfaces.md)
-- [Architecture](docs/architecture.md)
-- [Coding Agent](docs/coding-agent.md)
-- [API Reference](docs/api-reference.md)
-- [Providers](docs/providers.md)
-- [Launch Playbook](docs/launch-playbook.md)
-
-## GitHub Wiki
-
-The project wiki lives at:
-
-`https://github.com/gryszzz/OpenThymos/wiki`
-
-The markdown source for those pages is also kept in [`wiki`](wiki) so the
-public docs and the wiki can stay aligned.
+The project should be understandable decades from now. The goal is not to
+maximize surface area. The goal is to define small, durable runtime semantics
+for governed cognition.

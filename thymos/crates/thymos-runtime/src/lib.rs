@@ -77,7 +77,7 @@ impl DelegationKeyring {
         &self,
         pubkey: &thymos_core::crypto::PublicKey,
     ) -> Option<thymos_core::crypto::SigningKey> {
-        self.inner.read().unwrap().get(pubkey).map(|k| k.clone())
+        self.inner.read().unwrap().get(pubkey).cloned()
     }
 
     pub fn len(&self) -> usize {
@@ -499,7 +499,7 @@ impl<'a> Run<'a> {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| ToolPattern::exact(s)))
+                    .filter_map(|v| v.as_str().map(ToolPattern::exact))
                     .collect()
             })
             .unwrap_or_else(|| parent_writ.body.tool_scopes.clone());

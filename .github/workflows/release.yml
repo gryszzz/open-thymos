@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -54,7 +55,7 @@ jobs:
           path: thymos-*.tar.gz
 
   container:
-    name: Build & push container
+    name: Build and push GitHub Packages container
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,16 +68,20 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/thymos-server
+          images: |
+            ghcr.io/${{ github.repository_owner }}/openthymos-runtime
+            ghcr.io/${{ github.repository_owner }}/thymos-server
           tags: |
+            type=ref,event=branch
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
-            org.opencontainers.image.title=Thymos
-            org.opencontainers.image.description=Governed-cognition runtime for LLM agents. Separates cognition from execution via a typed Intent → Proposal → Ledger pipeline.
-            org.opencontainers.image.vendor=grysz
+            org.opencontainers.image.title=OpenThymos Runtime
+            org.opencontainers.image.description=Execution substrate for governed machine cognition. Separates cognition from execution through the typed Intent -> Proposal -> Commit protocol.
+            org.opencontainers.image.vendor=Exponet Labs
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.documentation=https://github.com/gryszzz/OpenThymos#readme
       - uses: docker/build-push-action@v6
@@ -95,6 +100,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: [binaries, container]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,9 +115,11 @@ jobs:
           files: artifacts/thymos-*.tar.gz
           generate_release_notes: true
           body: |
-            ## Thymos ${{ github.ref_name }}
+            ## OpenThymos ${{ github.ref_name }}
 
-            Container image: `ghcr.io/${{ github.repository_owner }}/thymos-server:${{ github.ref_name }}`
+            GitHub Packages images:
+            - `ghcr.io/${{ github.repository_owner }}/openthymos-runtime:${{ github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/thymos-server:${{ github.ref_name }}` (compatibility alias)
 
             Binaries attached for linux/x86_64, darwin/arm64, darwin/x86_64.
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for setup.

@@ -12,8 +12,9 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::{
-    auth_headers, cmd_approve, cmd_cancel, cmd_health, cmd_runs_diff, cmd_runs_ls, cmd_runs_show,
-    cmd_status, cmd_stream, cmd_usage, cmd_world, json_body_or_error, start_run,
+    auth_headers, cmd_approve, cmd_cancel, cmd_health, cmd_replay, cmd_runs_diff, cmd_runs_ls,
+    cmd_runs_show, cmd_status, cmd_stream, cmd_usage, cmd_world, json_body_or_error, start_run,
+    StartRunOptions,
 };
 
 const BLUE: &str = "\x1b[38;2;119;169;255m";
@@ -248,6 +249,16 @@ async fn dispatch(
             state.last_run_id = Some(id.to_string());
             cmd_world(client, url, api_key, id).await?;
         }
+        "replay" => {
+            let id = require_arg(&args, 0, "replay <run-id> [--require-compiler V] [--json]")?;
+            let raw_json = args.contains(&"--json");
+            let require_compiler = args
+                .iter()
+                .position(|arg| *arg == "--require-compiler")
+                .and_then(|idx| args.get(idx + 1).copied());
+            state.last_run_id = Some(id.to_string());
+            cmd_replay(client, url, api_key, id, require_compiler, raw_json).await?;
+        }
         "cancel" => {
             let id = require_arg(&args, 0, "cancel <run-id>")?;
             state.last_run_id = Some(id.to_string());
@@ -256,7 +267,7 @@ async fn dispatch(
         "approve" => {
             let id = require_arg(&args, 0, "approve <run-id> <channel> [--deny]")?;
             let channel = require_arg(&args, 1, "approve <run-id> <channel> [--deny]")?;
-            let deny = args.iter().any(|a| *a == "--deny");
+            let deny = args.contains(&"--deny");
             state.last_run_id = Some(id.to_string());
             cmd_approve(client, url, api_key, id, channel, !deny).await?;
         }
@@ -273,22 +284,21 @@ async fn dispatch(
                 client,
                 url,
                 api_key,
-                &full_task,
-                parsed.max_steps,
-                &parsed.provider,
-                parsed.model.as_deref(),
-                parsed.scopes.as_deref(),
+                StartRunOptions {
+                    task: &full_task,
+                    max_steps: parsed.max_steps,
+                    provider: &parsed.provider,
+                    model: parsed.model.as_deref(),
+                    scopes: parsed.scopes.as_deref(),
+                },
             )
             .await?;
             state.last_run_id = Some(run_id.clone());
             println!("Run started: {run_id}");
             println!("  task: {}", parsed.task);
             println!("  provider: {}", parsed.provider);
-            if state.workspace.is_some() {
-                println!(
-                    "  workspace: {}",
-                    state.workspace.as_ref().unwrap().display()
-                );
+            if let Some(workspace) = &state.workspace {
+                println!("  workspace: {}", workspace.display());
             }
             if parsed.follow {
                 println!("--- streaming ---");
@@ -303,11 +313,13 @@ async fn dispatch(
                 client,
                 url,
                 api_key,
-                &full_task,
-                parsed.max_steps,
-                &parsed.provider,
-                parsed.model.as_deref(),
-                parsed.scopes.as_deref(),
+                StartRunOptions {
+                    task: &full_task,
+                    max_steps: parsed.max_steps,
+                    provider: &parsed.provider,
+                    model: parsed.model.as_deref(),
+                    scopes: parsed.scopes.as_deref(),
+                },
             )
             .await?;
             state.last_run_id = Some(run_id.clone());
@@ -586,6 +598,7 @@ Thymos shell commands:
   status <run-id>               fetch status + summary
   stream <run-id>               tail SSE events
   world <run-id>                dump world state
+  replay <run-id> [flags]       verify and fold the execution ledger
   approve <run-id> <chan> [--deny]
   deny <run-id> <chan>
   cancel <run-id>

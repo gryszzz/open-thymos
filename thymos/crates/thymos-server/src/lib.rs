@@ -8,6 +8,7 @@
 //!   GET    /runs/:id/events             — SSE stream of trajectory entries
 //!   GET    /runs/:id/stream             — SSE stream of cognition events (tokens)
 //!   GET    /runs/:id/world              — current world projection
+//!   GET    /runs/:id/replay             — verify and fold the execution ledger
 //!   POST   /runs/:id/approvals/:channel — approve/deny a pending proposal
 
 use std::collections::HashMap;
@@ -39,6 +40,7 @@ use tower_http::cors::{Any, CorsLayer};
 use execution::ExecutionSession;
 use thymos_cognition::{build_cognition, CognitionConfig, CognitionEvent, NonStreamingAdapter};
 use thymos_core::{
+    content_hash,
     crypto::{generate_signing_key, public_key_of},
     writ::{Budget, DelegationBounds, EffectCeiling, TimeWindow, ToolPattern, Writ, WritBody},
     TrajectoryId,
@@ -259,6 +261,32 @@ pub struct WorldDto {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct ReplayDto {
+    pub run_id: String,
+    pub trajectory_id: String,
+    pub entries_seen: usize,
+    pub commits_replayed: usize,
+    pub head_commit: Option<String>,
+    pub head_seq: u64,
+    pub compiler_versions_seen: Vec<String>,
+    pub final_world_hash: String,
+    pub resources: usize,
+    pub rejected_proposals: usize,
+    pub pending_approvals: usize,
+    pub delegations: usize,
+    pub branches: usize,
+    pub tool_calls: Vec<ReplayToolCallDto>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ReplayToolCallDto {
+    pub seq: u64,
+    pub commit_id: String,
+    pub tool: String,
+    pub latency_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct ResourceDto {
     pub kind: String,
     pub id: String,
@@ -384,6 +412,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/runs/{id}/stream", get(get_stream))
         .route("/runs/{id}/world", get(get_world))
         .route("/runs/{id}/world/at", get(get_world_at))
+        .route("/runs/{id}/replay", get(get_replay))
         .route("/runs/{id}/approvals/{channel}", post(post_approval))
         .route("/runs/{id}/resume", post(resume_run))
         .route("/runs/{id}/cancel", post(cancel_run))
@@ -530,6 +559,43 @@ fn tenant_can_access(run_tenant: &str, caller_tenant: &str) -> bool {
         return false;
     }
     run_tenant == caller_tenant
+}
+
+fn trajectory_from_hex(traj_hex: &str) -> Result<TrajectoryId, &'static str> {
+    let bytes = hex::decode(traj_hex).map_err(|_| "invalid trajectory id")?;
+    if bytes.len() != 32 {
+        return Err("invalid trajectory id");
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    Ok(TrajectoryId(thymos_core::ContentHash(arr)))
+}
+
+fn run_record_for_access(
+    state: &Arc<AppState>,
+    run_id: &str,
+    caller_tenant: &str,
+) -> Result<RunRecord, StatusCode> {
+    {
+        let runs = state.runs.lock().unwrap();
+        if let Some(rec) = runs.get(run_id) {
+            if tenant_can_access(&rec.tenant_id, caller_tenant) {
+                return Ok(rec.clone());
+            }
+            return Err(StatusCode::NOT_FOUND);
+        }
+    }
+
+    if let Some(store) = &state.run_store {
+        if let Ok(Some(rec)) = store.get(run_id) {
+            if tenant_can_access(&rec.tenant_id, caller_tenant) {
+                return Ok(rec);
+            }
+            return Err(StatusCode::NOT_FOUND);
+        }
+    }
+
+    Err(StatusCode::NOT_FOUND)
 }
 
 /// GET /health — liveness probe (bypasses API key auth).
@@ -1612,6 +1678,124 @@ async fn get_world_at(
 
     match result {
         Ok(Ok(v)) => (StatusCode::OK, Json(v)).into_response(),
+        Ok(Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReplayQuery {
+    require_compiler: Option<String>,
+}
+
+/// GET /runs/:id/replay — verify the run ledger and fold committed deltas.
+async fn get_replay(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    jwt_claims: Option<axum::Extension<auth::JwtClaims>>,
+    gateway_ctx: Option<axum::Extension<middleware::GatewayContext>>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ReplayQuery>,
+) -> impl IntoResponse {
+    let caller_tenant = extract_tenant_id(&headers, &jwt_claims, &gateway_ctx);
+    let record = match run_record_for_access(&state, &id, &caller_tenant) {
+        Ok(record) => record,
+        Err(status) => {
+            return (
+                status,
+                Json(serde_json::json!({ "error": "run not found" })),
+            )
+                .into_response()
+        }
+    };
+
+    if record.trajectory_id.is_empty() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "run not found or not started" })),
+        )
+            .into_response();
+    }
+
+    let trajectory_id = match trajectory_from_hex(&record.trajectory_id) {
+        Ok(trajectory_id) => trajectory_id,
+        Err(error) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": error })),
+            )
+                .into_response()
+        }
+    };
+
+    let runtime = state.runtime.clone();
+    let run_id = id.clone();
+    let require_compiler = q.require_compiler.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let entries = runtime.ledger.entries(trajectory_id)?;
+        let cfg = thymos_ledger::ReplayConfig {
+            require_compiler_version: require_compiler,
+        };
+        let (world, report) = thymos_ledger::replay(&entries, &cfg)?;
+        let final_world_hash = content_hash(&world)?.to_string();
+
+        let mut rejected_proposals = 0usize;
+        let mut pending_approvals = 0usize;
+        let mut delegations = 0usize;
+        let mut branches = 0usize;
+        let mut tool_calls = Vec::new();
+
+        for entry in &entries {
+            match &entry.payload {
+                EntryPayload::Commit(commit) => {
+                    for observation in &commit.body.observations {
+                        tool_calls.push(ReplayToolCallDto {
+                            seq: entry.seq,
+                            commit_id: commit.id.to_string(),
+                            tool: observation.tool.clone(),
+                            latency_ms: observation.latency_ms,
+                        });
+                    }
+                }
+                EntryPayload::Rejection { .. } => rejected_proposals += 1,
+                EntryPayload::PendingApproval { .. } => pending_approvals += 1,
+                EntryPayload::Delegation { .. } => delegations += 1,
+                EntryPayload::Branch { .. } => branches += 1,
+                EntryPayload::Root { .. } => {}
+            }
+        }
+
+        Ok::<_, thymos_core::Error>(ReplayDto {
+            run_id,
+            trajectory_id: report.trajectory_id,
+            entries_seen: report.entries_seen,
+            commits_replayed: report.commits_replayed,
+            head_commit: report.head_commit,
+            head_seq: report.head_seq,
+            compiler_versions_seen: report.compiler_versions_seen,
+            final_world_hash,
+            resources: world.resources.len(),
+            rejected_proposals,
+            pending_approvals,
+            delegations,
+            branches,
+            tool_calls,
+        })
+    })
+    .await;
+
+    match result {
+        Ok(Ok(report)) => {
+            (StatusCode::OK, Json(serde_json::to_value(report).unwrap())).into_response()
+        }
         Ok(Err(e)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),

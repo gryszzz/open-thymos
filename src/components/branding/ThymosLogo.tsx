@@ -28,7 +28,7 @@ export function ThymosLogo({
       {wordmark ? (
         <span className="thymos-wordmark">
           <strong>THYMOS</strong>
-          <span>governed execution runtime</span>
+          <span>execution substrate</span>
         </span>
       ) : null}
     </div>

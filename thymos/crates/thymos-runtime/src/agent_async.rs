@@ -47,6 +47,7 @@ pub type ApprovalRequester = Box<
 ///
 /// `approval_requester` is called when a proposal needs human approval. If
 /// `None`, suspensions terminate the run (Phase 1 behavior).
+#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_streaming(
     runtime: &Runtime,
     cognition: &mut dyn StreamingCognition,

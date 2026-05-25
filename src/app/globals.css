@@ -31,9 +31,8 @@ body {
   color: var(--text);
   font-family: var(--font-body), sans-serif;
   background:
-    radial-gradient(circle at top, rgba(119, 169, 255, 0.12), transparent 22%),
-    radial-gradient(circle at 82% 12%, rgba(129, 118, 255, 0.08), transparent 18%),
-    linear-gradient(180deg, #091018 0%, #05080d 44%, #040608 100%);
+    linear-gradient(180deg, rgba(24, 36, 50, 0.52) 0%, rgba(5, 8, 13, 0.96) 34%, #030405 100%),
+    #030405;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -53,19 +52,20 @@ code {
   overflow-x: clip;
 }
 
-.thymos-grid-haze,
-.thymos-radial-signal {
+.thymos-grid-haze {
   position: fixed;
   inset: 0;
   pointer-events: none;
 }
 
 .thymos-grid-haze {
-  opacity: 0.46;
+  opacity: 0.52;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 68px 68px;
+    linear-gradient(rgba(198, 210, 224, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(198, 210, 224, 0.05) 1px, transparent 1px),
+    linear-gradient(rgba(119, 169, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(119, 169, 255, 0.08) 1px, transparent 1px);
+  background-size: 64px 64px, 64px 64px, 256px 256px, 256px 256px;
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.18) 56%, transparent);
 }
 
@@ -75,28 +75,8 @@ code {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 14%),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.02));
-}
-
-.thymos-radial-signal {
-  filter: blur(44px);
-}
-
-.thymos-radial-signal-a {
-  inset: auto auto 4% -12%;
-  width: 32vw;
-  height: 28vw;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(119, 169, 255, 0.14), transparent 70%);
-}
-
-.thymos-radial-signal-b {
-  inset: -10% -8% auto auto;
-  width: 34vw;
-  height: 26vw;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(129, 118, 255, 0.12), transparent 72%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 13%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 18%, transparent 82%, rgba(255, 255, 255, 0.03));
 }
 
 .thymos-shell {
@@ -145,6 +125,7 @@ code {
 .thymos-mechanism-card,
 .thymos-mechanism-ledger,
 .thymos-pillar-card,
+.thymos-package-card,
 .thymos-coding-panel,
 .thymos-trajectory-panel,
 .thymos-backend-card,
@@ -169,6 +150,7 @@ code {
 .thymos-mechanism-shell::before,
 .thymos-mechanism-card::before,
 .thymos-pillar-card::before,
+.thymos-package-card::before,
 .thymos-coding-panel::before,
 .thymos-trajectory-panel::before,
 .thymos-backend-card::before,
@@ -182,7 +164,7 @@ code {
   pointer-events: none;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 34%),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 28%);
+    linear-gradient(90deg, rgba(119, 169, 255, 0.04), transparent 22%, transparent 78%, rgba(119, 169, 255, 0.04));
 }
 
 .thymos-logo {
@@ -238,7 +220,7 @@ code {
   justify-content: space-between;
   gap: 18px;
   padding: 16px 18px;
-  border-radius: 22px;
+  border-radius: 8px;
   backdrop-filter: blur(18px);
 }
 
@@ -361,12 +343,12 @@ code {
 .thymos-workflow-card h3,
 .thymos-cta-shell h2 {
   font-family: var(--font-display), sans-serif;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
 }
 
 .thymos-hero h1 {
   margin: 18px 0 0;
-  font-size: clamp(3.9rem, 7.6vw, 7rem);
+  font-size: 6.4rem;
   line-height: 0.88;
   max-width: 10ch;
 }
@@ -415,7 +397,7 @@ code {
 .thymos-secondary-action {
   min-height: 50px;
   padding: 0 18px;
-  border-radius: 16px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -466,7 +448,7 @@ code {
 .thymos-runtime-stage {
   position: absolute;
   inset: 9% 6% 9% 8%;
-  border-radius: 30px;
+  border-radius: 8px;
   padding: 22px;
   transform: rotateY(-11deg) rotateX(7deg);
   backdrop-filter: blur(18px);
@@ -480,8 +462,9 @@ code {
   pointer-events: none;
   background:
     linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.26)),
-    radial-gradient(circle at 72% 18%, rgba(119, 169, 255, 0.14), transparent 24%),
-    radial-gradient(circle at 18% 82%, rgba(129, 118, 255, 0.12), transparent 26%);
+    linear-gradient(rgba(119, 169, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(119, 169, 255, 0.08) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
 }
 
 .thymos-stage-topline,
@@ -524,7 +507,7 @@ code {
 .thymos-stage-node {
   min-height: 194px;
   padding: 18px;
-  border-radius: 22px;
+  border-radius: 8px;
 }
 
 .thymos-stage-label,
@@ -567,7 +550,7 @@ code {
   margin-top: 26px;
   padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 22px;
+  border-radius: 8px;
   background: rgba(5, 10, 15, 0.7);
 }
 
@@ -580,7 +563,7 @@ code {
   position: absolute;
   width: 230px;
   padding: 18px;
-  border-radius: 24px;
+  border-radius: 8px;
   backdrop-filter: blur(12px);
 }
 
@@ -621,8 +604,6 @@ code {
 
 .thymos-section {
   margin-top: 38px;
-  content-visibility: auto;
-  contain-intrinsic-size: 1px 760px;
 }
 
 .thymos-section-head {
@@ -636,7 +617,7 @@ code {
 
 .thymos-section-head h2 {
   margin: 12px 0 0;
-  font-size: clamp(2.3rem, 4vw, 4rem);
+  font-size: 3.3rem;
   line-height: 0.98;
 }
 
@@ -649,6 +630,7 @@ code {
 .thymos-coding-grid,
 .thymos-backend-grid,
 .thymos-workflow-grid,
+.thymos-package-grid,
 .thymos-cta-shell {
   display: grid;
   gap: 18px;
@@ -662,6 +644,7 @@ code {
 .thymos-runtime-note,
 .thymos-mechanism-card,
 .thymos-pillar-card,
+.thymos-package-card,
 .thymos-coding-panel,
 .thymos-trajectory-panel,
 .thymos-backend-card,
@@ -669,10 +652,11 @@ code {
 .thymos-cta-shell,
 .thymos-command-card,
 .thymos-footer {
-  border-radius: 28px;
+  border-radius: 8px;
 }
 
 .thymos-story-card,
+.thymos-package-card,
 .thymos-coding-panel,
 .thymos-trajectory-panel,
 .thymos-backend-card,
@@ -685,6 +669,7 @@ code {
 .thymos-runtime-note h3,
 .thymos-mechanism-card h3,
 .thymos-pillar-card h3,
+.thymos-package-card h3,
 .thymos-coding-panel h3,
 .thymos-trajectory-panel h3,
 .thymos-backend-card h3,
@@ -704,7 +689,7 @@ code {
 .thymos-story-metrics div {
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -723,19 +708,21 @@ code {
 }
 
 .thymos-runtime-notes,
-.thymos-pillar-grid {
+.thymos-pillar-grid,
+.thymos-package-grid {
   display: grid;
   gap: 18px;
 }
 
 .thymos-runtime-note,
 .thymos-mechanism-card,
-.thymos-pillar-card {
+.thymos-pillar-card,
+.thymos-package-card {
   padding: 22px;
 }
 
 .thymos-mechanism-shell {
-  border-radius: 30px;
+  border-radius: 8px;
   padding: 26px;
 }
 
@@ -754,7 +741,7 @@ code {
 .thymos-mechanism-ledger {
   margin-top: 18px;
   padding: 18px 20px;
-  border-radius: 22px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.03);
 }
@@ -765,7 +752,8 @@ code {
   line-height: 1.55;
 }
 
-.thymos-pillar-grid {
+.thymos-pillar-grid,
+.thymos-package-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -836,14 +824,14 @@ code {
   gap: 14px;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
 }
 
 .thymos-trace-item > span {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -895,8 +883,19 @@ code {
 
 .thymos-cta-shell h2 {
   margin: 12px 0 0;
-  font-size: clamp(2.2rem, 4vw, 3.7rem);
+  font-size: 3.1rem;
   line-height: 0.98;
+}
+
+.thymos-package-card h3 {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.thymos-package-command {
+  margin-top: 18px;
 }
 
 .thymos-command-card {
@@ -913,7 +912,7 @@ code {
   margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -1000,7 +999,9 @@ code {
   pointer-events: none;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 30%),
-    radial-gradient(circle at top right, rgba(119, 169, 255, 0.08), transparent 24%);
+    linear-gradient(rgba(119, 169, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(119, 169, 255, 0.05) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
 }
 
 .thymos-runtime-hero {
@@ -1008,7 +1009,7 @@ code {
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   gap: 20px;
   padding: 24px;
-  border-radius: 30px;
+  border-radius: 8px;
 }
 
 .thymos-runtime-copy,
@@ -1026,30 +1027,7 @@ code {
   display: grid;
   gap: 16px;
   padding: 20px;
-  border-radius: 24px;
-}
-
-.thymos-console-orb {
-  position: absolute;
-  border-radius: 999px;
-  pointer-events: none;
-  filter: blur(22px);
-}
-
-.thymos-console-orb-a {
-  right: -120px;
-  top: -90px;
-  width: 360px;
-  height: 360px;
-  background: radial-gradient(circle, rgba(119, 169, 255, 0.2), transparent 70%);
-}
-
-.thymos-console-orb-b {
-  left: -90px;
-  bottom: -140px;
-  width: 320px;
-  height: 320px;
-  background: radial-gradient(circle, rgba(129, 118, 255, 0.16), transparent 72%);
+  border-radius: 8px;
 }
 
 .thymos-eyebrow {
@@ -1062,7 +1040,7 @@ code {
 
 .thymos-runtime-title {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.35rem);
+  font-size: 2.9rem;
   line-height: 1.03;
   font-family: var(--font-display), sans-serif;
   max-width: 14ch;
@@ -1091,7 +1069,7 @@ code {
 }
 
 .thymos-runtime-chip {
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(146, 163, 184, 0.14);
   background: rgba(255, 255, 255, 0.03);
   padding: 14px 16px;
@@ -1103,7 +1081,7 @@ code {
   display: grid;
   gap: 10px;
   padding: 16px 18px;
-  border-radius: 22px;
+  border-radius: 8px;
 }
 
 .thymos-console-banner strong,
@@ -1128,7 +1106,7 @@ code {
   grid-template-columns: 14px minmax(0, 1fr);
   gap: 10px;
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 8px;
   border: 1px solid rgba(119, 169, 255, 0.2);
   background: rgba(7, 13, 19, 0.72);
 }
@@ -1162,7 +1140,7 @@ code {
 .thymos-text-input,
 .thymos-select {
   width: 100%;
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(146, 163, 184, 0.18);
   background: rgba(255, 255, 255, 0.04);
   padding: 16px 18px;
@@ -1298,7 +1276,7 @@ code {
   display: grid;
   gap: 13px;
   padding: 16px;
-  border-radius: 22px;
+  border-radius: 8px;
 }
 
 .thymos-preview-head {
@@ -1412,7 +1390,7 @@ code {
   width: 100%;
   text-align: left;
   padding: 14px 16px;
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(146, 163, 184, 0.14);
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted-strong);
@@ -1446,7 +1424,7 @@ code {
 .thymos-control-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 8px;
   border: 1px solid rgba(146, 163, 184, 0.15);
   background: rgba(255, 255, 255, 0.035);
   padding: 15px 16px;
@@ -1497,7 +1475,7 @@ code {
 .thymos-run-history-panel {
   margin-top: 18px;
   padding: 22px;
-  border-radius: 28px;
+  border-radius: 8px;
 }
 
 .thymos-history-head {
@@ -1513,7 +1491,7 @@ code {
 .thymos-history-head h2 {
   margin: 6px 0 0;
   font-family: var(--font-display), sans-serif;
-  font-size: clamp(1.4rem, 3vw, 2.15rem);
+  font-size: 2rem;
 }
 
 .thymos-history-head p {
@@ -1538,7 +1516,7 @@ code {
   width: 100%;
   padding: 14px 16px;
   border: 1px solid rgba(146, 163, 184, 0.14);
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   text-align: left;
@@ -1602,7 +1580,7 @@ code {
 
 .thymos-console-main,
 .thymos-console-sidebar {
-  border-radius: 24px;
+  border-radius: 8px;
   padding: 18px;
   min-width: 0;
 }
@@ -1617,7 +1595,7 @@ code {
   display: grid;
   gap: 20px;
   padding: 26px 24px 22px;
-  border-radius: 28px;
+  border-radius: 8px;
 }
 
 .thymos-console-topline {
@@ -1709,7 +1687,7 @@ code {
 
 .thymos-runtime-task h1 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.6vw, 2.8rem);
+  font-size: 2.45rem;
   line-height: 1.06;
   font-family: var(--font-display), sans-serif;
 }
@@ -1728,7 +1706,7 @@ code {
 }
 
 .thymos-console-stat {
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid rgba(146, 163, 184, 0.14);
   background: rgba(255, 255, 255, 0.03);
   padding: 14px 16px;
@@ -1765,7 +1743,7 @@ code {
   gap: 12px;
   align-items: start;
   padding: 15px 16px;
-  border-radius: 20px;
+  border-radius: 8px;
 }
 
 .thymos-realtime-card .thymos-live-dot {
@@ -1811,10 +1789,10 @@ code {
   gap: 16px;
   align-items: center;
   padding: 16px;
-  border-radius: 22px;
+  border-radius: 8px;
   border: 1px solid rgba(251, 191, 36, 0.28);
   background:
-    radial-gradient(circle at top left, rgba(251, 191, 36, 0.14), transparent 38%),
+    linear-gradient(90deg, rgba(251, 191, 36, 0.12), transparent 44%),
     rgba(255, 255, 255, 0.035);
 }
 
@@ -1874,7 +1852,7 @@ code {
   gap: 12px;
   align-items: start;
   padding: 13px 14px;
-  border-radius: 16px;
+  border-radius: 8px;
   font-size: 13px;
 }
 
@@ -1906,7 +1884,7 @@ code {
 }
 
 .thymos-panel {
-  border-radius: 22px;
+  border-radius: 8px;
   padding: 16px;
 }
 
@@ -1961,7 +1939,7 @@ code {
 
 .thymos-empty-state {
   padding: 20px;
-  border-radius: 18px;
+  border-radius: 8px;
 }
 
 .thymos-empty-state strong {
@@ -1976,7 +1954,7 @@ code {
 }
 
 .thymos-log-entry {
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 14px 16px;
 }
 
@@ -2034,7 +2012,7 @@ code {
 
 .thymos-stream-block,
 .thymos-resource-card {
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 14px 16px;
 }
 
@@ -2067,6 +2045,7 @@ code {
   .thymos-workflow-grid,
   .thymos-cta-shell,
   .thymos-pillar-grid,
+  .thymos-package-grid,
   .thymos-mechanism-grid {
     grid-template-columns: 1fr;
   }
@@ -2138,7 +2117,8 @@ code {
   }
 
   .thymos-hero h1 {
-    font-size: clamp(3rem, 16vw, 4.8rem);
+    font-size: 3rem;
+    line-height: 0.96;
   }
 
   .thymos-hero-visual {
