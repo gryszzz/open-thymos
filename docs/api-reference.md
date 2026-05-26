@@ -43,6 +43,10 @@ Example response:
 }
 ```
 
+`tool_scopes` binds the run writ to registered capability names. Built-in
+coding tools, manifest-backed capabilities loaded from
+`THYMOS_TOOL_MANIFEST_DIRS`, and MCP bridge tools all use the same scope check.
+
 ### GET /runs/:id
 
 Returns the persisted run record and summary.

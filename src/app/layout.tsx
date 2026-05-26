@@ -19,13 +19,13 @@ const displayFont = Space_Grotesk({
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.siteUrl),
-  title: `${siteConfig.name} | Governed Execution Runtime`,
+  title: `${siteConfig.name} | Unified AI Execution Runtime`,
   description: siteConfig.subheadline,
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: `${siteConfig.name} | Governed Execution Runtime`,
+    title: `${siteConfig.name} | Unified AI Execution Runtime`,
     description: siteConfig.subheadline,
     url: siteConfig.siteUrl,
     siteName: siteConfig.name,
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: `${siteConfig.name} | Governed Execution Runtime`,
+    title: `${siteConfig.name} | Unified AI Execution Runtime`,
     description: siteConfig.subheadline,
     images: [socialImage],
   },

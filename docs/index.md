@@ -9,18 +9,19 @@ permalink: /
 <section class="hero">
   <div class="hero-eyebrow">
     <span class="dot"></span>
-    OPENTHYMOS · GOVERNED COGNITION RUNTIME
+    OPENTHYMOS · UNIFIED AI EXECUTION RUNTIME
   </div>
 
   <h1>
-    Execution substrate for governed machine cognition.
+    Unified AI execution runtime, framework, and sandbox for coding agents.
   </h1>
 
   <p class="lede">
-    OpenThymos converts untrusted cognition into auditable execution. Agents do
-    not act autonomously; they emit intents. The runtime compiles proposals,
-    enforces capability writs, applies policy, records commits, and replays the
-    ledger into deterministic runtime state.
+    OpenThymos converts untrusted cognition into auditable coding-agent
+    execution. Agents do not act autonomously; they emit intents. The Rust
+    runtime compiles proposals, enforces capability writs, applies policy,
+    routes approved capabilities through governed execution boundaries, and
+    exposes one replayable run across CLI, VS Code, terminal, and web surfaces.
   </p>
 
   <div class="hero-cta">
@@ -30,6 +31,9 @@ permalink: /
     <a class="btn btn-ghost" href="{{ '/replay' | relative_url }}">
       Study replay
     </a>
+    <a class="btn btn-ghost" href="{{ '/programmable-capabilities' | relative_url }}">
+      Add capabilities
+    </a>
     <a class="btn btn-ghost" href="{{ '/package-distribution' | relative_url }}">
       Pull package
     </a>
@@ -38,36 +42,36 @@ permalink: /
   <div class="hero-meta">
     <span class="mono">Intent -> Proposal -> Commit</span>
     <span>·</span>
-    <span>Capability writs</span>
+    <span>Programmable capabilities</span>
     <span>·</span>
-    <span>Execution ledger</span>
+    <span>Shared run surfaces</span>
   </div>
 </section>
 
 <section class="section">
   <div class="triad reveal">
     <div class="card">
-      <h4>Governed</h4>
-      <p>Authority is explicit.</p>
+      <h4>Unified</h4>
+      <p>Every client sees the same run.</p>
       <p class="sub">
-        Signed writs define tool scope, budget, tenant boundary, effect
-        ceiling, time window, and delegation bounds.
+        CLI, VS Code, terminal shell, web console, and HTTP clients attach to
+        one backend execution session and ledger projection.
       </p>
     </div>
     <div class="card">
-      <h4>Replayable</h4>
-      <p>History is structured.</p>
+      <h4>Programmable</h4>
+      <p>Capabilities are explicit.</p>
       <p class="sub">
-        Commits contain observations and deltas. Replay verifies the ledger and
-        folds state without fresh model or tool calls.
+        Rust contracts, JSON manifests, and MCP bridge tools register into the
+        same governed capability registry.
       </p>
     </div>
     <div class="card">
-      <h4>Deterministic</h4>
-      <p>State is a fold.</p>
+      <h4>Sandboxed</h4>
+      <p>Effects cross controlled boundaries.</p>
       <p class="sub">
-        Runtime state is projected from content-addressed ledger entries, not
-        reconstructed from chat transcript memory.
+        Coding tools are path-confined, shell and HTTP can cross the worker
+        fabric, and every effect remains policy-visible.
       </p>
     </div>
   </div>
@@ -76,12 +80,12 @@ permalink: /
 <section class="section">
   <div class="section-h reveal">
     <p class="eyebrow">Runtime model</p>
-    <h2>Cognition proposes. Runtime commits.</h2>
+    <h2>Cognition proposes. The framework governs.</h2>
     <p>
       A provider may be stochastic, local, hosted, or mock. It enters the
       system through one narrow contract: produce intents. Everything after
-      that point is governed by compiler order, writ validation, tool
-      contracts, policy traces, and ledger semantics.
+      that point is governed by compiler order, writ validation, capability
+      contracts, sandbox profiles, policy traces, and ledger semantics.
     </p>
   </div>
 
@@ -95,6 +99,14 @@ permalink: /
     </div>
     <div class="fcard">
       <div class="icon">⎇</div>
+      <h3>Capabilities</h3>
+      <p>
+        Extension points for Rust contracts, JSON manifests, and MCP bridge
+        tools under one runtime registry.
+      </p>
+    </div>
+    <div class="fcard">
+      <div class="icon">⎈</div>
       <h3>Replay</h3>
       <p>
         Verification over ledger entries, parent chains, sequences, deltas,
@@ -126,7 +138,7 @@ permalink: /
       </p>
     </div>
     <div class="fcard">
-      <div class="icon">⎈</div>
+      <div class="icon">▤</div>
       <h3>Provider boundary</h3>
       <p>
         Hosted and local providers can propose intents without changing

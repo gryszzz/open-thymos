@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use thymos_server::{
-    app, auth, default_runtime, middleware, persistent_runtime, run_store, telemetry, AppState,
-    RunStatus, RunSummaryDto, RuntimeMode, ServerConfig,
+    app, auth, default_runtime_with_capabilities, middleware, persistent_runtime_with_capabilities,
+    run_store, telemetry, AppState, RunStatus, RunSummaryDto, RuntimeMode, ServerConfig,
 };
 
 #[tokio::main]
@@ -43,10 +43,10 @@ async fn main() {
 
     let runtime = if let Some(path) = &config.ledger_path {
         eprintln!("ledger: sqlite file-backed at {path}");
-        persistent_runtime(path)
+        persistent_runtime_with_capabilities(path, &config.tool_manifest_dirs)
     } else {
         eprintln!("ledger: in-memory reference mode");
-        default_runtime()
+        default_runtime_with_capabilities(&config.tool_manifest_dirs)
     };
 
     // Optional: configure API gateway from environment.

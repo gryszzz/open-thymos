@@ -22,3 +22,6 @@ If you are building an operator-facing client, start with:
 - `/runs/:id/execution/stream` for live updates
 
 That is the shared run model behind the product surfaces.
+
+`POST /runs` accepts `tool_scopes`; those scopes bind the run writ to built-in
+tools and any programmable capabilities loaded on the server.

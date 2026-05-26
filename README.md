@@ -4,7 +4,7 @@
 
 # OpenThymos
 
-### Execution substrate for governed machine cognition.
+### Unified AI execution runtime, framework, and sandbox for coding agents.
 
 **Intent -> Proposal -> Commit**
 
@@ -14,6 +14,8 @@
   <a href="docs/specification.md"><strong>Specification</strong></a>
   |
   <a href="docs/architecture.md"><strong>Architecture</strong></a>
+  |
+  <a href="docs/programmable-capabilities.md"><strong>Capabilities</strong></a>
   |
   <a href="docs/replay.md"><strong>Replay</strong></a>
   |
@@ -26,11 +28,12 @@
 
 ---
 
-OpenThymos is a governed cognition runtime for deterministic AI execution.
+OpenThymos is a Rust execution runtime and programmable capability framework
+for coding agents across CLI, VS Code, terminal, and web surfaces.
 
-Agents do not act autonomously.
-They propose.
-Execution becomes auditable, replayable, and policy constrained.
+Agents do not act autonomously. They propose. The runtime compiles the
+proposal, checks authority, routes approved capabilities through governed
+execution boundaries, and records the outcome in a replayable ledger.
 
 The runtime treats cognition as an untrusted source of intent. A model,
 planner, or local rule engine may request an action, but it cannot directly
@@ -38,9 +41,9 @@ mutate state, call a tool, spend budget, delegate authority, or erase history.
 Every effect must pass through a typed proposal, a capability writ, a policy
 trace, and an append-only execution ledger.
 
-OpenThymos is not a model wrapper. It is an execution system: a substrate for
-machines that need authority boundaries, reproducible state, and durable
-runtime semantics.
+OpenThymos is not a model wrapper. It is an execution system: a unified
+backend for agents that need authority boundaries, programmable capabilities,
+runtime sandboxing, reproducible state, and durable runtime semantics.
 
 ## What OpenThymos Is
 
@@ -69,8 +72,39 @@ The runtime is implemented as a Rust workspace under [`thymos`](thymos):
 | Runtime | `thymos-runtime` | IPC cycle, approvals, delegation, projection, resume |
 | Ledger | `thymos-ledger` | Append-only entries, hash chain, replay verifier |
 | Cognition | `thymos-cognition` | Provider abstraction for proposers |
-| Tools | `thymos-tools` | Typed tool contracts and observed effects |
-| Surfaces | `thymos-server`, `thymos-cli`, `clients/vscode`, `src` | Operator access to one shared run |
+| Capabilities | `thymos-tools` | Rust tool contracts, JSON manifest tools, MCP bridges, and observed effects |
+| Surfaces | `thymos-server`, `thymos-cli`, `clients/vscode`, `src` | CLI, VS Code, terminal, and web access to one shared run |
+
+## Unified Agent Surfaces
+
+OpenThymos is one runtime with several clients, not several agents with
+several histories.
+
+- `thymos-server` owns execution sessions, approvals, streams, and ledger state
+- `thymos-cli` starts and follows runs from terminal workflows
+- `thymos shell` gives terminal-first users a persistent runtime session
+- `clients/vscode` exposes editor-native run visibility and approvals
+- the Next.js web console in `src` watches the same run state over HTTP and SSE
+
+The surface can change without changing runtime truth. A run can start from
+the CLI, be monitored in the browser, approved in VS Code, and replayed later
+from the terminal.
+
+## Programmable Capabilities
+
+Capabilities are the effect boundary. They can be added in three ways:
+
+- implement `ToolContract` in Rust for first-party, strongly typed tools
+- drop JSON tool manifests into `THYMOS_TOOL_MANIFEST_DIRS` for configurable
+  shell, HTTP, or no-op capabilities
+- register MCP tools through the `thymos-tools` MCP bridge
+
+Every capability declares a schema, effect class, risk class, and observation
+shape. Writ scopes and policy decide whether a capability may execute. Built-in
+coding tools are path-confined, and the stock shell/HTTP capabilities can cross
+the worker-backed sandbox when production isolation is required.
+Manifest capabilities are validated at startup, loaded in deterministic order,
+and cannot shadow existing built-in tools.
 
 ## Why Current Agent Frameworks Fail
 
@@ -103,7 +137,7 @@ The runtime cycle is deliberately narrow.
 3. Accept one or more Intents.
 4. Compile each Intent against writ, tool registry, budget, time window, and policy.
 5. Stage, reject, or suspend the Proposal.
-6. Execute only staged proposals through typed tool contracts.
+6. Execute only staged proposals through typed capability contracts.
 7. Commit structured deltas and observations to the ledger.
 8. Feed committed, rejected, failed, or suspended outcomes back into cognition.
 ```
@@ -123,7 +157,7 @@ The current implementation enforces:
   entries
 - parent-chained ledger entries with contiguous sequence numbers
 - compiler-version recording on each commit
-- explicit tool contracts for argument validation, preconditions,
+- explicit capability contracts for argument validation, preconditions,
   postconditions, estimated cost, and structured deltas
 - policy traces attached to proposals
 - world projection by deterministic ledger folding
@@ -299,6 +333,12 @@ cd thymos
 cargo run -p thymos-server
 ```
 
+Load local programmable capabilities:
+
+```bash
+THYMOS_TOOL_MANIFEST_DIRS=../tools cargo run -p thymos-server
+```
+
 Run the operator console:
 
 ```bash
@@ -338,6 +378,7 @@ cargo test --workspace
 | [`thymos`](thymos) | Rust runtime, compiler, ledger, policy engine, tools, server, CLI, worker, clients. |
 | [`src`](src) | Next.js operator console. |
 | [`docs`](docs) | Specification, architecture, replay, governance, threat model, and demos. |
+| [`docs/programmable-capabilities.md`](docs/programmable-capabilities.md) | Capability programming model for Rust contracts, manifests, MCP bridge tools, and sandboxing. |
 | [`wiki`](wiki) | GitHub wiki source pages. |
 | [`.github/workflows/release.yml`](.github/workflows/release.yml) | Release binaries and GitHub Packages container publication. |
 | [`GOVERNANCE.md`](GOVERNANCE.md) | Project authority and decision process. |

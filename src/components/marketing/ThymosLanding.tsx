@@ -2,29 +2,29 @@ import { ThymosLogo } from "@/components/branding/ThymosLogo";
 import { siteConfig } from "@/lib/site";
 
 const proofItems = [
+  "Rust runtime kernel",
+  "Programmable capabilities",
+  "Sandboxed tool fabric",
   "Signed authority",
-  "Policy-gated execution",
-  "Typed tools",
-  "Trajectory ledger",
-  "Provider abstraction",
-  "Replayable runs",
+  "Unified run surfaces",
+  "Replayable trajectories",
 ];
 
 const runtimeNotes = [
   {
     label: "Execution kernel",
     title: "Models do not own effects.",
-    body: "OpenThymos treats cognition as a bounded proposer. Runtime, policy, and ledger own the decision surface.",
+    body: "OpenThymos treats cognition as a bounded proposer. The Rust runtime, policy engine, sandbox, and ledger own the decision surface.",
   },
   {
-    label: "Authority",
-    title: "Every action carries a signed writ.",
-    body: "Tool scopes, budget, effect class, and time window are enforced before the outside world changes.",
+    label: "Framework",
+    title: "Capabilities are programmable.",
+    body: "Built-in Rust contracts, JSON manifests, and MCP bridges all register as governed capabilities with schemas, effect classes, and writ scopes.",
   },
   {
-    label: "History",
-    title: "The trajectory is the record.",
-    body: "Commits are content-addressed, parent-chained, and replayable. World state is projected from the ledger.",
+    label: "Surfaces",
+    title: "Every client sees the same run.",
+    body: "CLI, VS Code, terminal shell, and web console attach to one backend execution session instead of spawning separate agents.",
   },
 ];
 
@@ -53,14 +53,14 @@ const pillarCards = [
     body: "Authority is explicit, scoped, signed, and time-bound instead of implied by the prompt.",
   },
   {
-    label: "Ledger-backed execution",
-    title: "Every allowed, denied, and suspended step is durable.",
-    body: "The audit trail is not an afterthought. It is the runtime's source of truth.",
+    label: "Unified surfaces",
+    title: "CLI, VS Code, terminal, and web share one runtime.",
+    body: "Every surface presents the same run id, phase, approvals, logs, world projection, and final outcome.",
   },
   {
-    label: "Typed coding actions",
-    title: "Repo operations are contracts, not free-form tool blobs.",
-    body: "Read, patch, grep, map, and test actions are typed, path-confined, and observable.",
+    label: "Programmable capabilities",
+    title: "Capabilities are contracts, not free-form tool blobs.",
+    body: "Rust tools, manifest tools, and MCP bridge tools declare schemas, effects, risk, and observations before they can execute.",
   },
   {
     label: "Multi-provider cognition",
@@ -68,9 +68,9 @@ const pillarCards = [
     body: "Anthropic, OpenAI, Hugging Face, LM Studio, local OpenAI-compatible endpoints, and mock runs share one control plane.",
   },
   {
-    label: "Secure tool fabric",
+    label: "Sandboxed tool fabric",
     title: "Risky execution crosses a worker boundary.",
-    body: "Shell and HTTP calls move through the hardened tool fabric with receipts and capability profiles.",
+    body: "Shell, HTTP, and coding actions run through profile-gated sandbox paths with receipts and allowed roots.",
   },
   {
     label: "Replayable trajectories",
@@ -107,10 +107,11 @@ const workflowColumns = [
   {
     title: "Developer loop",
     items: [
+      "Launch work from the CLI, shell, VS Code, or web console.",
       "Inspect the repo with typed read tools.",
       "Propose targeted file patches instead of opaque diffs.",
       "Run tests through the same governed execution path.",
-      "Review the full trajectory before merging.",
+      "Review the full trajectory from any attached surface.",
     ],
   },
   {
@@ -127,8 +128,8 @@ const workflowColumns = [
 const launchNotes = [
   "Pre-alpha open runtime",
   "Rust execution kernel",
-  "GHCR package path",
-  "Ledger replay verifier",
+  "Programmable capability layer",
+  "Unified CLI / VS Code / web state",
 ];
 
 const packageCards = [
@@ -161,7 +162,7 @@ export function ThymosLanding() {
           <nav className="thymos-nav" aria-label="Primary">
             <a href="#runtime">Runtime</a>
             <a href="#mechanism">Protocol</a>
-            <a href="#coding-agent">Tools</a>
+            <a href="#coding-agent">Capabilities</a>
             <a href="#packages">Packages</a>
             <a href="#backends">Backends</a>
           </nav>
@@ -180,7 +181,7 @@ export function ThymosLanding() {
           <div className="thymos-hero-copy">
             <div className="thymos-pill thymos-reveal thymos-delay-1">
               <span className="thymos-pill-dot" />
-              Governed cognition runtime
+              Unified AI execution runtime
             </div>
 
             <h1 className="thymos-reveal thymos-delay-2">{siteConfig.headline}</h1>
@@ -224,7 +225,7 @@ export function ThymosLanding() {
             <div className="thymos-visual-stack">
               <div className="thymos-runtime-stage">
                 <div className="thymos-stage-topline">
-                  <span>open thymos / governed runtime</span>
+                  <span>open thymos / unified runtime</span>
                   <span>trajectory active</span>
                 </div>
 
@@ -259,7 +260,7 @@ export function ThymosLanding() {
                   </div>
                   <div className="thymos-console-line">
                     <span>receipt</span>
-                    <strong>worker shell receipt emitted</strong>
+                    <strong>sandbox worker receipt emitted</strong>
                   </div>
                 </div>
               </div>
@@ -290,21 +291,22 @@ export function ThymosLanding() {
         <section className="thymos-section" id="runtime">
           <div className="thymos-section-head">
             <span className="thymos-kicker">What OpenThymos is</span>
-            <h2>Where machine intelligence becomes bounded, auditable action.</h2>
+            <h2>One Rust runtime for coding-agent execution.</h2>
             <p>
-              OpenThymos is a model-agnostic execution runtime where cognition proposes, policy
-              decides, and the ledger preserves what actually happened.
+              OpenThymos is a model-agnostic execution framework where cognition proposes,
+              programmable capabilities cross governed execution boundaries, and every surface
+              observes the same ledgered run.
             </p>
           </div>
 
           <div className="thymos-runtime-grid">
             <article className="thymos-story-card">
               <span className="thymos-card-label">Runtime thesis</span>
-              <h3>Execution stays under system control.</h3>
+              <h3>Agent work stays under runtime control.</h3>
               <p>
-                The category is governed execution. Typed intents, signed writs, policy gates, and
-                commit-time verification give OpenThymos the properties serious builders expect
-                from infrastructure, not promptware.
+                The category is unified AI execution. Typed intents, signed writs, policy gates,
+                sandbox receipts, and commit-time verification give OpenThymos the properties
+                serious builders expect from infrastructure, not promptware.
               </p>
               <div className="thymos-story-metrics">
                 <div>
@@ -313,11 +315,11 @@ export function ThymosLanding() {
                 </div>
                 <div>
                   <span>effects</span>
-                  <strong>typed tool contracts</strong>
+                  <strong>programmable capabilities</strong>
                 </div>
                 <div>
-                  <span>history</span>
-                  <strong>replayable ledger</strong>
+                  <span>surfaces</span>
+                  <strong>CLI / VS Code / web</strong>
                 </div>
               </div>
             </article>
@@ -390,8 +392,8 @@ export function ThymosLanding() {
             <span className="thymos-kicker">Onboarding paths</span>
             <h2>Start from the surface that matches how you work.</h2>
             <p>
-              The CLI, sidebar, terminal, and web console all talk to the same runtime. Pick your
-              entry point, follow one quickstart, and the execution state stays consistent
+              The CLI, VS Code sidebar, interactive terminal shell, and web console all talk to the
+              same runtime. Pick your entry point and the execution state stays consistent
               everywhere.
             </p>
           </div>
@@ -427,10 +429,11 @@ export function ThymosLanding() {
         <section className="thymos-section" id="coding-agent">
           <div className="thymos-section-head">
             <span className="thymos-kicker">Coding-agent surface</span>
-            <h2>Repo-aware actions, governed like every other runtime effect.</h2>
+            <h2>Programmable capabilities inside a coding sandbox.</h2>
             <p>
-              The first high-value surface in OpenThymos is coding work: inspect a repository,
-              read the right files, patch code, run tests, and keep the full trajectory.
+              The first high-value OpenThymos workload is coding work: inspect a repository, read
+              files, patch code, run tests, and extend the capability set without changing the run
+              semantics.
             </p>
           </div>
 
@@ -579,11 +582,12 @@ export function ThymosLanding() {
 
         <section className="thymos-cta-shell thymos-section">
           <div className="thymos-cta-copy">
-            <span className="thymos-kicker">Deployable intelligence runtime</span>
-            <h2>OpenThymos turns models into governed execution.</h2>
+            <span className="thymos-kicker">Deployable coding-agent runtime</span>
+            <h2>OpenThymos turns model output into sandboxed execution.</h2>
             <p>
-              Run the live console, inspect the architecture, or read the code. The point is the
-              same in every path: execution stays bounded, typed, and replayable.
+              Run the live console, inspect the architecture, or add a capability manifest. The
+              point is the same in every path: coding-agent execution stays bounded, programmable,
+              and replayable.
             </p>
 
             <div className="thymos-hero-actions">
@@ -626,7 +630,7 @@ export function ThymosLanding() {
         <footer className="thymos-footer">
           <ThymosLogo />
           <div className="thymos-footer-copy">
-            <strong>OpenThymos is governed execution for AI systems.</strong>
+            <strong>OpenThymos is a unified governed execution runtime for coding agents.</strong>
             <span>
               An {siteConfig.org} project · Apache-2.0 ·{" "}
               <a href={siteConfig.issuesUrl} target="_blank" rel="noreferrer">

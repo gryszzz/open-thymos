@@ -1,6 +1,8 @@
 # Interfaces
 
 Thymos has multiple operator surfaces, but they are all clients of the same backend runtime.
+They share the same run state, capability registry, approvals, and ledger
+projection.
 
 ## Web console
 
@@ -22,6 +24,7 @@ Best for users who want a persistent terminal workflow attached to Thymos.
 
 - run id
 - execution phase
+- registered capabilities
 - operator state
 - counters
 - live execution log

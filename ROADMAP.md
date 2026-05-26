@@ -1,10 +1,11 @@
 # OpenThymos Roadmap
 
 This roadmap describes protocol evolution, not product packaging. Each phase
-extends the runtime substrate while preserving the core rule: cognition
-proposes, the runtime governs, and the ledger records the result.
+extends OpenThymos as a unified Rust execution runtime, framework, and sandbox
+for coding agents while preserving the core rule: cognition proposes, the
+runtime governs, and the ledger records the result.
 
-## Phase I - Deterministic Runtime
+## Phase I - Unified Deterministic Runtime
 
 ### Architectural Goals
 
@@ -13,11 +14,14 @@ proposes, the runtime governs, and the ledger records the result.
 - keep cognition outside the authority boundary
 - define world state as a fold over committed deltas
 - make policy traces first-class proposal data
+- keep CLI, VS Code, terminal, and web surfaces attached to one backend run
 
 ### Runtime Capabilities
 
 - signed capability writs
 - typed tool contracts
+- programmable capability manifests
+- path-confined coding sandbox and worker-backed shell/HTTP fabric
 - deterministic proposal compilation
 - pending approvals as ledger entries
 - local replay verification

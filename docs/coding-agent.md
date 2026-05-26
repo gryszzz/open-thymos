@@ -2,21 +2,22 @@
 layout: default
 title: Coding Agent
 eyebrow: Operator surface
-subtitle: Thymos turns coding work into a controlled execution loop instead of a prompt-and-tool guessing game.
+subtitle: OpenThymos turns coding work into a governed runtime loop with programmable capabilities and a sandbox boundary.
 permalink: /coding-agent/
 ---
 
 ## What the coding agent really is
 
-The Thymos coding agent is the first major surface built on top of the runtime.
+The OpenThymos coding agent is the first major workload built on top of the
+runtime.
 
 It is not just "an LLM with file tools."
 
 It is a coding workflow where the runtime:
 
 - plans a next step
-- chooses an allowed tool
-- executes that tool for real
+- chooses an allowed capability
+- executes that capability for real
 - observes the result
 - records the outcome
 - retries or adapts when the step fails
@@ -36,6 +37,10 @@ Typical tools involved:
 - `fs_patch`
 - `test_run`
 - `shell`
+
+Local operators can extend this set with manifest-backed capabilities loaded
+through `THYMOS_TOOL_MANIFEST_DIRS`, or with Rust `ToolContract`
+implementations when stronger validation or worker integration is needed.
 
 ## Why it keeps progressing
 
@@ -71,7 +76,8 @@ The coding agent is bounded by:
 - effect ceilings
 - time windows
 - approval gates
-- typed tool contracts
+- typed capability contracts
+- path confinement and worker-backed shell/HTTP isolation where configured
 
 The model proposes edits. The runtime decides whether they execute.
 

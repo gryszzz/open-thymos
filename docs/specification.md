@@ -28,12 +28,20 @@ contains a structured delta and one or more observations.
 scope, budget, effect ceiling, time window, tenant boundary, and delegation
 bounds.
 
+`Capability` is a registered effect contract. A capability MAY be implemented
+as a Rust `ToolContract`, a JSON manifest tool, or an MCP bridge tool. It MUST
+declare metadata, an input schema, an effect class, and a risk class.
+
 `Ledger` is the append-only record of trajectory entries.
 
 `World` is a deterministic projection obtained by folding committed deltas from
 the ledger.
 
 `Provider` is an adapter that implements the cognition contract.
+
+`Surface` is a client attached to the runtime, such as the CLI, VS Code
+sidebar, interactive terminal shell, HTTP API client, or web console. A surface
+MUST NOT become the source of execution truth.
 
 ## 2. Execution Grammar
 
@@ -48,7 +56,7 @@ Intent    := Author Kind Target Args Rationale Nonce
 ```
 
 The runtime MUST NOT execute an `Intent` directly. The runtime MUST compile an
-intent into a `Proposal` before any tool invocation.
+intent into a `Proposal` before any capability invocation.
 
 ## 3. Compilation
 
@@ -58,7 +66,7 @@ Compilation MUST evaluate the following stages in order:
 2. writ signature verification
 3. writ time-window check
 4. writ tool-scope binding
-5. tool registry resolution
+5. capability registry resolution
 6. budget projection
 7. tool argument validation
 8. tool precondition evaluation
@@ -71,7 +79,8 @@ Compilation returns one of:
 - `Suspended(Proposal, channel, reason)`
 - `Rejected(RejectionReason)`
 
-If any authority check fails, the compiler MUST reject before tool execution.
+If any authority check fails, the compiler MUST reject before capability
+execution.
 
 ## 4. Policy Decisions
 
@@ -92,10 +101,10 @@ MUST include evaluated rule names and the final decision.
 
 ## 5. Execution
 
-The runtime MAY invoke a tool only when a proposal is staged or when a
+The runtime MAY invoke a capability only when a proposal is staged or when a
 previously suspended proposal has been approved.
 
-A tool invocation receives validated arguments and a world projection. It
+A capability invocation receives validated arguments and a world projection. It
 returns an observation and a structured delta. The runtime MUST check
 postconditions before committing the result.
 

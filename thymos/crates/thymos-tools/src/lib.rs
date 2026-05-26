@@ -447,7 +447,14 @@ fn execute_http_request(
     let start = Instant::now();
     let mut req = match method {
         "POST" => client.post(url),
-        _ => client.get(url),
+        "PUT" => client.put(url),
+        "DELETE" => client.delete(url),
+        "GET" => client.get(url),
+        other => {
+            return Err(Error::ToolExecution(format!(
+                "unsupported http method '{other}'"
+            )))
+        }
     };
 
     if let Some(body) = body {
@@ -1819,6 +1826,12 @@ pub enum ManifestExecutor {
         method: String,
         #[serde(default)]
         body_template: Option<String>,
+        #[serde(default)]
+        allowlist: Vec<String>,
+        #[serde(default = "default_manifest_http_timeout_secs")]
+        timeout_secs: u64,
+        #[serde(default = "default_true")]
+        block_private_hosts: bool,
     },
     /// No-op executor — tool resolves and validates but produces an empty
     /// delta with a canned observation. Useful for dry-run / schema testing.
@@ -1828,6 +1841,121 @@ pub enum ManifestExecutor {
 
 fn default_get() -> String {
     "GET".into()
+}
+
+fn default_manifest_http_timeout_secs() -> u64 {
+    30
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl ToolManifest {
+    pub fn validate(&self) -> Result<()> {
+        validate_manifest_tool_name(&self.name)?;
+        validate_manifest_text("version", &self.version, 1, 64)?;
+        validate_manifest_text("description", &self.description, 1, 4096)?;
+
+        if !self.input_schema.is_object() {
+            return Err(Error::Other(format!(
+                "manifest tool '{}' input_schema must be a JSON object",
+                self.name
+            )));
+        }
+
+        match &self.executor {
+            ManifestExecutor::Shell { command_template } => {
+                validate_manifest_text("command_template", command_template, 1, 2048)?;
+                reject_nul("command_template", command_template)?;
+            }
+            ManifestExecutor::Http {
+                url_template,
+                method,
+                body_template,
+                allowlist,
+                timeout_secs,
+                ..
+            } => {
+                validate_manifest_text("url_template", url_template, 1, 4096)?;
+                reject_nul("url_template", url_template)?;
+
+                match method.as_str() {
+                    "GET" | "POST" | "PUT" | "DELETE" => {}
+                    other => {
+                        return Err(Error::Other(format!(
+                            "manifest tool '{}' uses unsupported http method '{other}'",
+                            self.name
+                        )))
+                    }
+                }
+
+                if *timeout_secs == 0 || *timeout_secs > 120 {
+                    return Err(Error::Other(format!(
+                        "manifest tool '{}' http timeout_secs must be between 1 and 120",
+                        self.name
+                    )));
+                }
+
+                for domain in allowlist {
+                    validate_manifest_domain(&self.name, domain)?;
+                }
+
+                if let Some(body_template) = body_template {
+                    validate_manifest_text("body_template", body_template, 0, 64 * 1024)?;
+                    reject_nul("body_template", body_template)?;
+                }
+            }
+            ManifestExecutor::Noop => {}
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_manifest_tool_name(name: &str) -> Result<()> {
+    validate_manifest_text("name", name, 1, 128)?;
+    let valid = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if !valid {
+        return Err(Error::Other(format!(
+            "manifest tool name '{name}' must contain only ASCII letters, digits, '_', '-', or '.'"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_manifest_text(field: &str, value: &str, min: usize, max: usize) -> Result<()> {
+    let len = value.len();
+    if len < min || len > max {
+        return Err(Error::Other(format!(
+            "manifest field '{field}' must be between {min} and {max} bytes"
+        )));
+    }
+    reject_nul(field, value)
+}
+
+fn reject_nul(field: &str, value: &str) -> Result<()> {
+    if value.contains('\0') {
+        return Err(Error::Other(format!(
+            "manifest field '{field}' must not contain NUL bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_manifest_domain(tool_name: &str, domain: &str) -> Result<()> {
+    validate_manifest_text("allowlist domain", domain, 1, 253)?;
+    let valid = domain
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'));
+    if !valid || domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
+        return Err(Error::Other(format!(
+            "manifest tool '{tool_name}' has invalid allowlist domain '{domain}'"
+        )));
+    }
+    Ok(())
 }
 
 /// A ToolContract implementation backed by a JSON manifest.
@@ -1843,11 +1971,21 @@ impl ManifestTool {
             .map_err(|e| Error::Other(format!("reading manifest {}: {e}", path.display())))?;
         let manifest: ToolManifest = serde_json::from_str(&contents)
             .map_err(|e| Error::Other(format!("parsing manifest {}: {e}", path.display())))?;
-        Ok(Self::from_manifest(manifest))
+        Self::try_from_manifest(manifest)
+    }
+
+    /// Create from an already-parsed manifest, validating before registration.
+    pub fn try_from_manifest(manifest: ToolManifest) -> Result<Self> {
+        manifest.validate()?;
+        Ok(Self::from_manifest_unchecked(manifest))
     }
 
     /// Create from an already-parsed manifest.
     pub fn from_manifest(manifest: ToolManifest) -> Self {
+        Self::try_from_manifest(manifest).expect("valid tool manifest")
+    }
+
+    fn from_manifest_unchecked(manifest: ToolManifest) -> Self {
         let meta = ToolContractMeta {
             name: manifest.name.clone(),
             version: manifest.version.clone(),
@@ -1944,50 +2082,34 @@ impl ToolContract for ManifestTool {
                 url_template,
                 method,
                 body_template,
+                allowlist,
+                timeout_secs,
+                block_private_hosts,
             } => {
-                use std::time::Instant;
-
                 let url = interpolate(url_template, inv.args, identity_escape);
-                let client = reqwest::blocking::Client::builder()
-                    .timeout(std::time::Duration::from_secs(30))
-                    .build()
-                    .map_err(|e| Error::ToolExecution(format!("http client: {e}")))?;
-
-                let start = Instant::now();
-                let mut req = match method.as_str() {
-                    "POST" => client.post(&url),
-                    "PUT" => client.put(&url),
-                    "DELETE" => client.delete(&url),
-                    _ => client.get(&url),
-                };
-
-                if let Some(bt) = body_template {
-                    let body = interpolate(bt, inv.args, identity_escape);
-                    req = req.header("content-type", "application/json").body(body);
+                let body = body_template
+                    .as_ref()
+                    .map(|bt| interpolate(bt, inv.args, identity_escape));
+                let mut headers = BTreeMap::new();
+                if body.is_some() {
+                    headers.insert("content-type".into(), "application/json".into());
                 }
-
-                let resp = req
-                    .send()
-                    .map_err(|e| Error::ToolExecution(format!("http: {e}")))?;
-                let elapsed = start.elapsed();
-                let status = resp.status().as_u16();
-                let body = resp.text().unwrap_or_default();
-
-                let body_truncated = if body.len() > 10_000 {
-                    format!("{}... (truncated, {} bytes)", &body[..10_000], body.len())
-                } else {
-                    body
-                };
+                let response = execute_http_request(
+                    &url,
+                    method,
+                    body.as_deref(),
+                    &headers,
+                    allowlist,
+                    *timeout_secs,
+                    *block_private_hosts,
+                )?;
 
                 Ok(ToolOutcome {
                     delta: StructuredDelta::default(),
                     observation: Observation {
                         tool: self.meta.name.clone(),
-                        output: serde_json::json!({
-                            "status": status,
-                            "body": body_truncated,
-                        }),
-                        latency_ms: elapsed.as_millis() as u64,
+                        output: response.output,
+                        latency_ms: response.latency_ms,
                     },
                 })
             }
@@ -2261,7 +2383,13 @@ impl ToolRegistry {
     /// Load a single tool manifest from a JSON file and register it.
     pub fn load_manifest(&mut self, path: &Path) -> Result<()> {
         let tool = ManifestTool::from_file(path)?;
-        self.tools.insert(tool.meta().name.clone(), Box::new(tool));
+        let name = tool.meta().name.clone();
+        if self.tools.contains_key(&name) {
+            return Err(Error::Other(format!(
+                "manifest tool '{name}' conflicts with an existing registered tool"
+            )));
+        }
+        self.tools.insert(name, Box::new(tool));
         Ok(())
     }
 
@@ -2271,14 +2399,20 @@ impl ToolRegistry {
         let entries = std::fs::read_dir(dir)
             .map_err(|e| Error::Other(format!("reading manifest dir {}: {e}", dir.display())))?;
 
-        let mut count = 0;
+        let mut paths = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                match self.load_manifest(&path) {
-                    Ok(()) => count += 1,
-                    Err(e) => eprintln!("warning: skipping manifest {}: {e}", path.display()),
-                }
+                paths.push(path);
+            }
+        }
+        paths.sort();
+
+        let mut count = 0;
+        for path in paths {
+            match self.load_manifest(&path) {
+                Ok(()) => count += 1,
+                Err(e) => eprintln!("warning: skipping manifest {}: {e}", path.display()),
             }
         }
         Ok(count)

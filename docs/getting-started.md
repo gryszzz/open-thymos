@@ -2,7 +2,7 @@
 layout: default
 title: Getting Started
 eyebrow: 5 minutes · easiest path first
-subtitle: Start the backend once, then attach from the surface you want to use.
+subtitle: Start the Rust runtime once, then attach from CLI, VS Code, terminal, or web.
 permalink: /getting-started/
 ---
 
@@ -10,7 +10,7 @@ permalink: /getting-started/
 
 You do **not** start a separate agent for every interface.
 
-You start the **Thymos runtime**, then attach to it from:
+You start the **OpenThymos runtime**, then attach to it from:
 
 - the web console
 - the CLI
@@ -19,7 +19,7 @@ You start the **Thymos runtime**, then attach to it from:
 
 All of those clients observe the same run state when they point at the same backend.
 
-## 1. Start the Thymos runtime
+## 1. Start the OpenThymos runtime
 
 ```bash
 git clone https://github.com/gryszzz/OpenThymos.git
@@ -151,7 +151,42 @@ OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_API_KEY=local cargo run -p thymo
 
 Then create runs with the provider you want from the web app, CLI, or API.
 
-## 5. Understand what you are looking at
+## 5. Load programmable capabilities
+
+Capabilities are registered on the server, so every surface sees the same
+available tools.
+
+```bash
+mkdir -p tools
+cat > tools/repo_word_count.json <<'JSON'
+{
+  "name": "repo_word_count",
+  "version": "0.1.0",
+  "description": "Count words in a repository file",
+  "effect_class": "read",
+  "risk_class": "low",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" }
+    },
+    "required": ["path"]
+  },
+  "executor": {
+    "kind": "shell",
+    "command_template": "wc -w {path}"
+  }
+}
+JSON
+
+cd thymos
+THYMOS_TOOL_MANIFEST_DIRS=../tools cargo run -p thymos-server
+```
+
+Read the full capability model in
+[Programmable Capabilities]({{ '/programmable-capabilities' | relative_url }}).
+
+## 6. Understand what you are looking at
 
 Every run follows the same structure:
 
@@ -171,7 +206,7 @@ The tool runs for real and the runtime observes the result.
 
 The run records a commit, rejection, suspension, failure, or completion event.
 
-## 6. Production-shaped mode
+## 7. Production-shaped mode
 
 For persistent, safer runtime behavior:
 
@@ -187,6 +222,7 @@ THYMOS_MARKETPLACE_DB_PATH=thymos-marketplace.db \
 THYMOS_ALLOWED_ORIGINS=https://your-console.example.com \
 THYMOS_MAX_CONCURRENT_RUNS_GLOBAL=100 \
 THYMOS_MAX_CONCURRENT_RUNS_PER_TENANT=20 \
+THYMOS_TOOL_MANIFEST_DIRS=../tools \
 THYMOS_TOOL_FABRIC=worker \
 THYMOS_WORKER_BIN=$PWD/target/release/thymos-worker \
 cargo run -p thymos-server
@@ -196,6 +232,7 @@ Use this when you want:
 
 - file-backed run history
 - worker-backed tool execution
+- startup-loaded programmable capabilities
 - explicit browser origin policy
 - deploy-time concurrency tuning
 - a more production-shaped runtime boundary
@@ -204,5 +241,6 @@ Use this when you want:
 
 - [Interfaces]({{ '/interfaces' | relative_url }}) — pick the surface that fits you
 - [Coding Agent]({{ '/coding-agent' | relative_url }}) — understand the autonomous coding loop
+- [Programmable Capabilities]({{ '/programmable-capabilities' | relative_url }}) — extend the runtime safely
 - [Architecture]({{ '/architecture' | relative_url }}) — see how the shared runtime is built
 - [API Reference]({{ '/api-reference' | relative_url }}) — drive it over HTTP

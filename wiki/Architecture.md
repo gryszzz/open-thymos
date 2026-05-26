@@ -1,16 +1,18 @@
 # Architecture
 
-Thymos separates proposing work from executing work.
+Thymos separates proposing work from executing work, then exposes the same
+execution truth across CLI, VS Code, terminal, and web surfaces.
 
 ## Flow
 
-`Cognition -> Intent -> Proposal -> Execution -> Result`
+`Cognition -> Intent -> Proposal -> Commit`
 
 ## What the runtime owns
 
 - authority
 - policy checks
-- tool execution
+- capability execution
+- sandbox boundaries
 - failure handling
 - logging
 - completion state
@@ -24,6 +26,7 @@ Because the runtime owns execution truth, multiple interfaces can attach to the 
 - `thymos-cognition`
 - `thymos-runtime`
 - `thymos-tools`
+- `thymos-worker`
 - `thymos-policy`
 - `thymos-ledger`
 - `thymos-server`

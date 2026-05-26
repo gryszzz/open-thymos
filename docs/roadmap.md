@@ -8,18 +8,22 @@ permalink: /roadmap/
 
 # Roadmap
 
-This roadmap tracks runtime semantics and infrastructure maturity. The root
-roadmap is maintained in [../ROADMAP.md](../ROADMAP.md).
+This roadmap tracks runtime semantics and infrastructure maturity for
+OpenThymos as a unified Rust execution runtime, framework, and sandbox for
+coding agents. The root roadmap is maintained in [../ROADMAP.md](../ROADMAP.md).
 
-## Phase I - Deterministic Runtime
+## Phase I - Unified Deterministic Runtime
 
 Architectural goal: stabilize the Intent -> Proposal -> Commit cycle and make
-the ledger the source of execution truth.
+the ledger the source of execution truth across CLI, VS Code, terminal, and web
+surfaces.
 
 Runtime capabilities:
 
 - signed capability writs
-- typed tool contracts
+- typed capability contracts
+- programmable capability manifests
+- path-confined coding sandbox and worker-backed shell/HTTP fabric
 - deterministic proposal compilation
 - local replay verification
 - world projection by ledger fold

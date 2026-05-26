@@ -29,6 +29,13 @@ The runtime never executes the model's shell string itself. It serializes a
 policy the request declares and returns a `ToolWorkerResponse` with an
 execution receipt.
 
+This worker path is the production sandbox for high-risk built-in capabilities.
+Manifest capabilities are intended for low-risk local extension; promote risky
+manifest behavior into a Rust `ToolContract` or hardened external service when
+you need worker receipts and stronger isolation. Manifest loading validates
+tool names, prevents shadowing built-in capabilities, loads files in stable
+order, and blocks private hosts for HTTP manifest calls by default.
+
 ## THYMOS-native shell
 
 The shell tool is not a thin `Command::new` wrapper. Every invocation carries:

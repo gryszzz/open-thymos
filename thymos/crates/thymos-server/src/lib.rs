@@ -12,6 +12,7 @@
 //!   POST   /runs/:id/approvals/:channel — approve/deny a pending proposal
 
 use std::collections::HashMap;
+use std::path::Path as FsPath;
 use std::sync::{Arc, Mutex};
 
 pub mod audit;
@@ -88,6 +89,7 @@ pub struct ServerConfig {
     pub cors_allowed_origins: Option<Vec<String>>,
     pub max_concurrent_runs_per_tenant: u32,
     pub max_concurrent_runs_global: u32,
+    pub tool_manifest_dirs: Vec<String>,
 }
 
 impl ServerConfig {
@@ -106,6 +108,8 @@ impl ServerConfig {
             std::env::var("THYMOS_TOOL_FABRIC").unwrap_or_else(|_| "in_process".into());
         let worker_bin = std::env::var("THYMOS_WORKER_BIN").ok();
         let cors_allowed_origins = parse_list_env("THYMOS_ALLOWED_ORIGINS");
+        let tool_manifest_dirs =
+            parse_list_envs(&["THYMOS_TOOL_MANIFEST_DIRS", "THYMOS_TOOL_MANIFEST_DIR"]);
         let max_concurrent_runs_per_tenant = parse_u32_env(
             "THYMOS_MAX_CONCURRENT_RUNS_PER_TENANT",
             MAX_CONCURRENT_RUNS_PER_TENANT,
@@ -170,8 +174,23 @@ impl ServerConfig {
             cors_allowed_origins,
             max_concurrent_runs_per_tenant,
             max_concurrent_runs_global,
+            tool_manifest_dirs,
         })
     }
+}
+
+fn parse_list_envs(keys: &[&str]) -> Vec<String> {
+    let mut values = Vec::new();
+    for key in keys {
+        if let Some(parsed) = parse_list_env(key) {
+            for value in parsed {
+                if !values.contains(&value) {
+                    values.push(value);
+                }
+            }
+        }
+    }
+    values
 }
 
 fn parse_list_env(key: &str) -> Option<Vec<String>> {
@@ -358,17 +377,30 @@ pub struct ApprovalRequest {
 
 /// Build a runtime with a file-backed ledger.
 pub fn persistent_runtime(ledger_path: &str) -> Arc<Runtime> {
+    persistent_runtime_with_capabilities(ledger_path, &[])
+}
+
+/// Build a runtime with a file-backed ledger and manifest-backed capabilities.
+pub fn persistent_runtime_with_capabilities(
+    ledger_path: &str,
+    tool_manifest_dirs: &[String],
+) -> Arc<Runtime> {
     let ledger = Ledger::open(ledger_path).expect("open file-backed ledger");
-    build_runtime(ledger)
+    build_runtime(ledger, tool_manifest_dirs)
 }
 
 /// Build the default runtime with an in-memory ledger (for testing).
 pub fn default_runtime() -> Arc<Runtime> {
-    let ledger = Ledger::open_in_memory().expect("open in-memory ledger");
-    build_runtime(ledger)
+    default_runtime_with_capabilities(&[])
 }
 
-fn build_runtime(ledger: Ledger) -> Arc<Runtime> {
+/// Build the default runtime with manifest-backed capabilities.
+pub fn default_runtime_with_capabilities(tool_manifest_dirs: &[String]) -> Arc<Runtime> {
+    let ledger = Ledger::open_in_memory().expect("open in-memory ledger");
+    build_runtime(ledger, tool_manifest_dirs)
+}
+
+fn build_runtime(ledger: Ledger, tool_manifest_dirs: &[String]) -> Arc<Runtime> {
     let mut tools = ToolRegistry::new();
     tools.register(KvSetTool::default());
     tools.register(KvGetTool::default());
@@ -385,16 +417,23 @@ fn build_runtime(ledger: Ledger) -> Arc<Runtime> {
     tools.register(GrepTool::default());
     tools.register(TestRunTool::default());
 
+    load_programmable_capabilities(&mut tools, tool_manifest_dirs);
+
     // To register MCP server tools at startup:
     //   tools.register_mcp_server("my-server", &["uvx", "my-mcp-server"])
     //       .expect("spawn MCP server");
 
-    // To load tool manifests from a directory:
-    //   tools.load_manifest_dir(std::path::Path::new("./tools"))
-    //       .expect("load tool manifests");
-
     let policy = PolicyEngine::new().with(WritAuthorityPolicy);
     Arc::new(Runtime::new(ledger, tools, policy))
+}
+
+fn load_programmable_capabilities(tools: &mut ToolRegistry, tool_manifest_dirs: &[String]) {
+    for dir in tool_manifest_dirs {
+        let count = tools
+            .load_manifest_dir(FsPath::new(dir))
+            .unwrap_or_else(|e| panic!("load tool manifests from {dir}: {e}"));
+        eprintln!("capabilities: loaded {count} manifest tool(s) from {dir}");
+    }
 }
 
 /// Build the axum Router.

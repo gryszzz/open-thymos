@@ -10,6 +10,12 @@ cargo run -p thymos-server
 
 Default server URL: `http://localhost:3001`
 
+Optional programmable capabilities:
+
+```bash
+THYMOS_TOOL_MANIFEST_DIRS=../tools cargo run -p thymos-server
+```
+
 ## 2. Choose your interface
 
 ### Web console
@@ -37,6 +43,6 @@ Build the extension in `thymos/clients/vscode`, launch it in Extension Developme
 
 Every run goes through:
 
-`Intent -> Proposal -> Execution -> Result`
+`Intent -> Proposal -> Commit`
 
 That flow is the same no matter which interface you use.

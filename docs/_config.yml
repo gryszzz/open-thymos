@@ -1,9 +1,11 @@
 title: OpenThymos
-tagline: Execution substrate for governed machine cognition.
+tagline: Unified AI execution runtime, framework, and sandbox for coding agents.
 description: >-
-  OpenThymos is a governed cognition runtime. Cognition proposes intents;
-  the runtime compiles proposals, enforces capability writs, applies policy,
-  records commits, and replays the execution ledger into deterministic state.
+  OpenThymos is a Rust execution framework for coding agents. Cognition
+  proposes intents; the runtime compiles proposals, enforces capability writs,
+  applies policy, routes approved capabilities through governed execution
+  boundaries, and exposes one replayable run state across CLI, VS Code,
+  terminal, and web surfaces.
 url: "https://gryszzz.github.io"
 baseurl: "/OpenThymos"
 repo: "https://github.com/gryszzz/OpenThymos"

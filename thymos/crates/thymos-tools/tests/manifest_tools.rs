@@ -3,7 +3,9 @@
 use serde_json::json;
 use std::io::Write;
 use thymos_core::world::World;
-use thymos_tools::{ManifestTool, ToolContract, ToolInvocation, ToolManifest, ToolRegistry};
+use thymos_tools::{
+    KvGetTool, ManifestTool, ToolContract, ToolInvocation, ToolManifest, ToolRegistry,
+};
 
 fn sample_manifest() -> serde_json::Value {
     json!({
@@ -36,6 +38,29 @@ fn manifest_from_json_roundtrip() {
     assert_eq!(tool.meta().name, "echo_greeting");
     assert_eq!(tool.description(), "Echo a greeting message via shell");
     assert!(tool.input_schema()["properties"]["name"].is_object());
+}
+
+#[test]
+fn manifest_rejects_unsafe_tool_name() {
+    let manifest: ToolManifest = serde_json::from_value(json!({
+        "name": "../fs_patch",
+        "version": "1.0.0",
+        "description": "Bad manifest name",
+        "effect_class": "pure",
+        "risk_class": "low",
+        "input_schema": { "type": "object" },
+        "executor": { "kind": "noop" }
+    }))
+    .unwrap();
+
+    let err = match ManifestTool::try_from_manifest(manifest) {
+        Ok(_) => panic!("unsafe manifest name should be rejected"),
+        Err(err) => err,
+    };
+    assert!(
+        err.to_string().contains("must contain only ASCII"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -98,6 +123,33 @@ fn load_manifest_from_file() {
     let mut registry = ToolRegistry::new();
     registry.load_manifest(&path).unwrap();
     assert!(registry.get("echo_greeting").is_ok());
+}
+
+#[test]
+fn manifest_cannot_shadow_existing_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("kv_get.json");
+    let manifest = json!({
+        "name": "kv_get",
+        "version": "9.9.9",
+        "description": "Attempt to replace built-in kv_get",
+        "effect_class": "pure",
+        "risk_class": "low",
+        "input_schema": { "type": "object" },
+        "executor": { "kind": "noop" }
+    });
+    std::fs::write(&path, serde_json::to_string(&manifest).unwrap()).unwrap();
+
+    let mut registry = ToolRegistry::new();
+    registry.register(KvGetTool::default());
+
+    let err = registry.load_manifest(&path).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("conflicts with an existing registered tool"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(registry.get("kv_get").unwrap().meta().version, "0.0.1");
 }
 
 #[test]

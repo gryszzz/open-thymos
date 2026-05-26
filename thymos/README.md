@@ -4,13 +4,15 @@
 
 # Thymos Rust Workspace
 
-**The execution kernel behind the Thymos product surfaces.**
+**The Rust execution framework and sandbox behind the OpenThymos coding-agent surfaces.**
 
 </div>
 
 ---
 
-This directory contains the Rust implementation of the Thymos runtime, server, CLI, worker boundary, and core execution model.
+This directory contains the Rust implementation of the OpenThymos runtime,
+server, CLI, terminal shell, worker sandbox, programmable capability layer, and
+core execution model.
 
 If the top-level README explains **what Thymos is**, this README explains **where the runtime lives**.
 
@@ -21,7 +23,7 @@ If the top-level README explains **what Thymos is**, this README explains **wher
 - `thymos-cli` — terminal client and interactive shell
 - `thymos-worker` — worker boundary for higher-risk shell/http execution
 - `thymos-cognition` — model adapters
-- `thymos-tools` — typed tools for code, shell, HTTP, memory, and delegation
+- `thymos-tools` — typed tools, manifest capabilities, MCP bridge tools, shell, HTTP, memory, and delegation
 - `thymos-ledger` — durable execution history
 - `thymos-policy` — capability and approval enforcement
 
@@ -29,7 +31,7 @@ If the top-level README explains **what Thymos is**, this README explains **wher
 
 The runtime takes a natural-language task and drives an execution loop:
 
-`Intent -> Proposal -> Execution -> Result`
+`Intent -> Proposal -> Commit`
 
 That loop is shared across:
 
@@ -40,12 +42,25 @@ That loop is shared across:
 
 Every surface can observe the same run because the server exposes a unified execution session and live streaming state.
 
+Capabilities are programmable. First-party tools implement `ToolContract` in
+Rust; local operators can load JSON manifest tools at startup with
+`THYMOS_TOOL_MANIFEST_DIRS`; MCP bridge tools register into the same tool
+registry. Writ scopes and policy decide which capability can execute, while
+path confinement and `thymos-worker` provide the sandbox boundary for built-in
+coding, shell, and HTTP effects.
+
 ## Quick Start
 
 ### Start the runtime server
 
 ```bash
 cargo run -p thymos-server
+```
+
+### Start with local capability manifests
+
+```bash
+THYMOS_TOOL_MANIFEST_DIRS=../tools cargo run -p thymos-server
 ```
 
 ### Run a task from the CLI
@@ -72,6 +87,7 @@ Today the runtime supports:
 - approval suspension and resume flows
 - cancellation and resume
 - shared execution sessions for operator-facing clients
+- programmable capability manifests loaded at runtime
 - world replay and branching
 - local and hosted cognition providers
 
@@ -103,4 +119,5 @@ cargo test --workspace
 - [Top-level README](../README.md)
 - [Getting Started](../docs/getting-started.md)
 - [Architecture](../docs/architecture.md)
+- [Programmable Capabilities](../docs/programmable-capabilities.md)
 - [API Reference](../docs/api-reference.md)

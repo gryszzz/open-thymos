@@ -2,7 +2,7 @@
 layout: default
 title: Interfaces
 eyebrow: Same runtime, different entry points
-subtitle: Pick the surface that matches how you work. Thymos keeps the backend state unified.
+subtitle: Pick CLI, VS Code, terminal, or web. OpenThymos keeps one backend execution state.
 permalink: /interfaces/
 ---
 
@@ -11,6 +11,8 @@ permalink: /interfaces/
 The interfaces are **clients**, not separate runtimes.
 
 If they point at the same Thymos server, they can all observe the same run.
+They also share the same registered capability set, writ scope model, approval
+state, and replayable ledger.
 
 That means a task can begin in one place and be followed in another:
 
@@ -18,6 +20,7 @@ That means a task can begin in one place and be followed in another:
 - inspect from the web console
 - approve from the VS Code sidebar
 - continue from a terminal shell
+- replay the same trajectory later from any client
 
 ## Web console
 
@@ -66,6 +69,7 @@ The shell is useful when you want the same runtime semantics without leaving a t
 - run id
 - trajectory id
 - execution phase
+- registered capability names
 - operator state
 - live execution log
 - approvals

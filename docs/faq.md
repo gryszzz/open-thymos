@@ -6,33 +6,45 @@ subtitle: The questions new users usually ask first.
 permalink: /faq/
 ---
 
-## Is Thymos a chatbot?
+## Is OpenThymos a chatbot?
 
-No. Thymos is an execution runtime. A model can drive it, but the runtime owns execution, logging, approvals, and completion state.
+No. OpenThymos is a Rust execution runtime and framework. A model can drive it,
+but the runtime owns execution, sandboxing, logging, approvals, replay, and
+completion state.
 
-## Is Thymos only for coding?
+## Is OpenThymos only for coding?
 
-No, but coding is the first reference surface today. The current runtime path is exercised through repository work, file operations, tests, shell commands, and observable execution loops.
+No, but coding agents are the first reference workload. The current runtime
+path is exercised through repository work, file operations, tests, shell
+commands, programmable capabilities, and observable execution loops.
 
 ## Do the CLI, web app, and VS Code extension each run their own agent?
 
-No. They can all connect to the same backend runtime and observe the same run.
+No. CLI, web, VS Code, and terminal shell clients can all connect to the same
+backend runtime and observe the same run.
 
 ## What does "agentic" mean here?
 
 It means the runtime keeps working through a task: plan, act, observe, recover, and continue until the task is resolved or blocked.
 
-## What keeps Thymos from becoming a free-for-all tool runner?
+## What keeps OpenThymos from becoming a free-for-all tool runner?
 
-Signed writs, policy checks, tool scopes, budgets, approvals, typed tools, and the execution loop all constrain what the agent can do.
+Signed writs, policy checks, capability scopes, budgets, approvals, typed
+contracts, path confinement, worker-backed shell/HTTP isolation, and the
+execution loop all constrain what the agent can do.
 
-## Can Thymos recover from failures?
+## Can OpenThymos recover from failures?
 
 Yes. Transient cognition failures can be retried, and staged execution failures are surfaced back into the run so the agent can adapt rather than simply crash.
 
 ## Can I use local models?
 
 Yes. LM Studio, Ollama, and other OpenAI-compatible local endpoints can all drive the same runtime.
+
+## Can I add my own capabilities?
+
+Yes. You can implement Rust `ToolContract`s, load JSON manifests through
+`THYMOS_TOOL_MANIFEST_DIRS`, or bridge tools from an MCP server.
 
 ## What is the "execution session"?
 
