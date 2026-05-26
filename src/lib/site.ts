@@ -8,14 +8,28 @@ function normalizeBasePath(value: string | undefined): string {
   return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
 }
 
+const defaultSiteUrl = "https://gryszzz.github.io/OpenThymos";
+const allowedSiteHosts = new Set(["gryszzz.github.io", "localhost", "127.0.0.1", "::1"]);
+
 function normalizeSiteUrl(value: string | undefined): string {
   const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
 
-  if (trimmed) {
-    return trimmed;
+  if (!trimmed) {
+    return defaultSiteUrl;
   }
 
-  return "https://gryszzz.github.io/OpenThymos";
+  try {
+    const url = new URL(trimmed);
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+
+    if ((url.protocol === "http:" || url.protocol === "https:") && allowedSiteHosts.has(hostname)) {
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+    return defaultSiteUrl;
+  }
+
+  return defaultSiteUrl;
 }
 
 const basePath = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH);
