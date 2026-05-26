@@ -7,8 +7,8 @@ description: >-
   boundaries, and exposes one replayable run state across CLI, VS Code,
   terminal, and web surfaces.
 url: "https://gryszzz.github.io"
-baseurl: "/OpenThymos"
-repo: "https://github.com/gryszzz/OpenThymos"
+baseurl: "/open-thymos"
+repo: "https://github.com/gryszzz/open-thymos"
 author: "Exponet Labs"
 
 markdown: kramdown

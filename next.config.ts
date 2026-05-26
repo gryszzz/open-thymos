@@ -11,7 +11,7 @@ function normalizeBasePath(value: string | undefined): string {
 }
 
 const isGithubPages = process.env.GITHUB_ACTIONS === "true";
-const repoName = process.env.GITHUB_REPOSITORY?.split("/")[1] ?? "OpenThymos";
+const repoName = process.env.GITHUB_REPOSITORY?.split("/")[1] ?? "open-thymos";
 const inferredBasePath = isGithubPages ? `/${repoName}` : "";
 const basePath = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH || inferredBasePath);
 

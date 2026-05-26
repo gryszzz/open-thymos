@@ -36,9 +36,9 @@ ARG CREATED=1970-01-01T00:00:00Z
 
 LABEL org.opencontainers.image.title="OpenThymos Runtime" \
       org.opencontainers.image.description="Execution substrate for governed machine cognition. Separates cognition from execution through the typed Intent -> Proposal -> Commit protocol." \
-      org.opencontainers.image.url="https://github.com/gryszzz/OpenThymos" \
-      org.opencontainers.image.source="https://github.com/gryszzz/OpenThymos" \
-      org.opencontainers.image.documentation="https://github.com/gryszzz/OpenThymos#readme" \
+      org.opencontainers.image.url="https://github.com/gryszzz/open-thymos" \
+      org.opencontainers.image.source="https://github.com/gryszzz/open-thymos" \
+      org.opencontainers.image.documentation="https://github.com/gryszzz/open-thymos#readme" \
       org.opencontainers.image.vendor="Exponet Labs" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.base.name="docker.io/library/debian:trixie-slim" \

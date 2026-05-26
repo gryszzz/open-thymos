@@ -8,7 +8,7 @@ function normalizeBasePath(value: string | undefined): string {
   return `/${trimmed.replace(/^\/+|\/+$/g, "")}`;
 }
 
-const defaultSiteUrl = "https://gryszzz.github.io/OpenThymos";
+const defaultSiteUrl = "https://gryszzz.github.io/open-thymos";
 const allowedSiteHosts = new Set(["gryszzz.github.io", "localhost", "127.0.0.1", "::1"]);
 
 function normalizeSiteUrl(value: string | undefined): string {
@@ -33,7 +33,7 @@ function normalizeSiteUrl(value: string | undefined): string {
 }
 
 const basePath = normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH);
-const githubUrl = "https://github.com/gryszzz/OpenThymos";
+const githubUrl = "https://github.com/gryszzz/open-thymos";
 
 export const siteConfig = {
   name: process.env.NEXT_PUBLIC_APP_NAME || "OpenThymos",

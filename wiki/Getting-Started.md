@@ -3,8 +3,8 @@
 ## 1. Start the backend runtime
 
 ```bash
-git clone https://github.com/gryszzz/OpenThymos.git
-cd OpenThymos/thymos
+git clone https://github.com/gryszzz/open-thymos.git
+cd open-thymos/thymos
 cargo run -p thymos-server
 ```
 

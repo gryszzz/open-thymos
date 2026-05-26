@@ -111,7 +111,7 @@ if (hasCommand("gh")) {
     const pages = JSON.parse(
       run("gh", [
         "api",
-        "repos/gryszzz/OpenThymos/pages",
+        "repos/gryszzz/open-thymos/pages",
         "--jq",
         "{html_url, custom_domain, cname, source, build_type, status}",
       ]),
@@ -126,7 +126,7 @@ if (hasCommand("gh")) {
       );
     }
 
-    if (pages.html_url === "https://gryszzz.github.io/OpenThymos/") {
+    if (pages.html_url === "https://gryszzz.github.io/open-thymos/") {
       pass("GitHub Pages URL", pages.html_url);
     } else {
       fail("GitHub Pages URL", pages.html_url);

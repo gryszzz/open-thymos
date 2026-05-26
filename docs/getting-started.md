@@ -22,8 +22,8 @@ All of those clients observe the same run state when they point at the same back
 ## 1. Start the OpenThymos runtime
 
 ```bash
-git clone https://github.com/gryszzz/OpenThymos.git
-cd OpenThymos/thymos
+git clone https://github.com/gryszzz/open-thymos.git
+cd open-thymos/thymos
 cargo run -p thymos-server
 ```
 
@@ -67,7 +67,7 @@ Preview the static Pages export locally:
 npm run pages:preview
 ```
 
-The public site is served from `https://gryszzz.github.io/OpenThymos/`.
+The public site is served from `https://gryszzz.github.io/open-thymos/`.
 
 Use this when you want:
 

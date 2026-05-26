@@ -9,7 +9,7 @@
 **Intent -> Proposal -> Commit**
 
 <p>
-  <a href="https://gryszzz.github.io/OpenThymos/"><strong>Documentation</strong></a>
+  <a href="https://gryszzz.github.io/open-thymos/"><strong>Documentation</strong></a>
   |
   <a href="docs/specification.md"><strong>Specification</strong></a>
   |
