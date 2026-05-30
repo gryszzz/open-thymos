@@ -1,5 +1,5 @@
 <div align="center">
-
+  
 <img src="thymos/Thymos-logo.PNG" alt="Thymos" width="150" height="200" />
 
 # open-thymos
@@ -165,3 +165,6 @@ The existing agent ecosystem collapses cognition and execution into one loop  a 
 OpenThymos separates intent from authority, authority from compilation, and compilation from execution. None of these boundaries are optional.
 
 The goal is not to maximize surface area. The goal is to define small, durable runtime semantics for governed cognition  semantics that remain legible decades from now.
+
+<img width="1402" height="1122" alt="0700A45D-0DDB-4919-B931-23FCAC999AAA" src="https://github.com/user-attachments/assets/132526e7-a94b-47fe-b80b-9dc72c88e9a2" />
+
