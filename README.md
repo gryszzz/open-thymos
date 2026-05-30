@@ -1,6 +1,6 @@
 <div align="center">
   
-<img src="thymos/Thymos-logo.PNG" alt="Thymos" width="150" height="200" />
+<img width="250" height="170" alt="Untitled - May 30, 2026 at 15 49 41" src="https://github.com/user-attachments/assets/cf8381e2-8bf0-48f9-a55f-d0e804b2fe0f" />
 
 # open-thymos
 
