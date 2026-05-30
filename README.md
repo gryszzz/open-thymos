@@ -12,7 +12,7 @@
 ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
 </div>
-# open-thymos
+ open-thymos
 
 </div>
 
