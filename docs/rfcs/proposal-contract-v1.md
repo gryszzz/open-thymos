@@ -249,8 +249,8 @@ are deterministic and follow the pattern established by `Budget` fields.
 - [x] `proposal_status_rejected_serializes`: embeds reason
 - [x] `proposal_status_roundtrips`: all three variants survive serde roundtrip
 - [x] Compiler: `RequireApproval` decision → `Suspended { channel, reason }` status
-- [ ] Integration: `PendingApproval` ledger entry round-trips with new status format
-- [ ] Replay: pre-RFC ledger with `PendingApproval` entries returns a clear
+- [x] Integration: `PendingApproval` ledger entry round-trips with new status format
+- [x] Replay: pre-RFC ledger with `PendingApproval` entries returns a clear
   deserialization error rather than silently misfiring
 
 ## Unresolved Questions

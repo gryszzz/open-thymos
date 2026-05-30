@@ -237,7 +237,10 @@ mod tests {
         commit::{Commit, CommitBody, Observation},
         delta::{DeltaOp, StructuredDelta},
         ids::{ProposalId, WritId},
-        COMPILER_VERSION,
+        proposal::{
+            ExecutionPlan, PolicyDecision, PolicyTrace, Proposal, ProposalBody, ProposalStatus,
+        },
+        IntentId, COMPILER_VERSION,
     };
 
     fn trivial_commit(traj: TrajectoryId, parent: Option<CommitId>, seq: u64) -> Commit {
@@ -423,5 +426,188 @@ mod tests {
             },
         );
         verify_integrity_entries(&[branch]).expect("branch as first entry must verify");
+    }
+
+    // ── RFC proposal-contract-v1: PendingApproval compatibility ─────────────
+
+    fn suspended_proposal(channel: &str, reason: &str) -> Proposal {
+        let body = ProposalBody {
+            intent_id: IntentId::ZERO,
+            writ_id: WritId(ContentHash::ZERO),
+            plan: ExecutionPlan {
+                tool: "kv_set".into(),
+                args: serde_json::json!({"key": "k", "value": "v"}),
+            },
+            policy_trace: PolicyTrace {
+                rules_evaluated: vec!["writ.authority".into()],
+                decision: PolicyDecision::RequireApproval {
+                    channel: channel.into(),
+                    reason: reason.into(),
+                },
+            },
+            status: ProposalStatus::Suspended {
+                channel: channel.into(),
+                reason: reason.into(),
+            },
+        };
+        Proposal::new(body).unwrap()
+    }
+
+    /// RFC test-plan item: `PendingApproval` ledger entry round-trips with the
+    /// new tagged `ProposalStatus` format. Writes via the real append path,
+    /// reads via the SQLite-backed `entries()`, and verifies (a) integrity
+    /// passes (b) the deserialized status is the same tagged variant with the
+    /// same channel/reason.
+    #[test]
+    fn pending_approval_round_trips_with_new_status_format() {
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"pending-roundtrip");
+        ledger.append_root(traj, "test").unwrap();
+
+        let proposal = suspended_proposal("ops", "high cost");
+        let proposal_id = proposal.id;
+
+        ledger
+            .append_pending_approval(traj, proposal, "ops".into(), "high cost".into())
+            .expect("append pending approval");
+
+        // Integrity must pass (hash chain + parent + seq + trajectory cohesion).
+        ledger
+            .verify_integrity(traj)
+            .expect("integrity must hold for PendingApproval entries");
+
+        let entries = ledger.entries(traj).unwrap();
+        assert_eq!(entries.len(), 2, "root + pending_approval");
+        let pending = entries
+            .iter()
+            .find(|e| matches!(e.kind, EntryKind::PendingApproval))
+            .expect("pending_approval entry present");
+
+        match &pending.payload {
+            EntryPayload::PendingApproval {
+                proposal,
+                channel,
+                reason,
+            } => {
+                assert_eq!(proposal.id, proposal_id, "ProposalId stable across ledger");
+                assert_eq!(channel, "ops");
+                assert_eq!(reason, "high cost");
+                match &proposal.body.status {
+                    ProposalStatus::Suspended { channel: c, reason: r } => {
+                        // Per RFC invariants: status carries same channel/reason
+                        // as the surrounding entry.
+                        assert_eq!(c, channel);
+                        assert_eq!(r, reason);
+                    }
+                    other => panic!("expected Suspended status, got {other:?}"),
+                }
+            }
+            other => panic!("expected PendingApproval payload, got {other:?}"),
+        }
+    }
+
+    /// RFC test-plan item: a pre-RFC `PendingApproval` payload (where
+    /// `ProposalStatus` serialized as a plain string like
+    /// `"suspended_for_approval"`) must fail to deserialize under the new
+    /// runtime — and the error MUST clearly point at the status field, not
+    /// silently misfire as a different variant.
+    ///
+    /// The RFC's compatibility section commits to: "Operators should treat
+    /// pre-RFC `PendingApproval` entries as incompatible." This test is the
+    /// runtime-side proof of that commitment.
+    #[test]
+    fn pre_rfc_pending_approval_fails_to_deserialize_cleanly() {
+        // Synthetic pre-RFC payload. Mimics what a runtime built before the
+        // proposal-contract-v1 RFC would have written to the ledger:
+        //   - status is the bare string "suspended_for_approval"
+        //     (old unit-variant serialization)
+        //   - no routing_evidence field (didn't exist yet)
+        let pre_rfc_payload = serde_json::json!({
+            "type": "pending_approval",
+            "proposal": {
+                "id": "0000000000000000000000000000000000000000000000000000000000000000",
+                "body": {
+                    "intent_id": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "writ_id":   "0000000000000000000000000000000000000000000000000000000000000000",
+                    "plan": {
+                        "tool": "kv_set",
+                        "args": {"key": "k"}
+                    },
+                    "policy_trace": {
+                        "rules_evaluated": [],
+                        "decision": {"kind": "permit"}
+                    },
+                    "status": "suspended_for_approval"
+                }
+            },
+            "channel": "ops",
+            "reason": "needs review"
+        });
+
+        let result: std::result::Result<EntryPayload, _> =
+            serde_json::from_value(pre_rfc_payload);
+        let err = result.expect_err(
+            "pre-RFC PendingApproval must fail to deserialize under new ProposalStatus shape",
+        );
+        let msg = err.to_string();
+
+        // The error must be diagnostic — it should at minimum mention the
+        // status type so an operator can map it back to the breaking change.
+        // serde_json's typical error for "expected internally-tagged enum but
+        // got plain string" reads:
+        //   "invalid type: string \"suspended_for_approval\", expected
+        //    internally tagged enum ProposalStatus"
+        // We assert the diagnostic is unambiguous without over-fitting to the
+        // exact wording (serde may polish messages between versions).
+        assert!(
+            msg.contains("ProposalStatus")
+                || msg.contains("suspended_for_approval")
+                || msg.contains("kind"),
+            "deserialization error must clearly indicate the ProposalStatus break; got: {msg}"
+        );
+    }
+
+    /// Negative companion to the above: a post-RFC payload with the tagged
+    /// status form deserializes cleanly when fed through the same path. This
+    /// guards against the previous test passing for the wrong reason (e.g.
+    /// some unrelated schema mismatch).
+    #[test]
+    fn post_rfc_pending_approval_deserializes_cleanly() {
+        let post_rfc_payload = serde_json::json!({
+            "type": "pending_approval",
+            "proposal": {
+                "id": "0000000000000000000000000000000000000000000000000000000000000000",
+                "body": {
+                    "intent_id": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "writ_id":   "0000000000000000000000000000000000000000000000000000000000000000",
+                    "plan": {
+                        "tool": "kv_set",
+                        "args": {"key": "k"}
+                    },
+                    "policy_trace": {
+                        "rules_evaluated": [],
+                        "decision": {"kind": "permit"}
+                    },
+                    "status": {
+                        "kind": "suspended",
+                        "channel": "ops",
+                        "reason": "needs review"
+                    }
+                }
+            },
+            "channel": "ops",
+            "reason": "needs review"
+        });
+        let parsed: EntryPayload = serde_json::from_value(post_rfc_payload)
+            .expect("post-RFC payload must deserialize");
+        match parsed {
+            EntryPayload::PendingApproval { proposal, .. } => {
+                assert!(matches!(
+                    proposal.body.status,
+                    ProposalStatus::Suspended { .. }
+                ));
+            }
+            _ => panic!("expected PendingApproval"),
+        }
     }
 }
