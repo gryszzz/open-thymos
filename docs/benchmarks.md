@@ -72,46 +72,87 @@ Every benchmark report must include:
 - 5,000 branches
 - 10,000 delegation edges
 
-## Example Report
+## Phase I Baseline Report
+
+Measured on the first complete Phase I implementation commit. These are the
+numbers to beat. Run the ignored benchmark tests with:
+
+```bash
+cargo test -p thymos-ledger --features sqlite bench -- --include-ignored --nocapture
+cargo test -p thymos-runtime bench_execution_overhead -- --include-ignored --nocapture
+```
 
 ```text
 OpenThymos benchmark report
-git:              4f91a2c
-compiler:         thymos-compiler/0.1.0
-backend:          sqlite
+git:              6cf13d4  (Phase I baseline)
+compiler:         thymos-compiler/0.0.1
+backend:          sqlite (in-memory)
 host:             macOS arm64
-cpu:              Apple M3 Max
+provider:         mock (KvSetTool, no network)
+workload:         ledger-small (1 root + 1000 commits)
+samples:          5 (warm runs; each run full replay)
+
+replay_speed (hash verify + parent chain + world fold):
+  avg: ~12,400 entries/sec
+
+ledger_folding (delta application only, no hash verify):
+  avg: ~656,000 commits/sec
+
+execution_overhead (compile + policy + tool execute + ledger append):
+  avg: ~1.35 ms/proposal  (~740 proposals/sec)
+```
+
+### Interpretation
+
+The ~53× gap between folding speed and replay speed reflects hash verification
+cost: replay recomputes `blake3(canonical_json(payload))` for every entry
+while folding only applies `DeltaOp` variants to `World`. The hash verification
+cost scales with the number of entries, not commits alone, so ledgers with many
+non-commit entries (rejections, approvals) will show a larger gap.
+
+Execution overhead of ~1.35 ms/proposal includes: world projection from ledger,
+compile (writ check + policy eval + type check), KvSet tool execution (in-memory
+BTreeMap write), delta trial-apply, and SQLite append. Network-backed tools will
+add provider latency on top.
+
+## Example Report Format
+
+```text
+OpenThymos benchmark report
+git:              <commit>
+compiler:         thymos-compiler/0.0.1
+backend:          sqlite | postgres
+host:             macOS arm64 | linux x86_64
+cpu:              Apple M4 Max | Intel Xeon Gold 6154
 memory:           64 GiB
-provider:         mock
-workload:         ledger-medium
+provider:         mock | anthropic | openai
+workload:         ledger-small | ledger-medium | ledger-large
 samples:          30
 warmup:           5
 
 replay_speed:
-  p50: 188,400 entries/sec
-  p95: 171,900 entries/sec
-  p99: 165,200 entries/sec
+  p50: <n> entries/sec
+  p95: <n> entries/sec
+  p99: <n> entries/sec
 
 execution_overhead:
-  p50: 1.8 ms/proposal
-  p95: 3.9 ms/proposal
-  p99: 6.2 ms/proposal
+  p50: <n> ms/proposal
+  p95: <n> ms/proposal
+  p99: <n> ms/proposal
 
 ledger_folding:
-  p50: 94,000 commits/sec
-  p95: 88,700 commits/sec
-  p99: 81,300 commits/sec
+  p50: <n> commits/sec
+  p95: <n> commits/sec
+  p99: <n> commits/sec
 
 state_projection:
-  p50: 212,000 resources/sec
-  p95: 198,000 resources/sec
-  p99: 190,500 resources/sec
+  p50: <n> resources/sec
+  p95: <n> resources/sec
+  p99: <n> commits/sec
 
 memory_usage:
-  peak_rss: 287 MiB
+  peak_rss: <n> MiB
 ```
-
-Numbers above are an example format, not a release claim.
 
 ## Benchmark Commands
 

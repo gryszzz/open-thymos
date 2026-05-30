@@ -127,10 +127,19 @@ pub(crate) fn str_to_kind(s: &str) -> Result<EntryKind> {
 }
 
 /// Verify integrity of a sequence of entries (used by both backends).
+///
+/// Enforces spec Section 7 invariants:
+///   * every entry id == blake3(canonical_json(payload))
+///   * the first entry is a `Root` or `Branch`, has `seq == 0` and `parent == None`
+///   * all entries share the same `trajectory_id`
+///   * `seq` is contiguous (prev + 1)
+///   * each non-root `parent` equals the previous entry's `id`
 pub(crate) fn verify_integrity_entries(entries: &[Entry]) -> Result<()> {
     let mut prev_seq: Option<u64> = None;
     let mut prev_id: Option<ContentHash> = None;
-    for e in entries {
+    let mut expected_trajectory: Option<TrajectoryId> = None;
+    for (idx, e) in entries.iter().enumerate() {
+        // Hash chain: claimed id must equal recomputed payload hash.
         let recomputed = content_hash(&e.payload)?;
         if e.id != recomputed {
             return Err(Error::Invariant(format!(
@@ -138,7 +147,42 @@ pub(crate) fn verify_integrity_entries(entries: &[Entry]) -> Result<()> {
                 e.seq, e.id, recomputed
             )));
         }
-        if let (Some(ps), Some(pid)) = (prev_seq, prev_id) {
+        // Trajectory cohesion.
+        match expected_trajectory {
+            None => expected_trajectory = Some(e.trajectory_id),
+            Some(t) if t == e.trajectory_id => {}
+            Some(t) => {
+                return Err(Error::Invariant(format!(
+                    "entry at seq {} belongs to trajectory {} but earlier entries belonged to {}",
+                    e.seq, e.trajectory_id, t
+                )));
+            }
+        }
+        // Root invariants: the first entry of any verified trajectory MUST
+        // start the chain. Allowed kinds are Root (fresh trajectory) and
+        // Branch (forked from a source trajectory).
+        if idx == 0 {
+            match e.kind {
+                EntryKind::Root | EntryKind::Branch => {}
+                other => {
+                    return Err(Error::Invariant(format!(
+                        "first entry must be Root or Branch, found {:?}",
+                        other
+                    )));
+                }
+            }
+            if e.seq != 0 {
+                return Err(Error::Invariant(format!(
+                    "first entry must have seq 0, found {}",
+                    e.seq
+                )));
+            }
+            if e.parent.is_some() {
+                return Err(Error::Invariant(
+                    "first entry must have parent=None".into(),
+                ));
+            }
+        } else if let (Some(ps), Some(pid)) = (prev_seq, prev_id) {
             if e.seq != ps + 1 {
                 return Err(Error::Invariant(format!(
                     "non-contiguous seq: {} after {}",
@@ -254,5 +298,130 @@ mod tests {
         let root = l.append_root(traj, "hello").unwrap();
         let c = trivial_commit(traj, Some(CommitId(root.id)), 5);
         assert!(l.append_commit(c).is_err());
+    }
+
+    // ── F2 hardening: verify_integrity_entries new invariants ────────────
+
+    /// Build a synthetic entry whose `id` is the proper content_hash of
+    /// `payload` but whose other fields can be tuned for fault injection.
+    fn forge_entry(
+        trajectory_id: TrajectoryId,
+        parent: Option<ContentHash>,
+        seq: u64,
+        kind: EntryKind,
+        payload: EntryPayload,
+    ) -> Entry {
+        let id = thymos_core::content_hash(&payload).unwrap();
+        Entry {
+            id,
+            trajectory_id,
+            parent,
+            seq,
+            kind,
+            payload,
+        }
+    }
+
+    #[test]
+    fn rejects_mixed_trajectory_ids() {
+        let traj_a = TrajectoryId::new_from_seed(b"traj-a");
+        let traj_b = TrajectoryId::new_from_seed(b"traj-b");
+        let root_a = forge_entry(
+            traj_a,
+            None,
+            0,
+            EntryKind::Root,
+            EntryPayload::Root {
+                note: "a".into(),
+            },
+        );
+        // Same seq=1 but on the wrong trajectory.
+        let bad = forge_entry(
+            traj_b,
+            Some(root_a.id),
+            1,
+            EntryKind::Root,
+            EntryPayload::Root {
+                note: "b".into(),
+            },
+        );
+        let err = verify_integrity_entries(&[root_a, bad]).unwrap_err();
+        assert!(
+            err.to_string().contains("belongs to trajectory"),
+            "expected trajectory mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_non_root_first_entry() {
+        let traj = TrajectoryId::new_from_seed(b"traj-no-root");
+        // A commit-looking entry sitting at the start of the chain.
+        let commit = trivial_commit(traj, None, 0);
+        let payload = EntryPayload::Commit(commit);
+        let only = forge_entry(traj, None, 0, EntryKind::Commit, payload);
+        let err = verify_integrity_entries(&[only]).unwrap_err();
+        assert!(
+            err.to_string().contains("first entry must be Root or Branch"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_root_with_nonzero_seq() {
+        let traj = TrajectoryId::new_from_seed(b"traj-bad-seq");
+        let bad_root = forge_entry(
+            traj,
+            None,
+            7,
+            EntryKind::Root,
+            EntryPayload::Root {
+                note: "x".into(),
+            },
+        );
+        let err = verify_integrity_entries(&[bad_root]).unwrap_err();
+        assert!(
+            err.to_string().contains("must have seq 0"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_root_with_parent_some() {
+        let traj = TrajectoryId::new_from_seed(b"traj-bad-parent");
+        let bogus_parent = ContentHash([42u8; 32]);
+        let bad_root = forge_entry(
+            traj,
+            Some(bogus_parent),
+            0,
+            EntryKind::Root,
+            EntryPayload::Root {
+                note: "x".into(),
+            },
+        );
+        let err = verify_integrity_entries(&[bad_root]).unwrap_err();
+        assert!(
+            err.to_string().contains("parent=None"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn accepts_branch_as_first_entry() {
+        // A trajectory rooted by a Branch (rather than a Root) entry is valid
+        // — it represents a fork from another trajectory.
+        let traj = TrajectoryId::new_from_seed(b"traj-branch");
+        let src = TrajectoryId::new_from_seed(b"traj-src");
+        let branch = forge_entry(
+            traj,
+            None,
+            0,
+            EntryKind::Branch,
+            EntryPayload::Branch {
+                source_trajectory_id: src,
+                source_commit_id: CommitId(ContentHash([1u8; 32])),
+                note: "fork".into(),
+            },
+        );
+        verify_integrity_entries(&[branch]).expect("branch as first entry must verify");
     }
 }

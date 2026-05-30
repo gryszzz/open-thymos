@@ -283,9 +283,15 @@ impl<'a> Run<'a> {
 
         // Project budget usage for the compile context.
         let budget_used = self.project_budget_used()?;
+        // Source the clock at the runtime layer — the compiler stays pure
+        // (see thymos_compiler::CompileContext doc-comment).
+        let now_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let ctx = CompileContext {
+            now_unix,
             budget_used,
-            ..CompileContext::default()
         };
 
         // Compile (with budget + time-window checks).

@@ -160,8 +160,10 @@ impl WritBody {
                 "child time window outside parent".into(),
             ));
         }
-        // Delegation depth.
-        if self.delegation.max_depth + 1 > parent.delegation.max_depth {
+        // Delegation depth — overflow-safe comparison. A child's max_depth
+        // plus one (the edge that creates the child itself) must not exceed
+        // the parent's remaining depth.
+        if self.delegation.max_depth.saturating_add(1) > parent.delegation.max_depth {
             return Err(Error::AuthorityVoid(
                 "child delegation depth exceeds parent remaining depth".into(),
             ));
@@ -445,5 +447,45 @@ mod tests {
         assert!(w.contains(150));
         assert!(!w.contains(50));
         assert!(!w.contains(250));
+    }
+
+    #[test]
+    fn delegation_depth_does_not_overflow_at_max() {
+        // F3 regression: an attacker-supplied `max_depth = u32::MAX` previously
+        // panicked here in debug builds due to `max_depth + 1` overflow. The
+        // saturating add must instead return AuthorityVoid cleanly.
+        let (parent, _issuer, agent) = parent_pair();
+        let sub = generate_signing_key();
+        let child_body = WritBody {
+            issuer: "agent".into(),
+            issuer_pubkey: public_key_of(&agent),
+            subject: "child".into(),
+            subject_pubkey: public_key_of(&sub),
+            parent: None,
+            tenant_id: String::new(),
+            tool_scopes: vec![ToolPattern::exact("kv_set")],
+            budget: Budget {
+                tokens: 100,
+                tool_calls: 1,
+                wall_clock_ms: 1000,
+                usd_millicents: 10,
+            },
+            effect_ceiling: EffectCeiling::read_write_local(),
+            time_window: parent.body.time_window.clone(),
+            delegation: DelegationBounds {
+                max_depth: u32::MAX,
+                may_subdivide: false,
+            },
+        };
+        // Must return a clean AuthorityVoid, not panic, and not silently
+        // succeed (parent.max_depth is 3, far below u32::MAX).
+        let err = parent
+            .mint_child(child_body, &agent)
+            .err()
+            .expect("u32::MAX child depth must reject");
+        assert!(
+            err.to_string().contains("delegation depth"),
+            "expected delegation-depth rejection, got: {err}"
+        );
     }
 }

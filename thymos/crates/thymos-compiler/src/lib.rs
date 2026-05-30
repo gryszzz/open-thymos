@@ -41,26 +41,37 @@ pub enum Compiled {
 }
 
 /// Additional context the compiler needs beyond (Intent, Writ, World).
+///
+/// Constructed explicitly by callers — there is intentionally no `Default`
+/// impl, because both fields name external state (the wall clock and the
+/// trajectory's accumulated budget). Spec Section 3 + the project's purity
+/// rule require that the compiler be a pure function of its inputs; reading
+/// `SystemTime::now()` inside `Default::default()` would smuggle the clock
+/// into the pure path and make the compiler non-deterministic when invoked
+/// via `..CompileContext::default()`.
 pub struct CompileContext {
     /// Current unix timestamp in seconds (for time-window validation).
+    /// Callers are responsible for sourcing this from their own clock.
     pub now_unix: u64,
     /// Accumulated budget usage so far in this trajectory. The compiler
     /// checks that `accumulated + estimate <= writ.budget`.
     pub budget_used: BudgetCost,
 }
 
-impl Default for CompileContext {
-    fn default() -> Self {
+impl CompileContext {
+    /// A deterministic context with `now_unix = 0` and an empty budget — use
+    /// in tests or when the writ has an unbounded time window.
+    pub fn deterministic() -> Self {
         CompileContext {
-            now_unix: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+            now_unix: 0,
             budget_used: BudgetCost::default(),
         }
     }
 }
 
+/// Compile with a deterministic context (`now_unix = 0`, empty budget).
+/// Production callers should use [`compile_with_context`] and pass an
+/// explicit clock + budget.
 pub fn compile(
     intent: &Intent,
     writ: &Writ,
@@ -74,7 +85,7 @@ pub fn compile(
         world,
         tools,
         policy,
-        &CompileContext::default(),
+        &CompileContext::deterministic(),
     )
 }
 
@@ -181,7 +192,10 @@ pub fn compile_with_context(
             )));
         }
         PolicyDecision::RequireApproval { channel, reason } => (
-            ProposalStatus::SuspendedForApproval,
+            ProposalStatus::Suspended {
+                channel: channel.clone(),
+                reason: reason.clone(),
+            },
             Some((channel.clone(), reason.clone())),
         ),
     };

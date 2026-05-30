@@ -214,3 +214,32 @@ fn run_agent_rejects_on_budget_exhaustion() {
     assert_eq!(summary.commits, 2);
     assert_eq!(summary.rejections, 1);
 }
+
+#[test]
+#[ignore = "timing benchmark — run with --include-ignored --nocapture"]
+fn bench_execution_overhead_per_proposal() {
+    use std::time::Instant;
+    let rt = build_runtime();
+    let writ = root_writ();
+    let n = 50u32;
+    let mut total_ns = 0u128;
+
+    for i in 0..n {
+        let run = rt.create_run(&format!("bench-{i}"), format!("bench-run-{i}").as_bytes()).unwrap();
+        let intent = mk_intent(
+            "kv_set",
+            serde_json::json!({"key": format!("k{i}"), "value": "v"}),
+            i as u8,
+        );
+        let t = Instant::now();
+        run.submit(intent, &writ).unwrap();
+        total_ns += t.elapsed().as_nanos();
+    }
+
+    let avg_us = total_ns / n as u128 / 1000;
+    println!(
+        "\nbench_execution_overhead_per_proposal: n={n} avg={}µs ({:.2}ms)",
+        avg_us,
+        avg_us as f64 / 1000.0
+    );
+}

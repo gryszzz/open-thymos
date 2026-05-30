@@ -9,19 +9,20 @@ permalink: /
 <section class="hero">
   <div class="hero-eyebrow">
     <span class="dot"></span>
-    OPENTHYMOS · UNIFIED AI EXECUTION RUNTIME
+    OPENTHYMOS · GOVERNED EXECUTION RUNTIME
   </div>
 
   <h1>
-    Unified AI execution runtime, framework, and sandbox for coding agents.
+    Cognition proposes.<br>
+    The runtime governs.<br>
+    The ledger records.
   </h1>
 
   <p class="lede">
-    OpenThymos converts untrusted cognition into auditable coding-agent
-    execution. Agents do not act autonomously; they emit intents. The Rust
-    runtime compiles proposals, enforces capability writs, applies policy,
-    routes approved capabilities through governed execution boundaries, and
-    exposes one replayable run across CLI, VS Code, terminal, and web surfaces.
+    A model cannot call a tool, mutate state, spend budget, delegate authority,
+    or erase history — not by convention, by runtime semantics. Every effect
+    passes through a typed proposal, a signed capability writ, a policy trace,
+    and an append-only execution ledger.
   </p>
 
   <div class="hero-cta">
@@ -29,49 +30,50 @@ permalink: /
       Read the specification <span class="btn-arrow">→</span>
     </a>
     <a class="btn btn-ghost" href="{{ '/replay' | relative_url }}">
-      Study replay
+      Replay verifier
     </a>
-    <a class="btn btn-ghost" href="{{ '/programmable-capabilities' | relative_url }}">
-      Add capabilities
+    <a class="btn btn-ghost" href="{{ '/capability-writs' | relative_url }}">
+      Capability writs
     </a>
-    <a class="btn btn-ghost" href="{{ '/package-distribution' | relative_url }}">
-      Pull package
+    <a class="btn btn-ghost" href="{{ '/architecture' | relative_url }}">
+      Architecture
     </a>
   </div>
 
   <div class="hero-meta">
-    <span class="mono">Intent -> Proposal -> Commit</span>
+    <span class="mono">Intent → Proposal → Commit</span>
     <span>·</span>
-    <span>Programmable capabilities</span>
+    <span>Signed capability writs</span>
     <span>·</span>
-    <span>Shared run surfaces</span>
+    <span>Deterministic replay</span>
   </div>
 </section>
 
 <section class="section">
   <div class="triad reveal">
     <div class="card">
-      <h4>Unified</h4>
-      <p>Every client sees the same run.</p>
+      <h4>Governed</h4>
+      <p>The model proposes. The runtime decides.</p>
       <p class="sub">
-        CLI, VS Code, terminal shell, web console, and HTTP clients attach to
-        one backend execution session and ledger projection.
+        Cognition enters the system through one narrow contract: emit intents.
+        Authority, policy, and execution are runtime concerns — not model concerns.
       </p>
     </div>
     <div class="card">
-      <h4>Programmable</h4>
-      <p>Capabilities are explicit.</p>
+      <h4>Auditable</h4>
+      <p>Every effect is a ledger event.</p>
       <p class="sub">
-        Rust contracts, JSON manifests, and MCP bridge tools register into the
-        same governed capability registry.
+        Commits, rejections, approvals, delegations, and branches are all written
+        to the same append-only, content-addressed ledger. Nothing is out-of-band.
       </p>
     </div>
     <div class="card">
-      <h4>Sandboxed</h4>
-      <p>Effects cross controlled boundaries.</p>
+      <h4>Replayable</h4>
+      <p>World state is a committed delta projection.</p>
       <p class="sub">
-        Coding tools are path-confined, shell and HTTP can cross the worker
-        fabric, and every effect remains policy-visible.
+        Replay recomputes the world by folding committed deltas in order. It
+        verifies the hash chain, sequence continuity, and compiler version — without
+        calling providers.
       </p>
     </div>
   </div>
@@ -79,71 +81,126 @@ permalink: /
 
 <section class="section">
   <div class="section-h reveal">
-    <p class="eyebrow">Runtime model</p>
-    <h2>Cognition proposes. The framework governs.</h2>
+    <p class="eyebrow">Execution grammar</p>
+    <h2>Intent → Proposal → Commit</h2>
     <p>
-      A provider may be stochastic, local, hosted, or mock. It enters the
-      system through one narrow contract: produce intents. Everything after
-      that point is governed by compiler order, writ validation, capability
-      contracts, sandbox profiles, policy traces, and ledger semantics.
+      Three types. One direction. No shortcuts.
     </p>
   </div>
 
   <div class="cards reveal">
     <div class="fcard">
-      <div class="icon">◎</div>
-      <h3>Specification</h3>
+      <div class="icon mono">I</div>
+      <h3>Intent</h3>
       <p>
-        Normative terms and execution semantics for the runtime protocol.
+        Emitted by cognition. Carries no authority. Content-addressed by
+        <code>blake3(canonical_json(body))</code>.
       </p>
     </div>
     <div class="fcard">
-      <div class="icon">⎇</div>
-      <h3>Capabilities</h3>
+      <div class="icon mono">P</div>
+      <h3>Proposal</h3>
       <p>
-        Extension points for Rust contracts, JSON manifests, and MCP bridge
-        tools under one runtime registry.
+        Compiled by the runtime from <code>(Intent, Writ, World, ToolRegistry, PolicyEngine)</code>.
+        Binds tool contract, budget projection, and policy trace.
       </p>
     </div>
     <div class="fcard">
-      <div class="icon">⎈</div>
-      <h3>Replay</h3>
+      <div class="icon mono">C</div>
+      <h3>Commit</h3>
       <p>
-        Verification over ledger entries, parent chains, sequences, deltas,
-        and compiler versions.
+        The only record that mutates world state. Contains structured delta,
+        observed tool output, writ id, proposal id, and compiler version.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">⬢</div>
-      <h3>Capability writs</h3>
+      <h3>Capability writ</h3>
       <p>
-        Signed authority documents that bound what a cognitive subject may
-        propose and delegate.
+        Ed25519-signed authority document. Bounds tool scopes, budgets, time
+        windows, effect ceilings, and delegation depth.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">⟐</div>
       <h3>Policy engine</h3>
       <p>
-        Ordered pure rules that permit, deny, or require approval before
-        execution reaches tools.
+        Pure function <code>(Intent, Writ, World) → Permit | Deny | RequireApproval</code>.
+        Decision recorded in the proposal trace.
       </p>
     </div>
     <div class="fcard">
       <div class="icon">▣</div>
       <h3>Execution ledger</h3>
       <p>
-        Append-only, content-addressed trajectory history for audit and
-        replay.
+        Append-only, parent-chained trajectory history. Root, commit, rejection,
+        pending approval, delegation, and branch entries.
       </p>
     </div>
     <div class="fcard">
-      <div class="icon">▤</div>
+      <div class="icon">⎈</div>
+      <h3>Replay verifier</h3>
+      <p>
+        Proves hash chain integrity, sequence continuity, and world projection
+        correctness. Cannot call providers or execute tools.
+      </p>
+    </div>
+    <div class="fcard">
+      <div class="icon">◎</div>
       <h3>Provider boundary</h3>
       <p>
-        Hosted and local providers can propose intents without changing
-        runtime authority.
+        Providers emit intents. They cannot execute, authorize, or delegate.
+        Provider identity grants no authority.
       </p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-h reveal">
+    <p class="eyebrow">Five runtime guarantees</p>
+    <h2>Not conventions. Invariants.</h2>
+    <p>
+      These are checked structurally by the runtime, recorded in the ledger,
+      and verifiable by replay. They are not documented promises.
+    </p>
+  </div>
+
+  <div class="axioms reveal">
+    <div class="axiom">
+      <span class="axiom-n">I</span>
+      <div>
+        <strong>Deterministic replay</strong>
+        <p>A valid ledger can be folded into the same world projection under the recorded commit sequence.</p>
+      </div>
+    </div>
+    <div class="axiom">
+      <span class="axiom-n">II</span>
+      <div>
+        <strong>Runtime isolation</strong>
+        <p>Cognition cannot execute tools or mutate state directly. The provider boundary is enforced at the type level.</p>
+      </div>
+    </div>
+    <div class="axiom">
+      <span class="axiom-n">III</span>
+      <div>
+        <strong>Execution integrity</strong>
+        <p>Only staged proposals may reach the tool boundary. Only commits may mutate projected world state.</p>
+      </div>
+    </div>
+    <div class="axiom">
+      <span class="axiom-n">IV</span>
+      <div>
+        <strong>Capability constraints</strong>
+        <p>Tool scopes, budgets, time windows, effect ceilings, tenant boundaries, and delegation bounds are checked before execution.</p>
+      </div>
+    </div>
+    <div class="axiom">
+      <span class="axiom-n">V</span>
+      <div>
+        <strong>Policy persistence</strong>
+        <p>Policy decisions are recorded as proposal traces and cannot be erased by a client surface.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -173,15 +230,17 @@ permalink: /
     <h2>Begin with the protocol.</h2>
     <p>
       Read the specification, then the architecture, then the replay and writ
-      documents. The implementation exists to preserve these runtime
-      semantics.
+      documents. The implementation exists to preserve these runtime semantics.
     </p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="{{ '/architecture' | relative_url }}">
-        Architecture <span class="btn-arrow">→</span>
+      <a class="btn btn-primary" href="{{ '/specification' | relative_url }}">
+        Specification <span class="btn-arrow">→</span>
       </a>
       <a class="btn btn-ghost" href="{{ '/runtime-invariants' | relative_url }}">
         Runtime invariants
+      </a>
+      <a class="btn btn-ghost" href="{{ '/architecture' | relative_url }}">
+        Architecture
       </a>
     </div>
   </div>

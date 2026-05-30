@@ -92,6 +92,14 @@ pub fn replay(entries: &[Entry], cfg: &ReplayConfig) -> Result<(World, ReplayRep
 }
 
 fn apply_commit(world: &mut World, commit: &Commit, cfg: &ReplayConfig) -> Result<()> {
+    // Spec Section 8 requires "report compiler versions seen". An empty
+    // `compiler_version` is unreportable — reject regardless of pinning.
+    if commit.body.compiler_version.is_empty() {
+        return Err(thymos_core::error::Error::Invariant(format!(
+            "commit {} has empty compiler_version (spec Section 8 requires a recorded version)",
+            commit.id
+        )));
+    }
     if let Some(required) = &cfg.require_compiler_version {
         if commit.body.compiler_version != *required {
             return Err(thymos_core::error::Error::Invariant(format!(
@@ -212,6 +220,102 @@ mod tests {
         assert_eq!(
             report.compiler_versions_seen,
             vec![COMPILER_VERSION.to_string()]
+        );
+    }
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod bench_tests {
+    use super::*;
+    use thymos_core::{
+        commit::{Commit, CommitBody, Observation},
+        delta::{DeltaOp, StructuredDelta},
+        ids::{ProposalId, WritId},
+        ContentHash, TrajectoryId,
+    };
+    use crate::Ledger;
+    use std::time::Instant;
+
+    fn build_commit(traj: TrajectoryId, key: &str, val: &str, seq: u64) -> Commit {
+        let body = CommitBody {
+            parent: vec![],
+            trajectory_id: traj,
+            proposal_id: ProposalId::ZERO,
+            writ_id: WritId(ContentHash::ZERO),
+            seq,
+            delta: StructuredDelta::single(DeltaOp::Create {
+                kind: "kv".into(),
+                id: key.into(),
+                value: serde_json::json!(val),
+            }),
+            observations: vec![Observation {
+                tool: "kv_set".into(),
+                output: serde_json::json!(null),
+                latency_ms: 0,
+            }],
+            compiler_version: COMPILER_VERSION.into(),
+            budget_cost: thymos_core::writ::BudgetCost::default(),
+            signature: None,
+        };
+        Commit::new(body).unwrap()
+    }
+
+    #[test]
+    #[ignore = "timing benchmark — run with --include-ignored --nocapture"]
+    fn bench_replay_speed() {
+        let n_commits: u64 = 1000;
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"bench-replay");
+        ledger.append_root(traj, "bench").unwrap();
+        for i in 1..=n_commits {
+            let c = build_commit(traj, &format!("key{i}"), "val", i);
+            ledger.append_commit(c).unwrap();
+        }
+        let entries = ledger.entries(traj).unwrap();
+        let iters = 5u32;
+        let mut total_ns = 0u128;
+        for _ in 0..iters {
+            let t = Instant::now();
+            let _ = replay(&entries, &ReplayConfig::default()).unwrap();
+            total_ns += t.elapsed().as_nanos();
+        }
+        let avg_us = total_ns / iters as u128 / 1000;
+        let entries_per_sec = (entries.len() as u128 * 1_000_000) / avg_us.max(1);
+        println!(
+            "\nbench_replay_speed: n_entries={} avg_latency={}µs entries/sec={}",
+            entries.len(), avg_us, entries_per_sec
+        );
+    }
+
+    #[test]
+    #[ignore = "timing benchmark — run with --include-ignored --nocapture"]
+    fn bench_folding_speed() {
+        let n_commits: u64 = 1000;
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"bench-fold");
+        ledger.append_root(traj, "bench").unwrap();
+        for i in 1..=n_commits {
+            let c = build_commit(traj, &format!("k{i}"), "v", i);
+            ledger.append_commit(c).unwrap();
+        }
+        let entries = ledger.entries(traj).unwrap();
+        let iters = 5u32;
+        let mut total_ns = 0u128;
+        for _ in 0..iters {
+            let mut world = thymos_core::world::World::default();
+            let t = Instant::now();
+            for e in &entries {
+                if let crate::EntryPayload::Commit(c) = &e.payload {
+                    world.apply(&c.body.delta, c.id).unwrap();
+                }
+            }
+            total_ns += t.elapsed().as_nanos();
+        }
+        let avg_us = total_ns / iters as u128 / 1000;
+        let commits_per_sec = (n_commits as u128 * 1_000_000) / avg_us.max(1);
+        println!(
+            "\nbench_folding_speed: n_commits={} avg_latency={}µs commits/sec={}",
+            n_commits, avg_us, commits_per_sec
         );
     }
 }

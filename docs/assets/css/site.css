@@ -79,8 +79,8 @@ code, pre, kbd { font-family: var(--font-mono); }
     linear-gradient(to right, rgba(255,181,71,0.05) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255,181,71,0.05) 1px, transparent 1px);
   background-size: 56px 56px, 56px 56px, 224px 224px, 224px 224px;
-  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
   -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
   z-index: 0;
 }
 
@@ -95,8 +95,8 @@ main, header.nav, footer.footer { position: relative; z-index: 1; }
   gap: 24px;
   padding: 0 32px;
   background: rgba(5, 7, 11, 0.72);
-  backdrop-filter: saturate(140%) blur(16px);
   -webkit-backdrop-filter: saturate(140%) blur(16px);
+  backdrop-filter: saturate(140%) blur(16px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -612,6 +612,62 @@ main.page {
 }
 .cta-wrap .hero-cta { margin-top: 0; }
 
+/* Axioms (five guarantees) */
+
+.axioms {
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.axiom {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  padding: 20px 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  transition: border-color .2s ease, background .2s ease;
+}
+.axiom:hover {
+  border-color: var(--border-2);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+}
+.axiom-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  width: 28px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  font-weight: 600;
+}
+.axiom strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.axiom p {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* Monospace icon variant for execution grammar cards */
+.fcard .icon.mono {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 /* Reveal animation */
 .reveal {
   opacity: 0;
@@ -689,6 +745,7 @@ main.page {
     padding: 14px 18px 22px;
     background: rgba(5,7,11,0.95);
     border-bottom: 1px solid var(--border);
+    -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
   }
   .nav.is-open .nav-links a {
