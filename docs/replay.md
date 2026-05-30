@@ -39,7 +39,16 @@ Replay performs these checks:
 5. Record head commit and head sequence.
 6. Record compiler versions seen.
 7. Optionally require all commits to match a pinned compiler version.
-8. Optionally compare the rebuilt world hash with an observed world hash.
+8. Optionally require every commit to carry a valid ed25519 signature from a
+   given public key (identity / tamper drift).
+9. Optionally require every commit to declare a pinned policy-set hash (policy
+   drift).
+10. Optionally compare the rebuilt world hash with an observed world hash.
+
+Pins 7–9 are *drift detectors*: they let a verifier prove, long after a run,
+that the compiler, the signing identity, and the policy rule set match what was
+expected. They do not re-execute cognition or tools — replay remains a
+ledger-fold verification, not a re-derivation of model decisions.
 
 The current Rust implementation exposes this path through `thymos-ledger`
 functions:
@@ -47,6 +56,8 @@ functions:
 - `replay(entries, cfg)`
 - `replay_and_match(entries, observed, cfg)`
 - `ReplayConfig::pinned_to_current()`
+- `ReplayConfig::require_signed_by(pubkey)`
+- `ReplayConfig::require_policy_set(hash)`
 
 ## Replay Output
 

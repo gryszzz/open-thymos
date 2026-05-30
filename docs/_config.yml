@@ -1,11 +1,12 @@
 title: OpenThymos
 tagline: "Cognition proposes. The runtime governs. The ledger records."
 description: >-
-  OpenThymos is a Rust execution framework for coding agents. Cognition
-  proposes intents; the runtime compiles proposals, enforces capability writs,
-  applies policy, routes approved capabilities through governed execution
-  boundaries, and exposes one replayable run state across CLI, VS Code,
-  terminal, and web surfaces.
+  OpenThymos is a Rust execution runtime that governs what an AI agent is
+  allowed to do. Cognition proposes intents; the runtime compiles them against
+  ed25519-signed capability writs, enforces effect ceilings, budgets, and
+  policy before any tool runs, and records every action — and every refusal —
+  in an append-only, content-addressed ledger that replay can verify. One
+  governed, replayable run state across CLI, VS Code, terminal, and web.
 url: "https://gryszzz.github.io"
 baseurl: "/open-thymos"
 repo: "https://github.com/gryszzz/open-thymos"

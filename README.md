@@ -78,6 +78,40 @@ These are invariants, not goals. They are checked structurally by the runtime, r
 | **IV** | Tool scopes, budgets, time windows, effect ceilings, tenant boundaries, and delegation bounds are checked before execution. |
 | **V** | Policy decisions are recorded as proposal traces and cannot be erased by a client surface. |
 
+## Enforcement & Hardening
+
+These make the guarantees above structural rather than aspirational. Each is in
+the runtime today and covered by tests:
+
+- **Effect-ceiling enforcement.** The compiler rejects any tool whose declared
+  effect class (`Read` / `Write` / `External` / `Irreversible`) exceeds the
+  writ's effect ceiling — *before* the tool runs. A read-only writ cannot drive
+  an external or irreversible tool even when the tool name is in scope.
+- **Auditable commits.** Every commit records the originating `intent_id`, the
+  `policy_trace` that authorized it, and a `policy_set_hash` of the active rule
+  set — so a permitted action's *why* lives in the ledger, not just its *what*.
+- **Signed commits (optional).** A runtime configured with a commit-signing key
+  ed25519-signs every commit; replay can require each commit verify against the
+  corresponding public key.
+- **Secret redaction.** Tool observations pass through a redactor before they
+  enter the append-only ledger (and before cognition re-reads them), so
+  credentials are not written to permanent storage.
+- **Model-spend budgeting.** Cognition token/USD usage is debited against the
+  writ budget; a run halts when the model budget is exhausted, not only when
+  tool-call budget is.
+- **Fork-proof append.** The ledger enforces a unique `(trajectory, seq)`
+  invariant inside an immediate transaction, so concurrent writers cannot fork
+  a trajectory's chain.
+- **Drift detection on replay.** Replay can pin the compiler version, the
+  policy-set hash, and commit signatures — flagging compiler, policy, or
+  identity drift long after a run.
+
+**Not yet — tracked on the [roadmap](docs/roadmap.md):** idempotency and
+compensation for irreversible tools, writ revocation and anti-replay, multi-party
+(quorum) approval, external Merkle anchoring of the ledger, host-clock
+attestation, and a declarative policy language ([RFC draft](docs/rfcs/policy-language-v1.md)).
+Replay verifies and folds the ledger — it does not re-execute cognition or tools.
+
 ## Capability Writs
 
 Authority is carried by ed25519-signed capability writs. A writ declares:

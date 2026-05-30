@@ -27,11 +27,24 @@ Runtime capabilities:
 - deterministic proposal compilation
 - local replay verification
 - world projection by ledger fold
+- effect-ceiling enforcement (tool effect class checked against the writ before execution)
+- auditable commits (originating intent id, policy trace, and policy-set hash recorded per commit)
+- optional ed25519-signed commits with replay-side verification
+- secret redaction of tool observations before ledger persistence
+- model-spend budgeting (cognition token/USD usage debited against the writ budget)
+- fork-proof append (unique `(trajectory, seq)` invariant under an immediate transaction)
+- replay drift detection (compiler version, policy-set hash, commit signatures)
 
-Execution guarantee: no tool execution without a staged or approved proposal.
+Execution guarantee: no tool execution without a staged or approved proposal,
+and no effect beyond the writ's effect ceiling.
 
 Scaling implication: correctness remains local and inspectable before
 distributed concerns are introduced.
+
+Not yet in Phase I (tracked for later phases): idempotency and compensation for
+irreversible tools, writ revocation and anti-replay, multi-party (quorum)
+approval, external Merkle anchoring of the ledger, host-clock attestation, and a
+declarative policy language ([policy-language-v1 RFC draft](rfcs/policy-language-v1.md)).
 
 ## Phase II - Multi-Agent Coordination
 
