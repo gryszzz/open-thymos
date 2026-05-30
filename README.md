@@ -10,7 +10,7 @@
 
 **Cognition proposes. The runtime governs. The ledger records.**
 
-A model cannot call a tool, mutate state, spend budget, delegate authority, or erase history — not by convention, by runtime semantics. Every effect passes through a typed proposal, a signed capability writ, a policy trace, and an append-only execution ledger.
+A model cannot call a tool, mutate state, spend budget, delegate authority, or erase history  not by convention, by runtime semantics. Every effect passes through a typed proposal, a signed capability writ, a policy trace, and an append-only execution ledger.
 
 ```text
 Intent → Proposal → Commit
@@ -160,8 +160,8 @@ thymos replay run_847 --verify
 
 OpenThymos is not a model wrapper. It is an execution substrate with durable runtime semantics.
 
-The existing agent ecosystem collapses cognition and execution into one loop — a model chooses a tool, calls it, reads the result, and continues. That design is easy to demo and hard to govern. Tool calls happen before authority is modeled. Policy is applied as application code. State is reconstructed from logs after the fact, if at all.
+The existing agent ecosystem collapses cognition and execution into one loop  a model chooses a tool, calls it, reads the result, and continues. That design is easy to demo and hard to govern. Tool calls happen before authority is modeled. Policy is applied as application code. State is reconstructed from logs after the fact, if at all.
 
 OpenThymos separates intent from authority, authority from compilation, and compilation from execution. None of these boundaries are optional.
 
-The goal is not to maximize surface area. The goal is to define small, durable runtime semantics for governed cognition — semantics that remain legible decades from now.
+The goal is not to maximize surface area. The goal is to define small, durable runtime semantics for governed cognition  semantics that remain legible decades from now.
