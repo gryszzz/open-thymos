@@ -20,12 +20,19 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
+            ext: ""
           - os: macos-latest
             target: aarch64-apple-darwin
             archive: tar.gz
+            ext: ""
           - os: macos-latest
             target: x86_64-apple-darwin
             archive: tar.gz
+            ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: tar.gz
+            ext: ".exe"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -45,10 +52,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/thymos-server dist/
-          cp target/${{ matrix.target }}/release/thymos        dist/
+          cp target/${{ matrix.target }}/release/thymos-server${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/thymos${{ matrix.ext }}        dist/
           cd dist
-          tar czf ../../thymos-${{ github.ref_name }}-${{ matrix.target }}.tar.gz thymos-server thymos
+          tar czf ../../thymos-${{ github.ref_name }}-${{ matrix.target }}.tar.gz thymos-server${{ matrix.ext }} thymos${{ matrix.ext }}
       - uses: actions/upload-artifact@v4
         with:
           name: thymos-${{ matrix.target }}
@@ -121,5 +128,5 @@ jobs:
             - `ghcr.io/${{ github.repository_owner }}/openthymos-runtime:${{ github.ref_name }}`
             - `ghcr.io/${{ github.repository_owner }}/thymos-server:${{ github.ref_name }}` (compatibility alias)
 
-            Binaries attached for linux/x86_64, darwin/arm64, darwin/x86_64.
+            Binaries attached for linux/x86_64, darwin/arm64, darwin/x86_64, windows/x86_64.
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for setup.
