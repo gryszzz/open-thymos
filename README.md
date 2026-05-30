@@ -3,7 +3,15 @@
 <div align="center">
   <img src="./thymos/thymosG.png" alt="OpenThymos" width="325" />
 </div>
+<div align="center">
 
+![Stars](https://img.shields.io/github/stars/gryszzz/open-thymos?style=for-the-badge)
+
+![License](https://img.shields.io/github/license/gryszzz/open-thymos?style=for-the-badge)
+
+![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
+
+</div>
 # open-thymos
 
 </div>
