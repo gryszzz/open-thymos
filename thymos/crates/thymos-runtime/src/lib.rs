@@ -18,7 +18,7 @@ use thymos_core::{
 };
 use thymos_ledger::{project_commits, EntryPayload, Ledger};
 use thymos_policy::PolicyEngine;
-use thymos_tools::{ToolInvocation, ToolRegistry};
+use thymos_tools::{EffectClass, ToolInvocation, ToolRegistry};
 
 pub mod agent;
 pub use agent::{
@@ -292,6 +292,26 @@ impl<'a> Run<'a> {
         Ok(acc)
     }
 
+    /// Idempotency helper: the `CommitId` already recorded for `proposal_id` in
+    /// this trajectory, if any. Backs exactly-once execution of
+    /// External/Irreversible tools — re-submitting or re-approving the same
+    /// (content-addressed) proposal returns the prior commit rather than
+    /// repeating the side effect.
+    fn find_commit_for_proposal(
+        &self,
+        proposal_id: thymos_core::ProposalId,
+    ) -> Result<Option<CommitId>> {
+        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+        for e in &entries {
+            if let EntryPayload::Commit(c) = &e.payload {
+                if c.body.proposal_id == proposal_id {
+                    return Ok(Some(c.id));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Submit one Intent. Runs it through the full Triad.
     pub fn submit(&self, intent: Intent, writ: &thymos_core::writ::Writ) -> Result<Step> {
         self.submit_with_trace(intent, writ, 0, None)
@@ -409,6 +429,20 @@ impl<'a> Run<'a> {
                 }
 
                 let tool = self.runtime.tools.get(&proposal.body.plan.tool)?;
+
+                // Idempotency: an External/Irreversible effect must never run
+                // twice for the same proposal. ProposalId is content-addressed,
+                // so a retry or re-submit of the same intent yields the same id;
+                // if a commit already recorded it, return that commit instead of
+                // repeating the side effect.
+                if matches!(
+                    tool.meta().effect_class,
+                    EffectClass::External | EffectClass::Irreversible
+                ) {
+                    if let Some(existing) = self.find_commit_for_proposal(proposal.id)? {
+                        return Ok(Step::Committed(existing));
+                    }
+                }
 
                 // Pre-compute estimated cost for the commit record.
                 let estimated_cost = tool.estimate_cost(&proposal.body.plan.args);
@@ -699,6 +733,19 @@ impl<'a> Run<'a> {
         // Approved: re-execute the tool against the current world.
         let world = self.project_world()?;
         let tool = self.runtime.tools.get(&proposal.body.plan.tool)?;
+
+        // Idempotency guard (see staged path): an approved External/Irreversible
+        // proposal that already produced a commit must not run again — e.g. a
+        // double approval or a retry after a partial failure.
+        if matches!(
+            tool.meta().effect_class,
+            EffectClass::External | EffectClass::Irreversible
+        ) {
+            if let Some(existing) = self.find_commit_for_proposal(proposal.id)? {
+                return Ok(Step::Committed(existing));
+            }
+        }
+
         let estimated_cost = tool.estimate_cost(&proposal.body.plan.args);
 
         let inv = ToolInvocation {
