@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="thymos/Thymos-logo.PNG" alt="Thymos" width="96" height="96" />
+<img src="thymos/Thymos-logo.PNG" alt="Thymos" width="150" height="200" />
 
 # open-thymos
 
