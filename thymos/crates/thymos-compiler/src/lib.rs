@@ -7,6 +7,7 @@
 //! Stages (order matters — authority precedes surface visibility):
 //!   1. Kind gate         — Phase 1 only supports `Act` intents.
 //!   2. Signature check   — writ signature must verify.
+//!   2b. Revocation check — writ (or its parent) must not be revoked.
 //!   3. Time-window check — now must lie within [not_before, expires_at].
 //!   4. Writ binding      — tool scope check (before tool surface is consulted).
 //!   5. Tool resolution   — lookup in the ToolRegistry; unknown -> UnknownTool.
@@ -17,8 +18,11 @@
 //!   9. Policy eval       — run the PolicyEngine over (Intent, Writ, World).
 //!  10. Emit Proposal     — with full PolicyTrace, or a typed rejection.
 
+use std::collections::HashSet;
+
 use thymos_core::{
     error::{Error, Result},
+    ids::WritId,
     intent::{Intent, IntentKind},
     proposal::{
         ExecutionPlan, PolicyDecision, PolicyTrace, Proposal, ProposalBody, ProposalStatus,
@@ -57,15 +61,20 @@ pub struct CompileContext {
     /// Accumulated budget usage so far in this trajectory. The compiler
     /// checks that `accumulated + estimate <= writ.budget`.
     pub budget_used: BudgetCost,
+    /// Revoked writ ids. A writ whose id (or whose immediate parent id) appears
+    /// here is treated as void even if its signature and time window are valid —
+    /// the revocation mechanism for capabilities pulled before expiry.
+    pub revoked: HashSet<WritId>,
 }
 
 impl CompileContext {
-    /// A deterministic context with `now_unix = 0` and an empty budget — use
-    /// in tests or when the writ has an unbounded time window.
+    /// A deterministic context with `now_unix = 0`, empty budget, and no
+    /// revocations — use in tests or when the writ has an unbounded time window.
     pub fn deterministic() -> Self {
         CompileContext {
             now_unix: 0,
             budget_used: BudgetCost::default(),
+            revoked: HashSet::new(),
         }
     }
 }
@@ -124,6 +133,24 @@ pub fn compile_with_context(
         return Ok(Compiled::Rejected(RejectionReason::AuthorityVoid(format!(
             "writ signature invalid: {e}"
         ))));
+    }
+
+    // 2b. Revocation check. A validly-signed writ can still be void if it (or
+    // its immediate parent) has been revoked. Checked before the time window so
+    // a revoked-but-unexpired writ is rejected as soon as possible.
+    if ctx.revoked.contains(&writ.id) {
+        return Ok(Compiled::Rejected(RejectionReason::AuthorityVoid(format!(
+            "writ {} has been revoked",
+            writ.id
+        ))));
+    }
+    if let Some(parent) = writ.body.parent {
+        if ctx.revoked.contains(&parent) {
+            return Ok(Compiled::Rejected(RejectionReason::AuthorityVoid(format!(
+                "writ {} is void: parent {} has been revoked",
+                writ.id, parent
+            ))));
+        }
     }
 
     // 3. Time-window check.

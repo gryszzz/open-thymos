@@ -126,6 +126,43 @@ pub struct Runtime {
     /// [`Redactor::default_secrets`]; replace via [`Runtime::with_redactor`] or
     /// disable with `Redactor::none()`.
     pub redactor: thymos_core::Redactor,
+    /// Revoked writs. Consulted on every compile so a capability can be pulled
+    /// before its time window expires. Shared (cheap to clone) so a control
+    /// surface can revoke while runs are in flight.
+    pub revocations: Revocations,
+}
+
+/// Thread-safe set of revoked writ ids, consulted by the compiler on every
+/// submission. Revoking a writ also voids any child whose immediate parent is
+/// the revoked writ (one-level cascade enforced in the compiler).
+#[derive(Clone, Default)]
+pub struct Revocations {
+    inner: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<thymos_core::WritId>>>,
+}
+
+impl Revocations {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Revoke a writ by id. Idempotent.
+    pub fn revoke(&self, writ_id: thymos_core::WritId) {
+        self.inner.write().unwrap().insert(writ_id);
+    }
+
+    /// Restore a previously revoked writ (e.g. an erroneous revocation).
+    pub fn restore(&self, writ_id: &thymos_core::WritId) {
+        self.inner.write().unwrap().remove(writ_id);
+    }
+
+    pub fn is_revoked(&self, writ_id: &thymos_core::WritId) -> bool {
+        self.inner.read().unwrap().contains(writ_id)
+    }
+
+    /// A snapshot of the current revocation set, handed to the compiler.
+    pub fn snapshot(&self) -> std::collections::HashSet<thymos_core::WritId> {
+        self.inner.read().unwrap().clone()
+    }
 }
 
 impl Runtime {
@@ -137,7 +174,15 @@ impl Runtime {
             delegation_keyring: None,
             commit_signer: None,
             redactor: thymos_core::Redactor::default_secrets(),
+            revocations: Revocations::new(),
         }
+    }
+
+    /// Revoke a writ: subsequent submissions under it (or any child whose
+    /// immediate parent is it) are rejected as `AuthorityVoid`, even if the
+    /// signature and time window are still valid.
+    pub fn revoke_writ(&self, writ_id: thymos_core::WritId) {
+        self.revocations.revoke(writ_id);
     }
 
     /// Builder: attach a [`DelegationKeyring`] so child writs in delegations
@@ -349,6 +394,7 @@ impl<'a> Run<'a> {
         let ctx = CompileContext {
             now_unix,
             budget_used,
+            revoked: self.runtime.revocations.snapshot(),
         };
 
         // Compile (with budget + time-window checks).
