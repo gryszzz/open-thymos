@@ -1,7 +1,7 @@
 <div align="center">
   
 <div align="center">
-  <img src="./thymos/thymosG.png" alt="OpenThymos" width="325" />
+  <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 </div>
 <div align="center">
 
@@ -11,8 +11,9 @@
 
 ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
-</div>
- open-thymos
+<div align="center">
+  
+# open-thymos
 
 </div>
 
