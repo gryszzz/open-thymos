@@ -2,7 +2,7 @@
 
 <img src="thymos/Thymos-logo.PNG" alt="Thymos" width="96" height="96" />
 
-# OpenThymos
+# open-thymos
 
 </div>
 
