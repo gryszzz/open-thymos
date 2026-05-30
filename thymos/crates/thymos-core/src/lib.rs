@@ -16,10 +16,12 @@ pub mod hash;
 pub mod ids;
 pub mod intent;
 pub mod proposal;
+pub mod redact;
 pub mod world;
 pub mod writ;
 
 pub use commit::{Commit, CommitBody};
+pub use redact::Redactor;
 pub use delta::{DeltaOp, StructuredDelta};
 pub use error::{Error, Result};
 pub use hash::{canonical_json_bytes, content_hash, ContentHash};

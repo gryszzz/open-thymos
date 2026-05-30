@@ -20,14 +20,23 @@ use crate::ids::{IntentId, ProposalId, WritId};
 pub struct Proposal {
     pub id: ProposalId,
     pub body: ProposalBody,
-    /// Supplementary routing metadata — influences step 5 capability registry
-    /// resolution only. Never affects ProposalId, authority, policy, or replay
-    /// semantics. See Section 9 for provider authority boundary.
+    /// EXPERIMENTAL — excluded from any v1 compatibility guarantee.
     ///
-    /// NOTE (Phase I): the runtime does not currently read this field. It is
-    /// reserved per RFC `proposal-contract-v1.md` for provider routing layers
-    /// that wish to surface their decision without crossing the authority
-    /// boundary. See open question Q1 in the Phase I audit.
+    /// Supplementary routing metadata. Never affects ProposalId, authority,
+    /// policy, or replay semantics. See Section 9 for the provider authority
+    /// boundary.
+    ///
+    /// NOTE (Phase I): the runtime does **not** read this field. It is inert.
+    /// Two unresolved questions must be answered before it can be relied upon
+    /// (see RFC `proposal-contract-v1.md`, "Unresolved Questions"):
+    ///   1. Signing — until resolved, `routing_evidence` is unauthenticated and
+    ///      MUST NOT be surfaced as a trustworthy audit artifact. Adding a
+    ///      signature will change the `PendingApproval` wire format.
+    ///   2. Storage — moving it to a separate ledger segment will also change
+    ///      the `PendingApproval` wire format.
+    /// Because it is serialized inside `PendingApproval` payloads, its on-wire
+    /// shape is part of the ledger compatibility surface. Treat it as unstable
+    /// until both questions are closed; prefer not depending on it in v1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routing_evidence: Option<RoutingEvidence>,
 }

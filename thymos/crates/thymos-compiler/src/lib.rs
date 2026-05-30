@@ -10,6 +10,7 @@
 //!   3. Time-window check — now must lie within [not_before, expires_at].
 //!   4. Writ binding      — tool scope check (before tool surface is consulted).
 //!   5. Tool resolution   — lookup in the ToolRegistry; unknown -> UnknownTool.
+//!   5b. Effect ceiling   — tool effect class must be granted by the writ.
 //!   6. Budget check      — estimated cost vs remaining writ budget.
 //!   7. Type check        — delegate to ToolContract::validate_args.
 //!   8. Precondition      — contract-declared; evaluated against World.
@@ -28,7 +29,7 @@ use thymos_core::{
     writ::Writ,
 };
 use thymos_policy::PolicyEngine;
-use thymos_tools::{ToolInvocation, ToolRegistry};
+use thymos_tools::{EffectClass, ToolInvocation, ToolRegistry};
 
 pub enum Compiled {
     Staged(Proposal),
@@ -150,6 +151,20 @@ pub fn compile_with_context(
         Err(e) => return Err(e),
     };
 
+    // 5b. Effect-ceiling check — the tool's declared effect class must be
+    // granted by the writ's effect ceiling. Tool scopes authorize a tool *by
+    // name*; the ceiling authorizes the *kind of effect* it may have. Without
+    // this gate a read-only writ could still drive an External or Irreversible
+    // tool merely because the tool name matched a scope pattern. Authority must
+    // precede execution, so this runs before budget and type checks.
+    let effect_class = tool.meta().effect_class;
+    if !effect_within_ceiling(effect_class, &writ.body.effect_ceiling) {
+        return Ok(Compiled::Rejected(RejectionReason::AuthorityVoid(format!(
+            "writ effect ceiling does not grant {:?} effect required by tool '{}'",
+            effect_class, effective_tool
+        ))));
+    }
+
     // 6. Budget check — estimated cost for this call + accumulated usage.
     let estimate = tool.estimate_cost(&intent.body.args);
     let projected = ctx.budget_used.saturating_add(&estimate);
@@ -221,4 +236,22 @@ pub fn compile_with_context(
             reason,
         },
     })
+}
+
+/// Returns true if a writ whose `ceiling` is granted may drive a tool with the
+/// given `class`. Each effect class maps to the single ceiling bit it requires;
+/// `Pure` requires nothing. This mirrors the per-dimension subset check in
+/// `WritBody::verify_subset_of`, so an effect a parent writ could not delegate
+/// is also one the runtime will not execute.
+fn effect_within_ceiling(
+    class: EffectClass,
+    ceiling: &thymos_core::writ::EffectCeiling,
+) -> bool {
+    match class {
+        EffectClass::Pure => true,
+        EffectClass::Read => ceiling.read,
+        EffectClass::Write => ceiling.write,
+        EffectClass::External => ceiling.external,
+        EffectClass::Irreversible => ceiling.irreversible,
+    }
 }

@@ -255,11 +255,30 @@ are deterministic and follow the pattern established by `Budget` fields.
 
 ## Unresolved Questions
 
-None that affect compatibility or replay correctness. The following design
-questions are deferred to later phases:
+These questions do not affect **replay correctness**: `routing_evidence` lives on
+`Proposal` (not `ProposalBody`), is excluded from `ProposalId`, is not part of any
+commit delta, and is never folded by the replay verifier.
+
+They are **not** compatibility-neutral, however. `routing_evidence` is serialized
+inside `PendingApproval` ledger payloads, so its on-wire shape is part of the
+ledger compatibility surface, and answering either question later will change that
+wire format. For that reason `routing_evidence` is marked **experimental** and is
+**excluded from the v1 compatibility guarantee** (see `thymos-core`
+`Proposal::routing_evidence`). It is also currently **inert** — the runtime does
+not read it.
 
 - Should `routing_evidence` be signed by the provider to provide an audit trail?
-  (Phase II concern, requires RFC.)
+  Until resolved, `routing_evidence` is unauthenticated (its `decision_hash` is
+  provider-self-asserted) and MUST NOT be surfaced as a trustworthy audit
+  artifact. Adding a signature will add fields and break the `PendingApproval`
+  wire format. (Phase II concern, requires RFC.)
 - Should the ledger store `routing_evidence` separately from the `Proposal` to
-  avoid polluting `PendingApproval` payloads with supplementary data?
-  (Phase III ledger segment format RFC.)
+  avoid bloating `PendingApproval` payloads with supplementary data? Moving it
+  will also break the `PendingApproval` wire format. (Phase III ledger segment
+  format RFC.)
+- If `routing_evidence` is ever allowed to influence step 5 (capability registry
+  resolution), an unauthenticated provider field would influence execution. That
+  must be resolved (at minimum, signing) **before** any step-5 use is enabled.
+
+A v1 "stable" promise MUST NOT silently cover `routing_evidence` until the
+signing and storage questions are closed.

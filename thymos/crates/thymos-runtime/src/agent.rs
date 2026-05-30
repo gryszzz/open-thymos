@@ -45,6 +45,9 @@ pub enum Termination {
     MaxStepsReached,
     Suspended,
     WritExpired,
+    /// Cumulative cognition token/USD usage exceeded the writ budget. Tool
+    /// budget is enforced separately by the compiler; this bounds model spend.
+    BudgetExhausted,
 }
 
 pub struct AgentRunOptions {
@@ -190,6 +193,10 @@ pub fn run_agent(
 
     let mut since_last: Vec<HistoryItem> = Vec::new();
     let mut steps_executed = 0u32;
+    // Cumulative cognition (model) spend, debited against the writ budget so
+    // that model token/USD usage is capability-bounded — not just tool calls.
+    let mut cognition_tokens_used = 0u64;
+    let mut cognition_usd_used = 0u64;
     let mut intents_submitted = 0u32;
     let mut commits = 0u32;
     let mut rejections = 0u32;
@@ -222,6 +229,25 @@ pub fn run_agent(
         })?;
 
         steps_executed += 1;
+
+        // Debit cognition usage against the writ budget. The tokens were
+        // already spent producing this step, so if cumulative spend exceeds
+        // the budget we stop before submitting any of this step's intents.
+        cognition_tokens_used = cognition_tokens_used.saturating_add(step.usage.total_tokens());
+        cognition_usd_used = cognition_usd_used.saturating_add(step.usage.usd_millicents);
+        if cognition_tokens_used > writ.body.budget.tokens
+            || cognition_usd_used > writ.body.budget.usd_millicents
+        {
+            terminated_by = Termination::BudgetExhausted;
+            final_answer = Some(format!(
+                "cognition budget exhausted: used {} tokens / {} usd_millicents; writ allows {} / {}",
+                cognition_tokens_used,
+                cognition_usd_used,
+                writ.body.budget.tokens,
+                writ.body.budget.usd_millicents
+            ));
+            break;
+        }
 
         if step.intents.is_empty() {
             final_answer = step.final_answer;

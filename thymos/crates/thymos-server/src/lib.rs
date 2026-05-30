@@ -1782,6 +1782,7 @@ async fn get_replay(
         let entries = runtime.ledger.entries(trajectory_id)?;
         let cfg = thymos_ledger::ReplayConfig {
             require_compiler_version: require_compiler,
+            ..Default::default()
         };
         let (world, report) = thymos_ledger::replay(&entries, &cfg)?;
         let final_world_hash = content_hash(&world)?.to_string();

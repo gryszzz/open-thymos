@@ -196,16 +196,21 @@ impl Cognition for OpenAiCognition {
             )));
         }
 
-        // 4. Usage.
+        // 4. Usage — accumulate totals and capture this turn's usage.
+        let mut step_usage = crate::CognitionUsage::default();
         if let Some(usage) = resp_json.get("usage") {
-            self.total_input_tokens += usage
+            let input = usage
                 .get("prompt_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            self.total_output_tokens += usage
+            let output = usage
                 .get("completion_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
+            self.total_input_tokens += input;
+            self.total_output_tokens += output;
+            step_usage.input_tokens = input;
+            step_usage.output_tokens = output;
         }
 
         // 5. Parse the first choice.
@@ -323,6 +328,7 @@ impl Cognition for OpenAiCognition {
         Ok(CognitionStep {
             intents,
             final_answer,
+            usage: step_usage,
         })
     }
 }

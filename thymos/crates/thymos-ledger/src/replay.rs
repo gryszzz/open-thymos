@@ -38,13 +38,36 @@ pub struct ReplayConfig {
     /// Use [`ReplayConfig::pinned_to_current`] to pin against the version
     /// linked into the verifier binary.
     pub require_compiler_version: Option<String>,
+    /// If `Some`, every commit must carry an ed25519 signature that verifies
+    /// against this public key — i.e. the trajectory must have been produced
+    /// by a runtime holding the corresponding signing key
+    /// (`Runtime::with_commit_signer`). Unsigned commits are rejected.
+    pub require_commit_signatures: Option<thymos_core::crypto::PublicKey>,
+    /// If `Some`, every commit must declare exactly this policy-set hash
+    /// (`PolicyEngine::policy_set_hash`). Detects that the policy rule set
+    /// drifted since the trajectory was produced.
+    pub require_policy_set_hash: Option<String>,
 }
 
 impl ReplayConfig {
     pub fn pinned_to_current() -> Self {
         ReplayConfig {
             require_compiler_version: Some(COMPILER_VERSION.into()),
+            require_commit_signatures: None,
+            require_policy_set_hash: None,
         }
+    }
+
+    /// Require every commit to be signed by `pubkey`.
+    pub fn require_signed_by(mut self, pubkey: thymos_core::crypto::PublicKey) -> Self {
+        self.require_commit_signatures = Some(pubkey);
+        self
+    }
+
+    /// Require every commit to declare exactly `hash` as its policy-set hash.
+    pub fn require_policy_set(mut self, hash: impl Into<String>) -> Self {
+        self.require_policy_set_hash = Some(hash.into());
+        self
     }
 }
 
@@ -108,6 +131,22 @@ fn apply_commit(world: &mut World, commit: &Commit, cfg: &ReplayConfig) -> Resul
             )));
         }
     }
+    if let Some(pk) = &cfg.require_commit_signatures {
+        commit.verify_signature(pk).map_err(|e| {
+            thymos_core::error::Error::Invariant(format!(
+                "commit {} failed signature verification: {e}",
+                commit.id
+            ))
+        })?;
+    }
+    if let Some(required) = &cfg.require_policy_set_hash {
+        if commit.body.policy_set_hash != *required {
+            return Err(thymos_core::error::Error::Invariant(format!(
+                "policy-set drift at commit {}: pinned {} got {}",
+                commit.id, required, commit.body.policy_set_hash
+            )));
+        }
+    }
     world.apply(&commit.body.delta, commit.id)
 }
 
@@ -151,6 +190,7 @@ mod tests {
             parent: vec![],
             trajectory_id: traj,
             proposal_id: ProposalId::ZERO,
+            intent_id: thymos_core::ids::IntentId::ZERO,
             writ_id: WritId(ContentHash::ZERO),
             seq,
             delta: StructuredDelta::single(DeltaOp::Create {
@@ -163,7 +203,12 @@ mod tests {
                 output: serde_json::json!(null),
                 latency_ms: 0,
             }],
+            policy_trace: thymos_core::proposal::PolicyTrace {
+                rules_evaluated: vec![],
+                decision: thymos_core::proposal::PolicyDecision::Permit,
+            },
             compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
             signature: None,
         };
@@ -200,6 +245,7 @@ mod tests {
         let entries = ledger.entries(traj).unwrap();
         let cfg = ReplayConfig {
             require_compiler_version: Some("thymos-compiler/9.9.9".into()),
+            ..Default::default()
         };
         let err = replay(&entries, &cfg).unwrap_err();
         assert!(err.to_string().contains("compiler version drift"));
@@ -222,6 +268,100 @@ mod tests {
             vec![COMPILER_VERSION.to_string()]
         );
     }
+
+    fn append_signed_kv(
+        ledger: &Ledger,
+        traj: TrajectoryId,
+        key: &str,
+        seq: u64,
+        sk: &thymos_core::crypto::SigningKey,
+    ) {
+        let body = CommitBody {
+            parent: vec![],
+            trajectory_id: traj,
+            proposal_id: ProposalId::ZERO,
+            intent_id: thymos_core::ids::IntentId::ZERO,
+            writ_id: WritId(ContentHash::ZERO),
+            seq,
+            delta: StructuredDelta::single(DeltaOp::Create {
+                kind: "kv".into(),
+                id: key.into(),
+                value: serde_json::json!("v"),
+            }),
+            observations: vec![],
+            policy_trace: thymos_core::proposal::PolicyTrace {
+                rules_evaluated: vec![],
+                decision: thymos_core::proposal::PolicyDecision::Permit,
+            },
+            compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: String::new(),
+            budget_cost: thymos_core::writ::BudgetCost::default(),
+            signature: None,
+        };
+        let commit = Commit::new_signed(body, sk).unwrap();
+        ledger.append_commit(commit).unwrap();
+    }
+
+    #[test]
+    fn replay_requires_commit_signatures() {
+        use thymos_core::crypto::{generate_signing_key, public_key_of};
+        let sk = generate_signing_key();
+        let pk = public_key_of(&sk);
+
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"replay-sig");
+        ledger.append_root(traj, "test").unwrap();
+        append_signed_kv(&ledger, traj, "k", 1, &sk);
+
+        let entries = ledger.entries(traj).unwrap();
+        // Correct key verifies.
+        replay(&entries, &ReplayConfig::default().require_signed_by(pk))
+            .expect("signed replay must pass with the right key");
+        // Wrong key is rejected.
+        let wrong = public_key_of(&generate_signing_key());
+        let err = replay(&entries, &ReplayConfig::default().require_signed_by(wrong))
+            .unwrap_err();
+        assert!(err.to_string().contains("signature verification"));
+    }
+
+    #[test]
+    fn replay_detects_policy_set_drift() {
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"replay-policy");
+        ledger.append_root(traj, "test").unwrap();
+        append_kv(&ledger, traj, "x", "y", 1); // fixture commit: policy_set_hash == ""
+
+        let entries = ledger.entries(traj).unwrap();
+        // Matching hash passes.
+        replay(&entries, &ReplayConfig::default().require_policy_set(""))
+            .expect("matching policy-set hash must pass");
+        // A different expected hash is flagged as drift.
+        let err = replay(
+            &entries,
+            &ReplayConfig::default().require_policy_set("deadbeef"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("policy-set drift"));
+    }
+
+    #[test]
+    fn replay_rejects_unsigned_when_signatures_required() {
+        use thymos_core::crypto::{generate_signing_key, public_key_of};
+        let pk = public_key_of(&generate_signing_key());
+        let ledger = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"replay-unsigned");
+        ledger.append_root(traj, "test").unwrap();
+        append_kv(&ledger, traj, "x", "y", 1); // unsigned
+
+        let entries = ledger.entries(traj).unwrap();
+        let err = replay(&entries, &ReplayConfig::default().require_signed_by(pk))
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("signature verification") || msg.contains("unsigned"),
+            "expected signature failure, got: {msg}"
+        );
+    }
 }
 
 #[cfg(all(test, feature = "sqlite"))]
@@ -241,6 +381,7 @@ mod bench_tests {
             parent: vec![],
             trajectory_id: traj,
             proposal_id: ProposalId::ZERO,
+            intent_id: thymos_core::ids::IntentId::ZERO,
             writ_id: WritId(ContentHash::ZERO),
             seq,
             delta: StructuredDelta::single(DeltaOp::Create {
@@ -253,7 +394,12 @@ mod bench_tests {
                 output: serde_json::json!(null),
                 latency_ms: 0,
             }],
+            policy_trace: thymos_core::proposal::PolicyTrace {
+                rules_evaluated: vec![],
+                decision: thymos_core::proposal::PolicyDecision::Permit,
+            },
             compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
             signature: None,
         };

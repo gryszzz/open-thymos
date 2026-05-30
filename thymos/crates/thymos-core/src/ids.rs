@@ -146,6 +146,7 @@ mod tests {
             parent: vec![CommitId::ZERO],
             trajectory_id: traj,
             proposal_id: ProposalId::ZERO,
+            intent_id: IntentId::ZERO,
             writ_id: WritId(ContentHash::ZERO),
             seq: 1,
             delta: StructuredDelta::single(DeltaOp::Create {
@@ -158,7 +159,12 @@ mod tests {
                 output: serde_json::json!(null),
                 latency_ms: 10,
             }],
+            policy_trace: crate::proposal::PolicyTrace {
+                rules_evaluated: vec![],
+                decision: crate::proposal::PolicyDecision::Permit,
+            },
             compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: String::new(),
             budget_cost: BudgetCost::default(),
             signature: None,
         }

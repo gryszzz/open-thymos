@@ -255,16 +255,22 @@ impl Cognition for AnthropicCognition {
         // 3. POST with bounded retry on transient errors.
         let resp_json = self.post_with_retry(&req_body)?;
 
-        // 4. Update usage counters (including cache stats when present).
+        // 4. Update usage counters (including cache stats when present) and
+        //    capture this turn's usage for the returned CognitionStep.
+        let mut step_usage = crate::CognitionUsage::default();
         if let Some(usage) = resp_json.get("usage") {
-            self.total_input_tokens += usage
+            let input = usage
                 .get("input_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            self.total_output_tokens += usage
+            let output = usage
                 .get("output_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
+            self.total_input_tokens += input;
+            self.total_output_tokens += output;
+            step_usage.input_tokens = input;
+            step_usage.output_tokens = output;
             self.total_cache_read_tokens += usage
                 .get("cache_read_input_tokens")
                 .and_then(|v| v.as_u64())
@@ -394,6 +400,7 @@ impl Cognition for AnthropicCognition {
         Ok(CognitionStep {
             intents,
             final_answer,
+            usage: step_usage,
         })
     }
 }

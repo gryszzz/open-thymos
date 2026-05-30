@@ -248,6 +248,7 @@ mod tests {
             parent: parent.into_iter().collect(),
             trajectory_id: traj,
             proposal_id: ProposalId::ZERO,
+            intent_id: IntentId::ZERO,
             writ_id: WritId(ContentHash::ZERO),
             seq,
             delta: StructuredDelta::single(DeltaOp::Create {
@@ -260,7 +261,12 @@ mod tests {
                 output: serde_json::json!(null),
                 latency_ms: 1,
             }],
+            policy_trace: PolicyTrace {
+                rules_evaluated: vec![],
+                decision: PolicyDecision::Permit,
+            },
             compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
             signature: None,
         };
@@ -301,6 +307,81 @@ mod tests {
         let root = l.append_root(traj, "hello").unwrap();
         let c = trivial_commit(traj, Some(CommitId(root.id)), 5);
         assert!(l.append_commit(c).is_err());
+    }
+
+    /// W8: two writers (separate connections to the same file) racing to append
+    /// at the same seq must resolve to exactly one winner — never a forked chain.
+    #[test]
+    fn concurrent_append_at_same_seq_admits_exactly_one() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("thymos-w8-{}-{}.db", std::process::id(), nanos));
+        let _ = std::fs::remove_file(&path);
+
+        let traj = TrajectoryId::new_from_seed(b"w8-race");
+        {
+            let l = Ledger::open(&path).unwrap();
+            l.append_root(traj, "root").unwrap();
+        }
+        let root_id = Ledger::open(&path).unwrap().head(traj).unwrap().0;
+
+        let barrier = Arc::new(Barrier::new(2));
+        let mut handles = Vec::new();
+        for n in 0..2u8 {
+            let path = path.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let l = Ledger::open(&path).unwrap();
+                // Two *distinct* commits (different delta → different id) both
+                // claiming seq 1, so the seq-unique invariant is what decides,
+                // not the id primary key.
+                let body = CommitBody {
+                    parent: vec![CommitId(root_id)],
+                    trajectory_id: traj,
+                    proposal_id: ProposalId::ZERO,
+                    intent_id: IntentId::ZERO,
+                    writ_id: WritId(ContentHash::ZERO),
+                    seq: 1,
+                    delta: StructuredDelta::single(DeltaOp::Create {
+                        kind: "kv".into(),
+                        id: format!("k{n}"),
+                        value: serde_json::json!(n),
+                    }),
+                    observations: vec![],
+                    policy_trace: PolicyTrace {
+                        rules_evaluated: vec![],
+                        decision: PolicyDecision::Permit,
+                    },
+                    compiler_version: COMPILER_VERSION.into(),
+                    policy_set_hash: String::new(),
+                    budget_cost: thymos_core::writ::BudgetCost::default(),
+                    signature: None,
+                };
+                let commit = Commit::new(body).unwrap();
+                barrier.wait();
+                l.append_commit(commit).is_ok()
+            }));
+        }
+
+        let successes = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .filter(|ok| *ok)
+            .count();
+
+        let l = Ledger::open(&path).unwrap();
+        let entries = l.entries(traj).unwrap();
+        l.verify_integrity(traj).expect("chain must stay valid");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(successes, 1, "exactly one writer may win the seq-1 slot");
+        assert_eq!(entries.len(), 2, "root + exactly one commit (no fork)");
     }
 
     // ── F2 hardening: verify_integrity_entries new invariants ────────────

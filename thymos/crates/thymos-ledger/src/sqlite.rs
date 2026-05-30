@@ -56,6 +56,13 @@ impl SqliteLedger {
             CREATE INDEX IF NOT EXISTS idx_entries_trajectory_seq
                 ON entries(trajectory_id, seq);
 
+            -- Hard invariant: at most one entry per (trajectory, seq). This is
+            -- the structural guard against a forked chain when two writers race
+            -- to append at the same sequence number — the losing INSERT fails
+            -- rather than silently creating a second entry at that seq.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_trajectory_seq_unique
+                ON entries(trajectory_id, seq);
+
             CREATE TABLE IF NOT EXISTS heads (
                 trajectory_id  BLOB NOT NULL,
                 branch         TEXT NOT NULL,
@@ -79,8 +86,15 @@ impl SqliteLedger {
     }
 
     pub fn append_commit(&self, commit: Commit) -> Result<Entry> {
-        let conn = self.conn.lock().unwrap();
-        let (parent_id, parent_seq) = Self::current_head(&conn, commit.body.trajectory_id)?;
+        let mut conn = self.conn.lock().unwrap();
+        // IMMEDIATE acquires the write lock up front, so the head read and the
+        // entry insert are one atomic step against other connections/processes
+        // — no other writer can advance the head between our read and write.
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| Error::Ledger(e.to_string()))?;
+
+        let (parent_id, parent_seq) = Self::current_head(&tx, commit.body.trajectory_id)?;
 
         let expected_parent_in_commit = match &commit.body.parent[..] {
             [single] => Some(single.0),
@@ -115,7 +129,8 @@ impl SqliteLedger {
             kind: EntryKind::Commit,
             payload,
         };
-        Self::insert_entry_inner(&conn, &entry, true)?;
+        Self::insert_entry_inner(&tx, &entry, true)?;
+        tx.commit().map_err(|e| Error::Ledger(e.to_string()))?;
         Ok(entry)
     }
 

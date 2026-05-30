@@ -103,6 +103,20 @@ fn signed_writ(
     budget: Budget,
     time_window: TimeWindow,
 ) -> (Writ, SigningKey) {
+    signed_writ_with_ceiling(
+        tool_scopes,
+        budget,
+        time_window,
+        EffectCeiling::read_write_local(),
+    )
+}
+
+fn signed_writ_with_ceiling(
+    tool_scopes: Vec<ToolPattern>,
+    budget: Budget,
+    time_window: TimeWindow,
+    effect_ceiling: EffectCeiling,
+) -> (Writ, SigningKey) {
     let issuer = generate_signing_key();
     let subject = generate_signing_key();
     let writ = Writ::sign(
@@ -115,7 +129,7 @@ fn signed_writ(
             tenant_id: String::new(),
             tool_scopes,
             budget,
-            effect_ceiling: EffectCeiling::read_write_local(),
+            effect_ceiling,
             time_window,
             delegation: DelegationBounds {
                 max_depth: 1,
@@ -314,6 +328,56 @@ fn rejects_before_execute_when_tool_unknown() {
     assert_eq!(summary.commits, 0);
     assert_eq!(summary.rejections, 1);
     assert_never_executed(&counter, "unknown tool");
+}
+
+// ── Stage 5b: effect ceiling ─────────────────────────────────────────────────
+
+#[test]
+fn rejects_before_execute_when_effect_exceeds_ceiling() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let runtime = build_runtime(Arc::clone(&counter));
+
+    // PoisonTool declares EffectClass::Write, but this writ's ceiling grants
+    // read only. The tool name IS in scope, so the only thing standing between
+    // the intent and execution is the effect-ceiling gate (Stage 5b). Before
+    // that gate existed, a read-only writ could drive a Write tool.
+    let (writ, _) = signed_writ_with_ceiling(
+        vec![ToolPattern::exact("poison")],
+        Budget {
+            tokens: 10_000,
+            tool_calls: 32,
+            wall_clock_ms: 60_000,
+            usd_millicents: 0,
+        },
+        TimeWindow {
+            not_before: 0,
+            expires_at: u64::MAX,
+        },
+        EffectCeiling {
+            read: true,
+            write: false,
+            external: false,
+            irreversible: false,
+        },
+    );
+
+    let mut cog = MockCognition::new(
+        vec![vec![intent("poison", json!({}), 9)]],
+        Some("done".into()),
+    );
+    let summary = run_agent(
+        &runtime,
+        &mut cog,
+        "effect",
+        &writ,
+        AgentRunOptions { max_steps: 4 },
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(summary.commits, 0);
+    assert_eq!(summary.rejections, 1);
+    assert_never_executed(&counter, "effect ceiling");
 }
 
 // ── Stage 6: budget projection ───────────────────────────────────────────────

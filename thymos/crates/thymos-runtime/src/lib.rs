@@ -115,6 +115,17 @@ pub struct Runtime {
     pub tools: ToolRegistry,
     pub policy: PolicyEngine,
     pub delegation_keyring: Option<DelegationKeyring>,
+    /// Optional runtime identity that signs every commit it appends. When set,
+    /// commits are written via `Commit::new_signed`; replay can then require
+    /// each commit verify against the corresponding public key
+    /// (`ReplayConfig::require_commit_signatures`). When `None`, commits are
+    /// unsigned and tamper-evidence rests on the hash chain alone.
+    pub commit_signer: Option<thymos_core::crypto::SigningKey>,
+    /// Redacts secrets from tool observations before they are persisted in the
+    /// (append-only, undeletable) ledger. Defaults to
+    /// [`Redactor::default_secrets`]; replace via [`Runtime::with_redactor`] or
+    /// disable with `Redactor::none()`.
+    pub redactor: thymos_core::Redactor,
 }
 
 impl Runtime {
@@ -124,6 +135,8 @@ impl Runtime {
             tools,
             policy,
             delegation_keyring: None,
+            commit_signer: None,
+            redactor: thymos_core::Redactor::default_secrets(),
         }
     }
 
@@ -132,6 +145,30 @@ impl Runtime {
     pub fn with_delegation_keyring(mut self, keyring: DelegationKeyring) -> Self {
         self.delegation_keyring = Some(keyring);
         self
+    }
+
+    /// Builder: attach a runtime signing key so every appended commit is
+    /// ed25519-signed over `canonical_json(body_without_signature)`.
+    pub fn with_commit_signer(mut self, signer: thymos_core::crypto::SigningKey) -> Self {
+        self.commit_signer = Some(signer);
+        self
+    }
+
+    /// Builder: set the secret redactor applied to observations before they are
+    /// committed. Use `Redactor::none()` to disable (not recommended).
+    pub fn with_redactor(mut self, redactor: thymos_core::Redactor) -> Self {
+        self.redactor = redactor;
+        self
+    }
+
+    /// Build a Commit, signing it with the runtime's commit signer if one is
+    /// configured. Centralizes the signed/unsigned choice so both the staged
+    /// and the approval-resume commit paths stay consistent.
+    fn build_commit(&self, body: CommitBody) -> Result<Commit> {
+        match &self.commit_signer {
+            Some(sk) => Commit::new_signed(body, sk),
+            None => Commit::new(body),
+        }
     }
 
     /// Create a new trajectory and return a Run bound to it.
@@ -398,12 +435,17 @@ impl<'a> Run<'a> {
                     },
                 );
 
-                let outcome = tool
+                let mut outcome = tool
                     .execute(&inv)
                     .map_err(|e| Error::ToolExecution(e.to_string()))?;
 
                 // Verify postconditions (contract-declared).
                 tool.check_postconditions(&inv, &outcome.delta)?;
+
+                // Redact secrets before the observation is persisted to the
+                // append-only ledger (and re-surfaced to cognition).
+                outcome.observation.output =
+                    self.runtime.redactor.redact(&outcome.observation.output);
 
                 #[cfg(feature = "telemetry")]
                 {
@@ -448,15 +490,18 @@ impl<'a> Run<'a> {
                     parent: vec![CommitId(parent_hash)],
                     trajectory_id: self.trajectory_id,
                     proposal_id: proposal.id,
+                    intent_id: proposal.body.intent_id,
                     writ_id: writ.id,
                     seq: parent_seq + 1,
                     delta: outcome.delta,
                     observations: vec![outcome.observation],
+                    policy_trace: proposal.body.policy_trace.clone(),
                     compiler_version: COMPILER_VERSION.into(),
+                    policy_set_hash: self.runtime.policy.policy_set_hash(),
                     budget_cost,
                     signature: None,
                 };
-                let commit = Commit::new(commit_body)?;
+                let commit = self.runtime.build_commit(commit_body)?;
                 let committed_id = CommitId(commit.id.0);
 
                 self.runtime.ledger.append_commit(commit)?;
@@ -669,10 +714,11 @@ impl<'a> Run<'a> {
                 tool: proposal.body.plan.tool.clone(),
             },
         );
-        let outcome = tool
+        let mut outcome = tool
             .execute(&inv)
             .map_err(|e| Error::ToolExecution(e.to_string()))?;
         tool.check_postconditions(&inv, &outcome.delta)?;
+        outcome.observation.output = self.runtime.redactor.redact(&outcome.observation.output);
         crate::agent::emit_event(
             trace,
             crate::AgentTraceEvent::ExecutionObserved {
@@ -698,15 +744,18 @@ impl<'a> Run<'a> {
             parent: vec![CommitId(parent_hash)],
             trajectory_id: self.trajectory_id,
             proposal_id: proposal.id,
+            intent_id: proposal.body.intent_id,
             writ_id: writ.id,
             seq: parent_seq + 1,
             delta: outcome.delta,
             observations: vec![outcome.observation],
+            policy_trace: proposal.body.policy_trace.clone(),
             compiler_version: COMPILER_VERSION.into(),
+            policy_set_hash: self.runtime.policy.policy_set_hash(),
             budget_cost,
             signature: None,
         };
-        let commit = Commit::new(commit_body)?;
+        let commit = self.runtime.build_commit(commit_body)?;
         let committed_id = CommitId(commit.id.0);
         self.runtime.ledger.append_commit(commit)?;
         crate::agent::emit_event(

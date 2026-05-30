@@ -61,6 +61,13 @@ impl PostgresLedger {
                 CREATE INDEX IF NOT EXISTS idx_entries_trajectory_seq
                     ON entries(trajectory_id, seq);
 
+                -- Hard invariant against forked chains under multi-node races:
+                -- at most one entry per (trajectory, seq). The losing concurrent
+                -- INSERT fails on the unique violation instead of creating a
+                -- second entry at the same sequence number.
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_trajectory_seq_unique
+                    ON entries(trajectory_id, seq);
+
                 CREATE TABLE IF NOT EXISTS heads (
                     trajectory_id  BYTEA NOT NULL,
                     branch         TEXT NOT NULL,

@@ -216,6 +216,7 @@ fn replay_rejects_commit_with_empty_compiler_version() {
         parent: vec![],
         trajectory_id: traj,
         proposal_id: ProposalId::ZERO,
+        intent_id: thymos_core::ids::IntentId::ZERO,
         writ_id: WritId(ContentHash::ZERO),
         seq: 1,
         delta: StructuredDelta::single(DeltaOp::Create {
@@ -228,7 +229,12 @@ fn replay_rejects_commit_with_empty_compiler_version() {
             output: json!(null),
             latency_ms: 0,
         }],
+        policy_trace: thymos_core::proposal::PolicyTrace {
+            rules_evaluated: vec![],
+            decision: thymos_core::proposal::PolicyDecision::Permit,
+        },
         compiler_version: "".into(), // ← the violation
+        policy_set_hash: String::new(),
         budget_cost: thymos_core::writ::BudgetCost::default(),
         signature: None,
     };

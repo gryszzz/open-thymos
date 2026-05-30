@@ -15,6 +15,14 @@ pub trait Policy: Send + Sync {
     /// Stable name used in `PolicyTrace.rules_evaluated`.
     fn name(&self) -> &'static str;
 
+    /// Version tag for this policy's logic. Bump it when the rule's behavior
+    /// changes so the engine's `policy_set_hash` changes too — that lets replay
+    /// detect that a trajectory was produced under a different policy version.
+    /// Default: `"1"`.
+    fn version(&self) -> &'static str {
+        "1"
+    }
+
     /// Rules that opt-in to a given tool only. Return true to have the engine
     /// run this policy for the intent. Default: always.
     fn applies_to(&self, _intent: &Intent) -> bool {
@@ -38,6 +46,22 @@ impl PolicyEngine {
     pub fn with<P: Policy + 'static>(mut self, policy: P) -> Self {
         self.rules.push(Box::new(policy));
         self
+    }
+
+    /// A stable fingerprint of the configured rule set: a content hash over the
+    /// ordered `name@version` pairs of every registered policy. Recorded in each
+    /// commit (`CommitBody::policy_set_hash`) so replay can detect that the
+    /// policy engine changed since a trajectory was produced — adding, removing,
+    /// reordering, or version-bumping a rule all change the hash.
+    pub fn policy_set_hash(&self) -> String {
+        let pairs: Vec<String> = self
+            .rules
+            .iter()
+            .map(|r| format!("{}@{}", r.name(), r.version()))
+            .collect();
+        thymos_core::content_hash(&pairs)
+            .map(|h| h.to_string())
+            .unwrap_or_default()
     }
 
     pub fn evaluate(&self, intent: &Intent, writ: &Writ, world: &World) -> PolicyTrace {
@@ -166,5 +190,37 @@ impl Policy for ThresholdApprovalPolicy {
         } else {
             PolicyDecision::Permit
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_set_hash_is_stable_and_sensitive_to_rules() {
+        let a = PolicyEngine::new().with(WritAuthorityPolicy);
+        let a2 = PolicyEngine::new().with(WritAuthorityPolicy);
+        assert_eq!(
+            a.policy_set_hash(),
+            a2.policy_set_hash(),
+            "identical rule sets must hash identically"
+        );
+
+        let b = PolicyEngine::new()
+            .with(WritAuthorityPolicy)
+            .with(TenantIsolationPolicy);
+        assert_ne!(
+            a.policy_set_hash(),
+            b.policy_set_hash(),
+            "adding a rule must change the hash"
+        );
+    }
+
+    #[test]
+    fn empty_engine_hash_is_deterministic_and_nonempty() {
+        let h = PolicyEngine::new().policy_set_hash();
+        assert_eq!(h, PolicyEngine::new().policy_set_hash());
+        assert!(!h.is_empty());
     }
 }

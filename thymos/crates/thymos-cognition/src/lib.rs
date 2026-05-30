@@ -63,8 +63,25 @@ pub enum HistoryItem {
     Failed { intent: Intent, error: String },
 }
 
+/// Token / cost usage a cognition gateway reports for one `step`. The runtime
+/// debits these against the writ budget so that model spend — not just tool
+/// calls — is bounded by capability. Adapters that cannot price a request leave
+/// `usd_millicents` at zero; the token dimensions remain enforceable.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CognitionUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub usd_millicents: u64,
+}
+
+impl CognitionUsage {
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens.saturating_add(self.output_tokens)
+    }
+}
+
 /// One turn of cognition output.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CognitionStep {
     /// Intents to submit through the IPC Triad, in order. Empty means
     /// "terminate" — the runtime will stop the loop after this step.
@@ -72,6 +89,9 @@ pub struct CognitionStep {
     /// Optional natural-language result. Set when cognition has concluded
     /// the task. May accompany an empty `intents` list.
     pub final_answer: Option<String>,
+    /// Token/cost usage incurred producing this step. Defaults to zero for
+    /// gateways that don't report it (e.g. the deterministic mock).
+    pub usage: CognitionUsage,
 }
 
 /// Cognition produces Intents. That is the entire contract.
