@@ -610,3 +610,46 @@ async fn gateway_health_bypasses_auth() {
     let resp = server.get("/health").await;
     resp.assert_status_ok();
 }
+
+fn bearer(claims: serde_json::Value) -> String {
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+    let key = jsonwebtoken::EncodingKey::from_secret(b"test-secret-key");
+    jsonwebtoken::encode(&header, &claims, &key).unwrap()
+}
+
+#[tokio::test]
+async fn revoke_requires_admin_role() {
+    let server = test_server(jwt_test_state());
+    let writ = "0".repeat(64);
+
+    // Authenticated but NOT admin → 403.
+    let tok = bearer(json!({ "sub": "u", "exp": 9999999999u64, "iat": 1000000000u64 }));
+    let resp = server
+        .post(&format!("/writs/{writ}/revoke"))
+        .add_header(
+            axum::http::HeaderName::from_static("authorization"),
+            axum::http::HeaderValue::from_str(&format!("Bearer {tok}")).unwrap(),
+        )
+        .await;
+    resp.assert_status(axum::http::StatusCode::FORBIDDEN);
+
+    // Admin role → allowed.
+    let admin = bearer(json!({ "sub": "u", "roles": ["admin"], "exp": 9999999999u64, "iat": 1000000000u64 }));
+    let resp = server
+        .post(&format!("/writs/{writ}/revoke"))
+        .add_header(
+            axum::http::HeaderName::from_static("authorization"),
+            axum::http::HeaderValue::from_str(&format!("Bearer {admin}")).unwrap(),
+        )
+        .await;
+    resp.assert_status_ok();
+}
+
+#[tokio::test]
+async fn marketplace_requires_auth_when_jwt_configured() {
+    // Fix: marketplace routes are now behind the auth layer. Without a token the
+    // (previously open) marketplace endpoint is rejected.
+    let server = test_server(jwt_test_state());
+    let resp = server.get("/marketplace/packages").await;
+    resp.assert_status(axum::http::StatusCode::UNAUTHORIZED);
+}
