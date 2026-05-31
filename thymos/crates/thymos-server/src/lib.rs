@@ -443,7 +443,7 @@ fn load_programmable_capabilities(tools: &mut ToolRegistry, tool_manifest_dirs: 
 pub fn app(state: Arc<AppState>) -> Router {
     let marketplace_state = state.marketplace.clone();
     let cors = cors_layer(&state);
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/runs", get(list_runs).post(create_run))
@@ -467,27 +467,32 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/audit/entries", get(audit::get_audit_entries))
         .route("/audit/entries/count", get(audit::count_audit_entries));
 
-    // Wire JWT middleware if configured.
-    if let Some(jwt) = &state.jwt_config {
-        router = router.layer(axum::middleware::from_fn_with_state(
+    // Combine main + marketplace routes BEFORE the auth layers, so the auth
+    // middleware gates the marketplace mutating endpoints (publish/unpublish)
+    // too — previously they were merged after the layers and bypassed auth.
+    let jwt_config = state.jwt_config.clone();
+    let gateway = state.gateway.clone();
+    let mut combined = router
+        .with_state(state)
+        .merge(marketplace_api::marketplace_router(marketplace_state));
+
+    // Wire JWT middleware if configured (wraps main + marketplace).
+    if let Some(jwt) = &jwt_config {
+        combined = combined.layer(axum::middleware::from_fn_with_state(
             jwt.clone(),
             auth::jwt_middleware,
         ));
     }
 
     // Wire API gateway middleware if configured.
-    if let Some(gw) = &state.gateway {
-        router = router.layer(axum::middleware::from_fn_with_state(
+    if let Some(gw) = &gateway {
+        combined = combined.layer(axum::middleware::from_fn_with_state(
             gw.clone(),
             middleware::api_key_middleware,
         ));
     }
 
-    router
-        .layer(cors)
-        .with_state(state)
-        // Marketplace routes have their own state type, so merge after with_state.
-        .merge(marketplace_api::marketplace_router(marketplace_state))
+    combined.layer(cors)
 }
 
 fn cors_layer(state: &Arc<AppState>) -> CorsLayer {
@@ -531,6 +536,29 @@ fn extract_tenant_id(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string()
+}
+
+/// Authorization gate for privileged control-plane endpoints (writ
+/// revoke/restore). When a JWT layer is configured, the caller's claims must
+/// include the `admin` role; otherwise (no auth layer — local/dev mode) it is
+/// permitted, consistent with the rest of the server being open when unconfigured.
+fn require_admin(
+    jwt_claims: &Option<axum::Extension<auth::JwtClaims>>,
+) -> Result<(), axum::response::Response> {
+    match jwt_claims {
+        Some(axum::Extension(claims)) => {
+            if claims.roles.iter().any(|r| r == "admin") {
+                Ok(())
+            } else {
+                Err((
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": "admin role required" })),
+                )
+                    .into_response())
+            }
+        }
+        None => Ok(()),
+    }
 }
 
 fn run_status_from_summary(summary: &AgentRunSummary) -> RunStatus {
@@ -650,9 +678,16 @@ pub struct RoutedSubmitRequest {
 /// governed outcome.
 async fn routed_submit(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    jwt_claims: Option<axum::Extension<auth::JwtClaims>>,
+    gateway_ctx: Option<axum::Extension<middleware::GatewayContext>>,
     Json(req): Json<RoutedSubmitRequest>,
 ) -> impl IntoResponse {
     let runtime = state.runtime.clone();
+    // Scope the minted writ to the caller's tenant so the routed action is
+    // subject to tenant-isolation policy (was previously an unscoped "system"
+    // writ that could touch any tenant's resources).
+    let tenant_id = extract_tenant_id(&headers, &jwt_claims, &gateway_ctx);
 
     // Fresh trajectory per routed action.
     let seed = thymos_core::crypto::random_nonce();
@@ -679,7 +714,7 @@ async fn routed_submit(
             subject_pubkey: public_key_of(&agent_key),
             nonce: thymos_core::crypto::random_nonce(),
             parent: None,
-            tenant_id: String::new(),
+            tenant_id: tenant_id.clone(),
             tool_scopes: vec![ToolPattern::exact(&req.tool)],
             budget: Budget {
                 tokens: 100_000,
@@ -771,8 +806,12 @@ async fn routed_submit(
 /// whose immediate parent is it) are rejected as AuthorityVoid by the compiler.
 async fn revoke_writ_handler(
     State(state): State<Arc<AppState>>,
+    jwt_claims: Option<axum::Extension<auth::JwtClaims>>,
     Path(writ_id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(resp) = require_admin(&jwt_claims) {
+        return resp;
+    }
     match writ_id_from_hex(writ_id.trim()) {
         Ok(id) => {
             state.runtime.revoke_writ(id);
@@ -793,8 +832,12 @@ async fn revoke_writ_handler(
 /// Reinstate a previously revoked writ (e.g. an erroneous revocation).
 async fn restore_writ_handler(
     State(state): State<Arc<AppState>>,
+    jwt_claims: Option<axum::Extension<auth::JwtClaims>>,
     Path(writ_id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(resp) = require_admin(&jwt_claims) {
+        return resp;
+    }
     match writ_id_from_hex(writ_id.trim()) {
         Ok(id) => {
             state.runtime.revocations.restore(&id);
