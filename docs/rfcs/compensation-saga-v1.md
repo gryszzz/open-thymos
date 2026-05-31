@@ -24,9 +24,15 @@ approval* even on a bare policy permit (you can't undo it and the runtime can't
 roll it back, so a human signs off). Implemented via the `ToolContract::compensable()`
 trait method, so no `ToolContractMeta` change was needed.
 
-Deferred (see Unresolved Questions): cross-trajectory/delegated-child
-compensation; compensating past an expired writ window; partial-failure policy
-beyond "halt and surface".
+Also shipped: **cross-trajectory compensation** — `compensate_to` walks the
+target trajectory's entries newest-first and, on each `Delegation` edge,
+recursively compensates the entire child trajectory it spawned (back to the
+child's root). A parent rollback therefore unwinds delegated work too;
+children form a DAG so recursion terminates, and the child rollback is recorded
+in the child's own ledger.
+
+Deferred (see Unresolved Questions): compensating past an expired writ window;
+partial-failure policy beyond "halt and surface".
 
 ## Summary
 
