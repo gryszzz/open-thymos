@@ -94,6 +94,12 @@ pub struct WritBody {
     pub subject: String,
     #[serde(with = "hex32")]
     pub subject_pubkey: PublicKey,
+    /// 16 random bytes that make each issued writ uniquely identified and
+    /// signed. Without it, two byte-identical writ bodies would share a
+    /// `WritId` and could not be revoked independently; it is the anti-replay /
+    /// unique-identity component of the capability. Use
+    /// [`crate::crypto::random_nonce`] when minting.
+    pub nonce: [u8; 16],
     pub parent: Option<WritId>,
     /// Tenant isolation: every writ belongs to exactly one tenant. Child writs
     /// must inherit the same tenant_id — cross-tenant delegation is forbidden.
@@ -315,6 +321,7 @@ mod tests {
             issuer_pubkey: public_key_of(&issuer),
             subject: "agent".into(),
             subject_pubkey: public_key_of(&subject),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_*")],
@@ -360,6 +367,7 @@ mod tests {
             issuer_pubkey: public_key_of(&agent),
             subject: "grandchild".into(),
             subject_pubkey: public_key_of(&grandchild_subject),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_set")],
@@ -389,6 +397,7 @@ mod tests {
             issuer_pubkey: public_key_of(&someone_else),
             subject: "child".into(),
             subject_pubkey: public_key_of(&someone_else),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_set")],
@@ -419,6 +428,7 @@ mod tests {
             issuer_pubkey: public_key_of(&agent),
             subject: "child".into(),
             subject_pubkey: public_key_of(&sub),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_set")],
@@ -461,6 +471,7 @@ mod tests {
             issuer_pubkey: public_key_of(&agent),
             subject: "child".into(),
             subject_pubkey: public_key_of(&sub),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_set")],
@@ -487,5 +498,49 @@ mod tests {
             err.to_string().contains("delegation depth"),
             "expected delegation-depth rejection, got: {err}"
         );
+    }
+
+    #[test]
+    fn nonce_makes_otherwise_identical_writs_distinct() {
+        let issuer = generate_signing_key();
+        let subject = generate_signing_key();
+        let mk = |nonce: [u8; 16]| {
+            let body = WritBody {
+                issuer: "root".into(),
+                issuer_pubkey: public_key_of(&issuer),
+                subject: "agent".into(),
+                subject_pubkey: public_key_of(&subject),
+                nonce,
+                parent: None,
+                tenant_id: String::new(),
+                tool_scopes: vec![ToolPattern::exact("kv_*")],
+                budget: Budget {
+                    tokens: 1,
+                    tool_calls: 1,
+                    wall_clock_ms: 1,
+                    usd_millicents: 1,
+                },
+                effect_ceiling: EffectCeiling::read_write_local(),
+                time_window: TimeWindow {
+                    not_before: 0,
+                    expires_at: u64::MAX,
+                },
+                delegation: DelegationBounds {
+                    max_depth: 0,
+                    may_subdivide: false,
+                },
+            };
+            Writ::sign(body, &issuer).unwrap()
+        };
+
+        let a = mk([1u8; 16]);
+        let b = mk([2u8; 16]);
+        assert_ne!(a.id, b.id, "different nonces must yield different WritIds");
+        a.verify_signature().expect("a signature valid");
+        b.verify_signature().expect("b signature valid");
+
+        // Same nonce → same id (deterministic content-addressing).
+        let a2 = mk([1u8; 16]);
+        assert_eq!(a.id, a2.id);
     }
 }

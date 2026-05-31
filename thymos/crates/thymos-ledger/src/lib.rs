@@ -21,12 +21,14 @@ use thymos_core::{
 };
 
 // Backend modules.
+pub mod anchor;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod replay;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+pub use anchor::{compute_anchor, merkle_root, verify_anchor, MerkleAnchor};
 pub use replay::{replay, replay_and_match, ReplayConfig, ReplayReport};
 
 // Re-export the default backend as `Ledger`.

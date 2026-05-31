@@ -110,11 +110,51 @@ impl DelegationKeyring {
     }
 }
 
+/// Source of the wall-clock time the compiler uses for writ time-window checks.
+///
+/// The compiler is pure over its inputs; the runtime is responsible for
+/// supplying `now`. Making the clock pluggable means a deployment can inject an
+/// *attested* time source (e.g. an NTP-verified or signed-time-token reader)
+/// rather than blindly trusting the host clock, and tests can pin time.
+pub trait Clock: Send + Sync {
+    /// Current time as unix seconds.
+    fn now_unix(&self) -> u64;
+}
+
+/// Default clock: reads the host wall clock.
+pub struct SystemClock;
+impl Clock for SystemClock {
+    fn now_unix(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+}
+
+/// A pinned clock — for deterministic tests and for callers that source time
+/// out-of-band (e.g. from an attested token) and want to hand a fixed value in.
+pub struct FixedClock(pub u64);
+impl Clock for FixedClock {
+    fn now_unix(&self) -> u64 {
+        self.0
+    }
+}
+
 pub struct Runtime {
     pub ledger: Ledger,
     pub tools: ToolRegistry,
     pub policy: PolicyEngine,
     pub delegation_keyring: Option<DelegationKeyring>,
+    /// Time source for writ time-window checks. Defaults to [`SystemClock`];
+    /// inject an attested source via [`Runtime::with_clock`].
+    pub clock: std::sync::Arc<dyn Clock>,
+    /// Distinct approvals required to release a suspended proposal via the
+    /// quorum path ([`Run::resume_with_quorum`]). Defaults to 1 (single
+    /// operator), preserving the original single-approval behavior.
+    pub approval_quorum: usize,
+    /// Per-proposal approval accumulator for multi-party approval.
+    pub quorum: QuorumTracker,
     /// Optional runtime identity that signs every commit it appends. When set,
     /// commits are written via `Commit::new_signed`; replay can then require
     /// each commit verify against the corresponding public key
@@ -165,6 +205,57 @@ impl Revocations {
     }
 }
 
+/// Tracks the distinct approvers that have signed off on each suspended
+/// proposal, for multi-party (M-of-N) approval. Approver identity is an opaque
+/// string (e.g. an operator id or pubkey hex); duplicates from the same
+/// approver are de-duplicated.
+#[derive(Clone, Default)]
+pub struct QuorumTracker {
+    inner: std::sync::Arc<
+        std::sync::RwLock<
+            std::collections::HashMap<thymos_core::ProposalId, std::collections::HashSet<String>>,
+        >,
+    >,
+}
+
+impl QuorumTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record `approver`'s approval of `proposal_id`; returns the new count of
+    /// distinct approvers.
+    pub fn record(&self, proposal_id: thymos_core::ProposalId, approver: String) -> usize {
+        let mut g = self.inner.write().unwrap();
+        let set = g.entry(proposal_id).or_default();
+        set.insert(approver);
+        set.len()
+    }
+
+    /// Distinct approvals recorded for `proposal_id`.
+    pub fn count(&self, proposal_id: thymos_core::ProposalId) -> usize {
+        self.inner
+            .read()
+            .unwrap()
+            .get(&proposal_id)
+            .map(|s| s.len())
+            .unwrap_or(0)
+    }
+
+    /// Forget approvals for `proposal_id` (after it resolves).
+    pub fn clear(&self, proposal_id: thymos_core::ProposalId) {
+        self.inner.write().unwrap().remove(&proposal_id);
+    }
+}
+
+/// Progress toward a proposal's approval quorum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApprovalProgress {
+    pub received: usize,
+    pub required: usize,
+    pub satisfied: bool,
+}
+
 impl Runtime {
     pub fn new(ledger: Ledger, tools: ToolRegistry, policy: PolicyEngine) -> Self {
         Runtime {
@@ -175,7 +266,24 @@ impl Runtime {
             commit_signer: None,
             redactor: thymos_core::Redactor::default_secrets(),
             revocations: Revocations::new(),
+            clock: std::sync::Arc::new(SystemClock),
+            approval_quorum: 1,
+            quorum: QuorumTracker::new(),
         }
+    }
+
+    /// Builder: supply the clock used for writ time-window checks (e.g. an
+    /// attested time source, or a [`FixedClock`] in tests).
+    pub fn with_clock(mut self, clock: std::sync::Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Builder: require `n` distinct approvals to release a suspended proposal
+    /// via [`Run::resume_with_quorum`]. `n` is clamped to at least 1.
+    pub fn with_approval_quorum(mut self, n: usize) -> Self {
+        self.approval_quorum = n.max(1);
+        self
     }
 
     /// Revoke a writ: subsequent submissions under it (or any child whose
@@ -386,11 +494,9 @@ impl<'a> Run<'a> {
         // Project budget usage for the compile context.
         let budget_used = self.project_budget_used()?;
         // Source the clock at the runtime layer — the compiler stays pure
-        // (see thymos_compiler::CompileContext doc-comment).
-        let now_unix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        // (see thymos_compiler::CompileContext doc-comment). The clock is
+        // pluggable so an attested time source can replace the host wall clock.
+        let now_unix = self.runtime.clock.now_unix();
         let ctx = CompileContext {
             now_unix,
             budget_used,
@@ -653,6 +759,7 @@ impl<'a> Run<'a> {
             issuer_pubkey: parent_writ.body.subject_pubkey,
             subject: format!("{}-child", parent_writ.body.subject),
             subject_pubkey: child_pubkey,
+            nonce: thymos_core::crypto::random_nonce(),
             parent: Some(parent_writ.id),
             tenant_id: parent_writ.body.tenant_id.clone(),
             tool_scopes: child_scopes,
@@ -714,9 +821,51 @@ impl<'a> Run<'a> {
         })
     }
 
+    /// Record one approver's sign-off on a suspended proposal. Returns progress
+    /// toward the runtime's `approval_quorum`. Duplicate approvals from the same
+    /// `approver` id are de-duplicated.
+    pub fn approve(
+        &self,
+        proposal_id: thymos_core::ProposalId,
+        approver: &str,
+    ) -> ApprovalProgress {
+        let received = self
+            .runtime
+            .quorum
+            .record(proposal_id, approver.to_string());
+        let required = self.runtime.approval_quorum.max(1);
+        ApprovalProgress {
+            received,
+            required,
+            satisfied: received >= required,
+        }
+    }
+
+    /// Release a suspended proposal once the approval quorum is met. Errors if
+    /// too few distinct approvers have signed off; otherwise executes and
+    /// commits via the same path as a single approval (idempotency guard
+    /// included). Clears the accumulated approvals on success.
+    pub fn resume_with_quorum(
+        &self,
+        proposal_id: thymos_core::ProposalId,
+        writ: &thymos_core::writ::Writ,
+    ) -> Result<Step> {
+        let required = self.runtime.approval_quorum.max(1);
+        let received = self.runtime.quorum.count(proposal_id);
+        if received < required {
+            return Err(Error::Other(format!(
+                "approval quorum not met for proposal {proposal_id}: {received}/{required}"
+            )));
+        }
+        let step = self.resume_with_approval(proposal_id, true, writ)?;
+        self.runtime.quorum.clear(proposal_id);
+        Ok(step)
+    }
+
     /// Resume a previously suspended proposal. If `approve` is true, the
     /// proposal is executed through the tool and committed. If false, it's
-    /// rejected as PolicyDenied.
+    /// rejected as PolicyDenied. This is the single-operator path; for
+    /// multi-party approval use [`Run::approve`] + [`Run::resume_with_quorum`].
     pub fn resume_with_approval(
         &self,
         proposal_id: thymos_core::ProposalId,
@@ -985,6 +1134,7 @@ mod keyring_tests {
             issuer_pubkey: parent_pk,
             subject: "tester".into(),
             subject_pubkey: parent_pk,
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: "t".into(),
             tool_scopes: vec![ToolPattern::exact("noop")],

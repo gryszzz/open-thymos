@@ -255,6 +255,17 @@ impl SqliteLedger {
         crate::verify_integrity_entries(&entries)
     }
 
+    /// Produce a publishable [`MerkleAnchor`] over the trajectory's current
+    /// history. Integrity is verified first, so an anchor is only ever taken
+    /// over a valid chain. Publish the returned anchor externally; later call
+    /// [`crate::verify_anchor`] with the trajectory's entries to prove the
+    /// ledger was not rewritten.
+    pub fn anchor(&self, trajectory_id: TrajectoryId) -> Result<crate::MerkleAnchor> {
+        let entries = self.entries(trajectory_id)?;
+        crate::verify_integrity_entries(&entries)?;
+        Ok(crate::compute_anchor(trajectory_id, &entries))
+    }
+
     /// Query entries across all trajectories with optional filters.
     ///
     /// - `trajectory_id`: restrict to a single trajectory
