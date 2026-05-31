@@ -6,9 +6,22 @@ Compensation & Saga Rollback v1
 
 ## Status
 
-Draft — design exploration only. No implementation is authorized by this
-document. It captures the problem, options, and a recommended direction for
-review before any code is written.
+Accepted — MVP implemented (Option A). Shipped:
+
+- `ToolContract::compensable()` + `ToolContract::compensate(observation, world)`.
+- `CommitBody.compensates: Option<CommitId>` (backward-compatible via
+  `skip_serializing_if`) tagging each rollback commit with the commit it undoes.
+- `Run::compensate_to(target, writ)`: undoes committed steps after `target`,
+  newest-first; each compensation is appended as a normal commit (recorded,
+  replayable); halts if any step's tool is not compensable; idempotent
+  (already-compensated steps and compensation commits are skipped); runs under
+  the supplied writ (authorizes the tool, must not be revoked).
+
+Deferred (see Unresolved Questions): declaring `compensable` in
+`ToolContractMeta` so the effect gate can *require approval* for an
+irreversible-and-uncompensable tool; cross-trajectory/delegated-child
+compensation; compensating past an expired writ window; partial-failure policy
+beyond "halt and surface".
 
 ## Summary
 

@@ -699,6 +699,7 @@ impl<'a> Run<'a> {
                     compiler_version: COMPILER_VERSION.into(),
                     policy_set_hash: self.runtime.policy.policy_set_hash(),
                     budget_cost,
+                    compensates: None,
                     signature: None,
                 };
                 let commit = self.runtime.build_commit(commit_body)?;
@@ -1011,6 +1012,7 @@ impl<'a> Run<'a> {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: self.runtime.policy.policy_set_hash(),
             budget_cost,
+            compensates: None,
             signature: None,
         };
         let commit = self.runtime.build_commit(commit_body)?;
@@ -1028,6 +1030,129 @@ impl<'a> Run<'a> {
             },
         );
         Ok(Step::Committed(committed_id))
+    }
+
+    /// Saga rollback: compensate every committed step *after* `target` in this
+    /// trajectory, newest first, by invoking each tool's `compensate`. Each
+    /// compensation is appended as a normal commit tagged with `compensates =
+    /// Some(original_id)`, so the rollback is itself recorded and replayable.
+    ///
+    /// Behavior:
+    /// - Halts with an error if any step's tool is not compensable (the RFC's
+    ///   "manual reconciliation required" — never a partial silent rollback).
+    /// - Idempotent: a step that already has a compensation commit is skipped.
+    /// - Runs under `writ`; the writ must authorize the tool and not be revoked.
+    ///
+    /// Returns the ids of the compensation commits, in the order applied.
+    pub fn compensate_to(
+        &self,
+        target: CommitId,
+        writ: &thymos_core::writ::Writ,
+    ) -> Result<Vec<CommitId>> {
+        if self.runtime.revocations.is_revoked(&writ.id) {
+            return Err(Error::AuthorityVoid(format!(
+                "writ {} is revoked; cannot compensate",
+                writ.id
+            )));
+        }
+
+        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+
+        // Sequence of the target entry. Matched by id against any entry kind so
+        // callers can roll back to the root (seq 0) or to a specific commit.
+        let target_seq = entries
+            .iter()
+            .find_map(|e| if e.id == target.0 { Some(e.seq) } else { None })
+            .ok_or_else(|| {
+                Error::Other(format!("target {target} not found in trajectory"))
+            })?;
+
+        // Set of commits that already have a compensation, so re-running is a
+        // no-op for those.
+        let already_compensated: std::collections::HashSet<CommitId> = entries
+            .iter()
+            .filter_map(|e| match &e.payload {
+                EntryPayload::Commit(c) => c.body.compensates,
+                _ => None,
+            })
+            .collect();
+
+        // Commits strictly after the target, newest first. Compensation
+        // commits (those that already carry `compensates`) are never themselves
+        // compensated — that would undo a rollback.
+        let mut to_undo: Vec<Commit> = entries
+            .iter()
+            .filter_map(|e| match &e.payload {
+                EntryPayload::Commit(c) if e.seq > target_seq && c.body.compensates.is_none() => {
+                    Some(c.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        to_undo.reverse();
+
+        let mut compensation_ids = Vec::new();
+        for original in to_undo {
+            if already_compensated.contains(&original.id) {
+                continue;
+            }
+            let observation = original.body.observations.first().cloned().ok_or_else(|| {
+                Error::Other(format!("commit {} has no observation to compensate", original.id))
+            })?;
+            let tool_name = observation.tool.clone();
+
+            if !writ.authorizes_tool(&tool_name) {
+                return Err(Error::AuthorityVoid(format!(
+                    "writ does not authorize tool '{tool_name}' for compensation"
+                )));
+            }
+            let tool = self.runtime.tools.get(&tool_name)?;
+            if !tool.compensable() {
+                return Err(Error::Other(format!(
+                    "cannot roll back commit {}: tool '{tool_name}' is not compensable; manual reconciliation required",
+                    original.id
+                )));
+            }
+
+            // Project the current world (reflecting any compensations already
+            // applied in this loop) and ask the tool to undo its effect.
+            let world = self.project_world()?;
+            let mut outcome = tool
+                .compensate(&observation, &world)
+                .map_err(|e| Error::ToolExecution(e.to_string()))?;
+            outcome.observation.output =
+                self.runtime.redactor.redact(&outcome.observation.output);
+
+            let (parent_hash, parent_seq) = self.runtime.ledger.head(self.trajectory_id)?;
+            let mut trial = world.clone();
+            trial.apply(&outcome.delta, CommitId(parent_hash))?;
+
+            let body = CommitBody {
+                parent: vec![CommitId(parent_hash)],
+                trajectory_id: self.trajectory_id,
+                proposal_id: original.body.proposal_id,
+                intent_id: original.body.intent_id,
+                writ_id: writ.id,
+                seq: parent_seq + 1,
+                delta: outcome.delta,
+                observations: vec![outcome.observation],
+                policy_trace: thymos_core::proposal::PolicyTrace {
+                    rules_evaluated: vec!["compensation".into()],
+                    decision: thymos_core::proposal::PolicyDecision::Permit,
+                },
+                compiler_version: COMPILER_VERSION.into(),
+                policy_set_hash: self.runtime.policy.policy_set_hash(),
+                budget_cost: BudgetCost::default(),
+                compensates: Some(original.id),
+                signature: None,
+            };
+            let commit = self.runtime.build_commit(body)?;
+            let commit_id = commit.id;
+            self.runtime.ledger.append_commit(commit)?;
+            compensation_ids.push(commit_id);
+        }
+
+        Ok(compensation_ids)
     }
 
     /// Summarize the trajectory for debugging/demo output.

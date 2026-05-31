@@ -166,6 +166,7 @@ mod tests {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: String::new(),
             budget_cost: BudgetCost::default(),
+            compensates: None,
             signature: None,
         }
     }

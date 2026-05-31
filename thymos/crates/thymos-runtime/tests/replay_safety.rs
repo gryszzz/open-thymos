@@ -237,6 +237,7 @@ fn replay_rejects_commit_with_empty_compiler_version() {
         compiler_version: "".into(), // ← the violation
         policy_set_hash: String::new(),
         budget_cost: thymos_core::writ::BudgetCost::default(),
+        compensates: None,
         signature: None,
     };
     let commit = Commit::new(body).unwrap();

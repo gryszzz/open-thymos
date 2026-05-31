@@ -210,6 +210,7 @@ mod tests {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
+            compensates: None,
             signature: None,
         };
         let commit = Commit::new(body).unwrap();
@@ -296,6 +297,7 @@ mod tests {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
+            compensates: None,
             signature: None,
         };
         let commit = Commit::new_signed(body, sk).unwrap();
@@ -401,6 +403,7 @@ mod bench_tests {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
+            compensates: None,
             signature: None,
         };
         Commit::new(body).unwrap()

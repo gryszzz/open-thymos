@@ -726,6 +726,28 @@ pub trait ToolContract: Send + Sync {
     ) -> Result<()> {
         Ok(())
     }
+
+    /// Whether this tool can compensate (undo) a previously committed effect.
+    /// Default `false`. Only compensable tools may participate in saga rollback
+    /// ([`Run::compensate_to`](../thymos_runtime/struct.Run.html)).
+    fn compensable(&self) -> bool {
+        false
+    }
+
+    /// Produce a compensating outcome that undoes a previously committed effect,
+    /// given that effect's recorded `observation` and the current `world`. The
+    /// returned delta + observation are appended as a normal (append-only)
+    /// compensation commit — the rollback is itself recorded and replayable.
+    ///
+    /// Compensators MUST be deterministic over `(observation, world)` and stay
+    /// within the authority of the writ that authorized the original step.
+    /// Default: not supported.
+    fn compensate(&self, _observation: &Observation, _world: &World) -> Result<ToolOutcome> {
+        Err(Error::Other(format!(
+            "tool '{}' does not support compensation",
+            self.meta().name
+        )))
+    }
 }
 
 #[derive(Default)]
