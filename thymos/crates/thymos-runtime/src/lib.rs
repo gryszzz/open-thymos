@@ -1092,25 +1092,43 @@ impl<'a> Run<'a> {
             })
             .collect();
 
-        // Commits strictly after the target, newest first. Compensation
-        // commits (those that already carry `compensates`) are never themselves
-        // compensated — that would undo a rollback.
-        let mut to_undo: Vec<Commit> = entries
+        // Walk every entry strictly after the target, newest-first, and undo it:
+        //   - Commit (not itself a compensation): invoke the tool's compensate.
+        //   - Delegation: recursively compensate the entire child trajectory it
+        //     spawned (back to the child's root), so a parent rollback also
+        //     unwinds delegated work. Children form a DAG, so this terminates.
+        let mut after: Vec<Entry> = entries
             .iter()
-            .filter_map(|e| match &e.payload {
-                EntryPayload::Commit(c) if e.seq > target_seq && c.body.compensates.is_none() => {
-                    Some(c.clone())
-                }
-                _ => None,
-            })
+            .filter(|e| e.seq > target_seq)
+            .cloned()
             .collect();
-        to_undo.reverse();
+        after.reverse();
 
         let mut compensation_ids = Vec::new();
-        for original in to_undo {
-            if already_compensated.contains(&original.id) {
+        for entry in after {
+            let original = match entry.payload {
+                EntryPayload::Delegation {
+                    child_trajectory_id,
+                    ..
+                } => {
+                    // Recursively roll back the child trajectory to its root.
+                    let child_entries = self.runtime.ledger.entries(child_trajectory_id)?;
+                    if let Some(first) = child_entries.first() {
+                        let child_run = self.runtime.resume_run(child_trajectory_id)?;
+                        let child_ids = child_run.compensate_to(CommitId(first.id), writ)?;
+                        compensation_ids.extend(child_ids);
+                    }
+                    continue;
+                }
+                EntryPayload::Commit(c) => c,
+                _ => continue,
+            };
+
+            // Never compensate a compensation, and skip steps already undone.
+            if original.body.compensates.is_some() || already_compensated.contains(&original.id) {
                 continue;
             }
+
             let observation = original.body.observations.first().cloned().ok_or_else(|| {
                 Error::Other(format!("commit {} has no observation to compensate", original.id))
             })?;
