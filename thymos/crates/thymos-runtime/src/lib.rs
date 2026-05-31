@@ -16,7 +16,7 @@ use thymos_core::{
     writ::BudgetCost,
     CommitId, TrajectoryId, COMPILER_VERSION,
 };
-use thymos_ledger::{project_commits, EntryPayload, Ledger};
+use thymos_ledger::{project_commits, Entry, EntryPayload, Ledger};
 use thymos_policy::PolicyEngine;
 use thymos_tools::{EffectClass, ToolInvocation, ToolRegistry};
 
@@ -390,7 +390,13 @@ impl<'a> Run<'a> {
     /// own commits on top.
     pub fn project_world(&self) -> Result<World> {
         let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+        self.project_world_from(&entries)
+    }
 
+    /// Fold a world projection from an already-loaded entry list, avoiding a
+    /// redundant ledger read. Used on the hot `submit` path where the same
+    /// entries also drive budget projection and the idempotency check.
+    fn project_world_from(&self, entries: &[Entry]) -> Result<World> {
         // Check if this is a branch. If so, recursively fold the ancestor.
         let mut world = if let Some(entry) = entries.first() {
             if let EntryPayload::Branch {
@@ -411,8 +417,7 @@ impl<'a> Run<'a> {
             World::default()
         };
 
-        let commits = project_commits(&entries);
-        for c in commits {
+        for c in project_commits(entries) {
             world.apply(&c.body.delta, c.id)?;
         }
         Ok(world)
@@ -436,13 +441,19 @@ impl<'a> Run<'a> {
     /// `budget_cost` fields across all committed entries.
     pub fn project_budget_used(&self) -> Result<BudgetCost> {
         let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+        Ok(Self::project_budget_used_from(&entries))
+    }
+
+    /// Sum committed budget cost from an already-loaded entry list (no ledger
+    /// read). See [`Run::project_world_from`].
+    fn project_budget_used_from(entries: &[Entry]) -> BudgetCost {
         let mut acc = BudgetCost::default();
-        for e in &entries {
+        for e in entries {
             if let EntryPayload::Commit(c) = &e.payload {
                 acc = acc.saturating_add(&c.body.budget_cost);
             }
         }
-        Ok(acc)
+        acc
     }
 
     /// Idempotency helper: the `CommitId` already recorded for `proposal_id` in
@@ -450,19 +461,19 @@ impl<'a> Run<'a> {
     /// External/Irreversible tools — re-submitting or re-approving the same
     /// (content-addressed) proposal returns the prior commit rather than
     /// repeating the side effect.
-    fn find_commit_for_proposal(
-        &self,
+    /// Idempotency scan over an already-loaded entry list (no ledger read).
+    fn find_commit_for_proposal_from(
+        entries: &[Entry],
         proposal_id: thymos_core::ProposalId,
-    ) -> Result<Option<CommitId>> {
-        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
-        for e in &entries {
+    ) -> Option<CommitId> {
+        for e in entries {
             if let EntryPayload::Commit(c) = &e.payload {
                 if c.body.proposal_id == proposal_id {
-                    return Ok(Some(c.id));
+                    return Some(c.id);
                 }
             }
         }
-        Ok(None)
+        None
     }
 
     /// Submit one Intent. Runs it through the full Triad.
@@ -488,11 +499,12 @@ impl<'a> Run<'a> {
         )
         .entered();
 
-        // Fold world.
-        let world = self.project_world()?;
-
-        // Project budget usage for the compile context.
-        let budget_used = self.project_budget_used()?;
+        // Load the trajectory once and derive world + accumulated budget from
+        // the same snapshot (the idempotency check below reuses it too). This
+        // replaces three separate full-ledger reads per submission with one.
+        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+        let world = self.project_world_from(&entries)?;
+        let budget_used = Self::project_budget_used_from(&entries);
         // Source the clock at the runtime layer — the compiler stays pure
         // (see thymos_compiler::CompileContext doc-comment). The clock is
         // pluggable so an attested time source can replace the host wall clock.
@@ -591,7 +603,9 @@ impl<'a> Run<'a> {
                     tool.meta().effect_class,
                     EffectClass::External | EffectClass::Irreversible
                 ) {
-                    if let Some(existing) = self.find_commit_for_proposal(proposal.id)? {
+                    if let Some(existing) =
+                        Self::find_commit_for_proposal_from(&entries, proposal.id)
+                    {
                         return Ok(Step::Committed(existing));
                     }
                 }
@@ -925,8 +939,10 @@ impl<'a> Run<'a> {
             )));
         }
 
-        // Approved: re-execute the tool against the current world.
-        let world = self.project_world()?;
+        // Approved: re-execute the tool against the current world. Reuse the
+        // `entries` already loaded above for the world projection and the
+        // idempotency check instead of reloading the ledger twice more.
+        let world = self.project_world_from(&entries)?;
         let tool = self.runtime.tools.get(&proposal.body.plan.tool)?;
 
         // Idempotency guard (see staged path): an approved External/Irreversible
@@ -936,7 +952,7 @@ impl<'a> Run<'a> {
             tool.meta().effect_class,
             EffectClass::External | EffectClass::Irreversible
         ) {
-            if let Some(existing) = self.find_commit_for_proposal(proposal.id)? {
+            if let Some(existing) = Self::find_commit_for_proposal_from(&entries, proposal.id) {
                 return Ok(Step::Committed(existing));
             }
         }
