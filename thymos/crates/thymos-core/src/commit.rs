@@ -95,6 +95,12 @@ pub struct CommitBody {
     pub policy_set_hash: String,
     /// Budget cost incurred by this commit (tool_calls, tokens, wall_clock_ms, usd).
     pub budget_cost: crate::writ::BudgetCost,
+    /// If this commit is a compensation (saga rollback), the id of the commit it
+    /// undoes. `None` for ordinary forward commits. Backward-compatible:
+    /// `skip_serializing_if` means forward commits serialize (and hash) exactly
+    /// as before, so existing ledgers are unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compensates: Option<CommitId>,
     /// ed25519 signature over `canonical_json(body_without_signature)`,
     /// hex-encoded. `None` for unsigned commits; populated by
     /// [`Commit::new_signed`] and checked by [`Commit::verify_signature`].
@@ -131,6 +137,7 @@ mod tests {
             compiler_version: "test".into(),
             policy_set_hash: String::new(),
             budget_cost: crate::writ::BudgetCost::default(),
+            compensates: None,
             signature: None,
         }
     }

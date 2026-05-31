@@ -119,6 +119,7 @@ mod tests {
             compiler_version: COMPILER_VERSION.into(),
             policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
+            compensates: None,
             signature: None,
         };
         ledger.append_commit(Commit::new(body).unwrap()).unwrap();
