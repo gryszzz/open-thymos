@@ -6,8 +6,12 @@ Proposal Contract v1
 
 ## Status
 
-Stable (v1). The proposal contract is frozen: the `Proposal` / `ProposalBody` /
-`ProposalStatus` shapes below are the stable surface downstreams may depend on.
+Stable (v1). The `Proposal` / `ProposalBody` / `ProposalStatus` shapes below are
+the stable surface downstreams may depend on. **Option 2 is formalized**:
+`Proposal::routing_evidence` is a typed, optional first-class field for
+pre-Proposal routing advisors (e.g. WisePick) — it lives outside `ProposalBody`
+(so it does not affect `ProposalId`) but is bound into the ledgered envelope
+(`Commit` / `PendingApproval` hashes) so it is immutable and replay-safe.
 
 ## Summary
 
@@ -86,24 +90,43 @@ pub struct ProposalBody {
 pub struct Proposal {
     pub id: ProposalId,
     pub body: ProposalBody,
+    // Option 2: optional provider routing metadata. Outside ProposalBody, so it
+    // does NOT affect ProposalId. Omitted entirely when None (skip_serializing_if).
+    pub routing_evidence: Option<RoutingEvidence>,
 }
+
+pub struct RoutingEvidence {
+    pub decision_hash: String,            // hex digest over the integer-valued payload
+    pub selected: String,                 // chosen provider:capability (ECU)
+    pub alternatives: Vec<String>,        // ranked fallbacks (governance-owned)
+    pub confidence_bps: u32,              // basis points, 0..=10000 (fixed-point)
+    pub reason_codes: Vec<String>,
+    pub latency_estimate_ms: u64,
+    pub cost_estimate_millicents: u64,    // USD millicents (fixed-point)
+    pub fallback_hint: Option<FallbackHint>,
+}
+
+pub struct FallbackHint { pub provider: String, pub model: Option<String>, pub reason: String }
 ```
 
-`ProposalId` remains `content_hash(body)`. A `Proposal` carries exactly its
-content-addressed id and its body — nothing else. There is no provider-supplied
-or experimental field, so the contract is fully content-addressed and stable.
+`ProposalId` remains `content_hash(body)`. `routing_evidence` is **not** part of
+`ProposalBody`, so a routing advisor cannot influence `ProposalId`. All numeric
+fields are fixed-point integers (no floats in a canonical/ledgered payload), and
+`decision_hash` is derived deterministically over those integers, so the artifact
+is stable across replays. The runtime **never** reads `routing_evidence` for
+authority, budget, or policy — it is audit/replay evidence only.
 
 The `Suspended` variant embeds `channel` and `reason` directly in the status,
 matching Section 2. The compiler populates both fields from the policy engine's
 `RequireApproval` decision; the runtime reads them from the status when
 appending `PendingApproval` ledger entries.
 
-> **Provider routing metadata** (previously a proposed experimental
-> `routing_evidence` field) is intentionally **not** part of this stable v1
-> contract. It was removed to avoid shipping an inert field on the
-> compatibility surface. If a future need arises to surface provider routing
-> decisions, it must be introduced by a separate RFC — outside `ProposalBody`,
-> signed, and never able to influence authority, policy, budget, or replay.
+Routing evidence is recorded durably: for suspended proposals it rides in the
+`PendingApproval` entry (which embeds the full `Proposal`); for committed
+proposals the runtime copies it onto `CommitBody.routing_evidence`. Both are
+content-hashed, so the artifact is immutable and rehydrates deterministically at
+replay via its `decision_hash`. Providers attach it with
+`Proposal::with_routing_evidence` or `Run::submit_with_routing_evidence`.
 
 ## Invariants
 

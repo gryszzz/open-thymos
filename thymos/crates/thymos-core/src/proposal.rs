@@ -3,10 +3,13 @@
 //! Spec reference: Section 2 (Execution Grammar), Section 3 (Compilation).
 //!
 //! `ProposalId` is content-addressed from the canonical hash of `ProposalBody`.
-//! The proposal contract is **v1-stable** (see `docs/rfcs/proposal-contract-v1.md`):
-//! it carries exactly the fields that define the action and its authorization,
-//! with no experimental or provider-supplied metadata. Provider routing metadata
-//! is deferred to a future RFC and is intentionally not part of this contract.
+//! Per `docs/rfcs/proposal-contract-v1.md`, `Proposal` also carries an optional
+//! `routing_evidence` — provider routing metadata supplied by a pre-Proposal
+//! routing advisor (e.g. WisePick). It lives on `Proposal`, **not** inside
+//! `ProposalBody`, so it does **not** affect `ProposalId`; but it IS bound into
+//! the ledgered envelope (the `Commit` / `PendingApproval` entry hashes) so it is
+//! immutable and replay-safe once recorded. The runtime never reads it for
+//! authority — it is an audit/replay artifact only.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,14 +24,70 @@ use crate::ids::{IntentId, ProposalId, WritId};
 pub struct Proposal {
     pub id: ProposalId,
     pub body: ProposalBody,
+    /// Optional provider routing metadata (Option 2 of the proposal-contract
+    /// RFC). Excluded from `ProposalId` (it is outside `ProposalBody`), so a
+    /// provider cannot influence proposal identity by manipulating it. Bound
+    /// into ledger entry hashes when recorded. The runtime MUST NOT use it for
+    /// authority, budget, or policy decisions — it is audit/replay evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_evidence: Option<RoutingEvidence>,
 }
 
 impl Proposal {
-    /// Construct a Proposal from a body. The id is the content-hash of body.
+    /// Construct a Proposal from a body. The id is the content-hash of body;
+    /// `routing_evidence` is not hashed into the id.
     pub fn new(body: ProposalBody) -> Result<Self> {
         let id = ProposalId(content_hash(&body)?);
-        Ok(Proposal { id, body })
+        Ok(Proposal {
+            id,
+            body,
+            routing_evidence: None,
+        })
     }
+
+    /// Attach routing evidence (does not change `ProposalId`).
+    pub fn with_routing_evidence(mut self, evidence: RoutingEvidence) -> Self {
+        self.routing_evidence = Some(evidence);
+        self
+    }
+}
+
+// ── RoutingEvidence ─────────────────────────────────────────────────────────
+//
+// The replay-safe routing decision artifact produced by a pre-Proposal routing
+// advisor. All numeric fields are fixed-point integers — no floating point in a
+// canonical/ledgered payload (Section 10 determinism). `decision_hash` is a
+// hex digest derived deterministically over the integer-valued payload, so it
+// is stable across replays and free of ephemeral provider identifiers.
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutingEvidence {
+    /// Hex digest over the routing decision's canonical (integer-valued) payload.
+    pub decision_hash: String,
+    /// The selected `provider:capability` (ECU) string.
+    pub selected: String,
+    /// Ranked alternatives considered but not selected (for governance-owned
+    /// fallback without re-querying the advisor mid-execution).
+    pub alternatives: Vec<String>,
+    /// Confidence in basis points (0–10000 = 0.00%–100.00%). Fixed-point.
+    pub confidence_bps: u32,
+    /// Machine-readable reason codes for the decision.
+    pub reason_codes: Vec<String>,
+    /// Estimated round-trip latency in milliseconds.
+    pub latency_estimate_ms: u64,
+    /// Estimated cost in USD millicents (1 USD = 100_000 millicents). Fixed-point.
+    pub cost_estimate_millicents: u64,
+    /// Optional fallback hint if the selected route is unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_hint: Option<FallbackHint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FallbackHint {
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub reason: String,
 }
 
 // ── ProposalBody ──────────────────────────────────────────────────────────────
@@ -151,6 +210,49 @@ mod tests {
         let p1 = Proposal::new(make_body("kv_set")).unwrap();
         let p2 = Proposal::new(make_body("kv_del")).unwrap();
         assert_ne!(p1.id, p2.id);
+    }
+
+    fn sample_evidence() -> RoutingEvidence {
+        RoutingEvidence {
+            decision_hash: "deadbeef".into(),
+            selected: "anthropic:claude".into(),
+            alternatives: vec!["openai:gpt".into()],
+            confidence_bps: 9500,
+            reason_codes: vec!["cost_optimal".into()],
+            latency_estimate_ms: 800,
+            cost_estimate_millicents: 4200,
+            fallback_hint: Some(FallbackHint {
+                provider: "openai".into(),
+                model: Some("gpt-4o".into()),
+                reason: "primary overloaded".into(),
+            }),
+        }
+    }
+
+    #[test]
+    fn routing_evidence_does_not_affect_proposal_id() {
+        let body = make_body("kv_set");
+        let plain = Proposal::new(body.clone()).unwrap();
+        let with_ev = Proposal::new(body).unwrap().with_routing_evidence(sample_evidence());
+        assert_eq!(
+            plain.id, with_ev.id,
+            "routing_evidence lives outside ProposalBody and must not affect ProposalId"
+        );
+    }
+
+    #[test]
+    fn proposal_with_routing_evidence_round_trips() {
+        let p = Proposal::new(make_body("kv_set"))
+            .unwrap()
+            .with_routing_evidence(sample_evidence());
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Proposal = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
+        assert_eq!(back.routing_evidence.unwrap().confidence_bps, 9500);
+
+        // A proposal without evidence omits the field entirely (backward-compat).
+        let plain = Proposal::new(make_body("kv_set")).unwrap();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("routing_evidence"));
     }
 
     #[test]

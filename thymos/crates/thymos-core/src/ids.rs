@@ -167,6 +167,7 @@ mod tests {
             policy_set_hash: String::new(),
             budget_cost: BudgetCost::default(),
             compensates: None,
+            routing_evidence: None,
             signature: None,
         }
     }

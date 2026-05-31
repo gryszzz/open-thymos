@@ -7,7 +7,7 @@ use crate::crypto::{PublicKey, SignatureBytes, SigningKey};
 use crate::error::{Error, Result};
 use crate::hash::{canonical_json_bytes, content_hash};
 use crate::ids::{CommitId, IntentId, ProposalId, TrajectoryId, WritId};
-use crate::proposal::PolicyTrace;
+use crate::proposal::{PolicyTrace, RoutingEvidence};
 
 /// An observation captured from a tool execution. Persisted verbatim.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -101,6 +101,12 @@ pub struct CommitBody {
     /// as before, so existing ledgers are unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compensates: Option<CommitId>,
+    /// Provider routing evidence carried from the proposal, recorded here so a
+    /// committed (not just suspended) proposal's routing decision is durably
+    /// ledgered and replay-safe. Excluded from the proposal id; backward-
+    /// compatible (`skip_serializing_if`), so commits without it hash unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_evidence: Option<RoutingEvidence>,
     /// ed25519 signature over `canonical_json(body_without_signature)`,
     /// hex-encoded. `None` for unsigned commits; populated by
     /// [`Commit::new_signed`] and checked by [`Commit::verify_signature`].
@@ -138,6 +144,7 @@ mod tests {
             policy_set_hash: String::new(),
             budget_cost: crate::writ::BudgetCost::default(),
             compensates: None,
+            routing_evidence: None,
             signature: None,
         }
     }

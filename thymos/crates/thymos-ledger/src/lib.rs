@@ -271,6 +271,7 @@ mod tests {
             policy_set_hash: String::new(),
             budget_cost: thymos_core::writ::BudgetCost::default(),
             compensates: None,
+            routing_evidence: None,
             signature: None,
         };
         Commit::new(body).unwrap()
@@ -365,6 +366,7 @@ mod tests {
                     policy_set_hash: String::new(),
                     budget_cost: thymos_core::writ::BudgetCost::default(),
                     compensates: None,
+                    routing_evidence: None,
                     signature: None,
                 };
                 let commit = Commit::new(body).unwrap();
