@@ -28,16 +28,25 @@
 //! the bundle permits. A field path that does not resolve makes its leaf
 //! condition false.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use thymos_core::{intent::Intent, proposal::PolicyDecision, world::World, writ::Writ};
+use thymos_core::{
+    canonical_json_bytes,
+    crypto::{self, PublicKey, SignatureBytes, SigningKey},
+    error::{Error, Result},
+    intent::Intent,
+    proposal::PolicyDecision,
+    world::World,
+    writ::Writ,
+};
 
 use crate::Policy;
 
 /// A loaded, named set of declarative rules. Construct with
-/// [`JsonPolicySet::from_json`].
-#[derive(Debug, Clone, Deserialize)]
+/// [`JsonPolicySet::from_json`] (unsigned) or [`JsonPolicySet::from_signed_json`]
+/// (verified ed25519 bundle).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonPolicySet {
     name: String,
     #[serde(default = "default_version")]
@@ -49,9 +58,8 @@ fn default_version() -> String {
     "1".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Rule {
-    #[allow(dead_code)]
     name: String,
     when: Condition,
     decision: Decision,
@@ -59,7 +67,7 @@ struct Rule {
 
 /// A boolean predicate over the evaluation context. Untagged: the JSON shape
 /// (`all`/`any`/`not`/leaf) selects the variant.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 enum Condition {
     All { all: Vec<Condition> },
@@ -68,7 +76,7 @@ enum Condition {
     Leaf { field: String, op: Op, value: Value },
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Op {
     Eq,
@@ -82,7 +90,7 @@ enum Op {
     In,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Decision {
     Permit,
@@ -90,11 +98,54 @@ enum Decision {
     RequireApproval { channel: String, reason: String },
 }
 
+/// A signed policy bundle: the policy plus the issuer's ed25519 signature over
+/// `canonical_json(policy)`. Lets a deployment prove *which* rules governed a
+/// trajectory and *who* authorized them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedPolicyBundle {
+    policy: JsonPolicySet,
+    #[serde(with = "crypto::hex32")]
+    issuer_pubkey: PublicKey,
+    #[serde(with = "crypto::hex64")]
+    signature: SignatureBytes,
+}
+
 impl JsonPolicySet {
-    /// Parse a bundle from JSON. Fails on malformed JSON / unknown ops (the
-    /// loader is fail-closed: a bundle that does not parse is not loaded).
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+    /// Parse an **unsigned** bundle from JSON. Fails on malformed JSON / unknown
+    /// ops (fail-closed: a bundle that does not parse is not loaded).
+    pub fn from_json(s: &str) -> std::result::Result<Self, serde_json::Error> {
         serde_json::from_str(s)
+    }
+
+    /// Sign this bundle, returning a JSON `SignedPolicyBundle` string. The
+    /// signature covers `canonical_json(policy)`.
+    pub fn to_signed_json(&self, signing_key: &SigningKey) -> Result<String> {
+        let msg = canonical_json_bytes(self)?;
+        let bundle = SignedPolicyBundle {
+            policy: self.clone(),
+            issuer_pubkey: crypto::public_key_of(signing_key),
+            signature: crypto::sign(signing_key, &msg),
+        };
+        serde_json::to_string(&bundle)
+            .map_err(|e| Error::Other(format!("serialize signed policy bundle: {e}")))
+    }
+
+    /// Load a **signed** bundle, verifying its ed25519 signature (fail-closed).
+    /// If `expected_issuer` is `Some`, the bundle's issuer must match it. The
+    /// signature is checked over `canonical_json(policy)`.
+    pub fn from_signed_json(s: &str, expected_issuer: Option<&PublicKey>) -> Result<Self> {
+        let bundle: SignedPolicyBundle = serde_json::from_str(s)
+            .map_err(|e| Error::Other(format!("parse signed policy bundle: {e}")))?;
+        if let Some(expected) = expected_issuer {
+            if &bundle.issuer_pubkey != expected {
+                return Err(Error::AuthorityVoid(
+                    "policy bundle issuer does not match the expected key".into(),
+                ));
+            }
+        }
+        let msg = canonical_json_bytes(&bundle.policy)?;
+        crypto::verify(&bundle.issuer_pubkey, &msg, &bundle.signature)?;
+        Ok(bundle.policy)
     }
 }
 
@@ -107,9 +158,9 @@ impl Policy for JsonPolicySet {
         &self.version
     }
 
-    fn evaluate(&self, intent: &Intent, writ: &Writ, _world: &World) -> PolicyDecision {
+    fn evaluate(&self, intent: &Intent, writ: &Writ, world: &World) -> PolicyDecision {
         for rule in &self.rules {
-            if rule.when.eval(intent, writ) {
+            if rule.when.eval(intent, writ, world) {
                 return match &rule.decision {
                     Decision::Permit => PolicyDecision::Permit,
                     Decision::Deny { reason } => PolicyDecision::Deny(reason.clone()),
@@ -127,21 +178,25 @@ impl Policy for JsonPolicySet {
 }
 
 impl Condition {
-    fn eval(&self, intent: &Intent, writ: &Writ) -> bool {
+    fn eval(&self, intent: &Intent, writ: &Writ, world: &World) -> bool {
         match self {
-            Condition::All { all } => all.iter().all(|c| c.eval(intent, writ)),
-            Condition::Any { any } => any.iter().any(|c| c.eval(intent, writ)),
-            Condition::Not { not } => !not.eval(intent, writ),
+            Condition::All { all } => all.iter().all(|c| c.eval(intent, writ, world)),
+            Condition::Any { any } => any.iter().any(|c| c.eval(intent, writ, world)),
+            Condition::Not { not } => !not.eval(intent, writ, world),
             Condition::Leaf { field, op, value } => {
-                eval_leaf(resolve(field, intent, writ).as_ref(), *op, value)
+                eval_leaf(resolve(field, intent, writ, world).as_ref(), *op, value)
             }
         }
     }
 }
 
-/// Resolve a dotted field path against the (Intent, Writ) context. Returns
-/// `None` for unknown paths or missing args.
-fn resolve(path: &str, intent: &Intent, writ: &Writ) -> Option<Value> {
+/// Resolve a dotted field path against the `(Intent, Writ, World)` context.
+/// Returns `None` for unknown paths or missing args/resources.
+///
+/// `world.<kind>.<id>` resolves to the resource value (or `None` if absent);
+/// `world.<kind>.<id>.version` resolves to its version. The world is read-only
+/// and deterministic, so policies stay pure.
+fn resolve(path: &str, intent: &Intent, writ: &Writ, world: &World) -> Option<Value> {
     match path {
         "intent.target" => Some(Value::String(intent.body.target.clone())),
         "intent.author" => Some(Value::String(intent.body.author.clone())),
@@ -149,9 +204,30 @@ fn resolve(path: &str, intent: &Intent, writ: &Writ) -> Option<Value> {
         "writ.tenant_id" => Some(Value::String(writ.body.tenant_id.clone())),
         "writ.subject" => Some(Value::String(writ.body.subject.clone())),
         "writ.issuer" => Some(Value::String(writ.body.issuer.clone())),
-        _ => path
-            .strip_prefix("intent.args.")
-            .and_then(|key| intent.body.args.get(key).cloned()),
+        _ => {
+            if let Some(key) = path.strip_prefix("intent.args.") {
+                return intent.body.args.get(key).cloned();
+            }
+            if let Some(rest) = path.strip_prefix("world.") {
+                return resolve_world(rest, world);
+            }
+            None
+        }
+    }
+}
+
+/// `world.<kind>.<id>` → value; `world.<kind>.<id>.version` → version.
+fn resolve_world(rest: &str, world: &World) -> Option<Value> {
+    let (path, want_version) = match rest.strip_suffix(".version") {
+        Some(p) => (p, true),
+        None => (rest, false),
+    };
+    let (kind, id) = path.split_once('.')?;
+    let state = world.get(&thymos_core::world::ResourceKey::new(kind, id))?;
+    if want_version {
+        Some(Value::from(state.version))
+    } else {
+        Some(state.value.clone())
     }
 }
 
@@ -313,5 +389,76 @@ mod tests {
             r#"{"name":"p","rules":[{"name":"r","when":{"field":"x","op":"regex","value":"y"},"decision":{"kind":"permit"}}]}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn world_accessor_reads_resource_state() {
+        use thymos_core::{
+            delta::{DeltaOp, StructuredDelta},
+            world::World,
+            CommitId,
+        };
+        let mut world = World::default();
+        world
+            .apply(
+                &StructuredDelta::single(DeltaOp::Create {
+                    kind: "kv".into(),
+                    id: "flag".into(),
+                    value: json!("locked"),
+                }),
+                CommitId::ZERO,
+            )
+            .unwrap();
+
+        let b = r#"{"name":"p","rules":[
+            {"name":"locked","when":{"field":"world.kv.flag","op":"eq","value":"locked"},
+             "decision":{"kind":"deny","reason":"resource is locked"}}]}"#;
+        let set = JsonPolicySet::from_json(b).unwrap();
+
+        // With the resource present and == "locked" → deny.
+        assert!(matches!(
+            set.evaluate(&intent("x", json!({})), &writ(), &world),
+            PolicyDecision::Deny(_)
+        ));
+        // Empty world → path unresolved → leaf false → permit.
+        assert!(matches!(
+            set.evaluate(&intent("x", json!({})), &writ(), &World::default()),
+            PolicyDecision::Permit
+        ));
+        // version accessor resolves too.
+        let b2 = r#"{"name":"p","rules":[
+            {"name":"v","when":{"field":"world.kv.flag.version","op":"gte","value":1},
+             "decision":{"kind":"deny","reason":"exists"}}]}"#;
+        assert!(matches!(
+            JsonPolicySet::from_json(b2).unwrap().evaluate(&intent("x", json!({})), &writ(), &world),
+            PolicyDecision::Deny(_)
+        ));
+    }
+
+    #[test]
+    fn signed_bundle_round_trips_and_rejects_tampering() {
+        let key = generate_signing_key();
+        let pubkey = public_key_of(&key);
+        let set = JsonPolicySet::from_json(
+            r#"{"name":"ops","version":"2","rules":[
+                {"name":"r","when":{"field":"intent.target","op":"eq","value":"x"},
+                 "decision":{"kind":"deny","reason":"no x"}}]}"#,
+        )
+        .unwrap();
+
+        let signed = set.to_signed_json(&key).unwrap();
+
+        // Verifies with the correct (and any-issuer) key.
+        let loaded = JsonPolicySet::from_signed_json(&signed, Some(&pubkey)).unwrap();
+        assert_eq!(loaded.version(), "2");
+        JsonPolicySet::from_signed_json(&signed, None).unwrap();
+
+        // Wrong expected issuer → rejected.
+        let other = public_key_of(&generate_signing_key());
+        assert!(JsonPolicySet::from_signed_json(&signed, Some(&other)).is_err());
+
+        // Tampered rule body → signature no longer verifies (fail-closed).
+        let tampered = signed.replace("no x", "ALLOW");
+        assert!(JsonPolicySet::from_signed_json(&tampered, None).is_err());
     }
 }
