@@ -17,9 +17,14 @@ Accepted — MVP implemented (Option A). Shipped:
   (already-compensated steps and compensation commits are skipped); runs under
   the supplied writ (authorizes the tool, must not be revoked).
 
-Deferred (see Unresolved Questions): declaring `compensable` in
-`ToolContractMeta` so the effect gate can *require approval* for an
-irreversible-and-uncompensable tool; cross-trajectory/delegated-child
+Also shipped: the **compensation gate** (compiler stage 9b) — when
+`Runtime::with_require_compensation_for_irreversible(true)` is set, an
+`Irreversible` tool that is not `compensable()` is escalated to *require
+approval* even on a bare policy permit (you can't undo it and the runtime can't
+roll it back, so a human signs off). Implemented via the `ToolContract::compensable()`
+trait method, so no `ToolContractMeta` change was needed.
+
+Deferred (see Unresolved Questions): cross-trajectory/delegated-child
 compensation; compensating past an expired writ window; partial-failure policy
 beyond "halt and surface".
 

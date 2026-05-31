@@ -16,6 +16,8 @@
 //!   7. Type check        — delegate to ToolContract::validate_args.
 //!   8. Precondition      — contract-declared; evaluated against World.
 //!   9. Policy eval       — run the PolicyEngine over (Intent, Writ, World).
+//!   9b. Compensation gate — optionally require approval for an irreversible,
+//!                           non-compensable tool.
 //!  10. Emit Proposal     — with full PolicyTrace, or a typed rejection.
 
 use std::collections::HashSet;
@@ -65,6 +67,13 @@ pub struct CompileContext {
     /// here is treated as void even if its signature and time window are valid —
     /// the revocation mechanism for capabilities pulled before expiry.
     pub revoked: HashSet<WritId>,
+    /// When true, an `Irreversible` tool that is **not** compensable
+    /// (`ToolContract::compensable() == false`) is escalated to `Suspended`
+    /// (require approval) even if policy permitted — it cannot be undone and the
+    /// runtime cannot roll it back, so a human must sign off. Default `false`
+    /// (preserves prior behavior); enable via
+    /// `Runtime::with_require_compensation_for_irreversible`.
+    pub require_compensation_for_irreversible: bool,
 }
 
 impl CompileContext {
@@ -75,6 +84,7 @@ impl CompileContext {
             now_unix: 0,
             budget_used: BudgetCost::default(),
             revoked: HashSet::new(),
+            require_compensation_for_irreversible: false,
         }
     }
 }
@@ -240,6 +250,31 @@ pub fn compile_with_context(
             },
             Some((channel.clone(), reason.clone())),
         ),
+    };
+
+    // 9b. Compensation gate. If enabled, an Irreversible tool that cannot be
+    // compensated (no rollback path) must not proceed on a bare permit — it is
+    // escalated to require approval, so a human signs off on an effect neither
+    // the tool nor the runtime can undo.
+    let (status, suspension) = if ctx.require_compensation_for_irreversible
+        && suspension.is_none()
+        && effect_class == EffectClass::Irreversible
+        && !tool.compensable()
+    {
+        let channel = "irreversible-uncompensable".to_string();
+        let reason = format!(
+            "tool '{}' has an irreversible effect and is not compensable; approval required",
+            effective_tool
+        );
+        (
+            ProposalStatus::Suspended {
+                channel: channel.clone(),
+                reason: reason.clone(),
+            },
+            Some((channel, reason)),
+        )
+    } else {
+        (status, suspension)
     };
 
     // 10. Emit Proposal.

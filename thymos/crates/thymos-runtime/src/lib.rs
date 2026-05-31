@@ -170,6 +170,10 @@ pub struct Runtime {
     /// before its time window expires. Shared (cheap to clone) so a control
     /// surface can revoke while runs are in flight.
     pub revocations: Revocations,
+    /// When true, an `Irreversible` tool that is not compensable is escalated to
+    /// require approval (compiler stage 9b) instead of executing on a bare
+    /// policy permit. Default `false`.
+    pub require_compensation_for_irreversible: bool,
 }
 
 /// Thread-safe set of revoked writ ids, consulted by the compiler on every
@@ -266,6 +270,7 @@ impl Runtime {
             commit_signer: None,
             redactor: thymos_core::Redactor::default_secrets(),
             revocations: Revocations::new(),
+            require_compensation_for_irreversible: false,
             clock: std::sync::Arc::new(SystemClock),
             approval_quorum: 1,
             quorum: QuorumTracker::new(),
@@ -276,6 +281,13 @@ impl Runtime {
     /// attested time source, or a [`FixedClock`] in tests).
     pub fn with_clock(mut self, clock: std::sync::Arc<dyn Clock>) -> Self {
         self.clock = clock;
+        self
+    }
+
+    /// Builder: require approval for any irreversible, non-compensable tool
+    /// (compiler stage 9b). Off by default.
+    pub fn with_require_compensation_for_irreversible(mut self, on: bool) -> Self {
+        self.require_compensation_for_irreversible = on;
         self
     }
 
@@ -513,6 +525,9 @@ impl<'a> Run<'a> {
             now_unix,
             budget_used,
             revoked: self.runtime.revocations.snapshot(),
+            require_compensation_for_irreversible: self
+                .runtime
+                .require_compensation_for_irreversible,
         };
 
         // Compile (with budget + time-window checks).
