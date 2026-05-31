@@ -194,7 +194,7 @@ pub async fn run_agent_streaming(
             let result = {
                 let intent_clone = intent.clone();
                 let writ_clone = writ.clone();
-                run.submit_with_trace(intent_clone, &writ_clone, step_idx, trace_tx.as_ref())
+                run.submit_with_trace(intent_clone, &writ_clone, step_idx, trace_tx.as_ref(), None)
             };
             let result = match result {
                 Ok(result) => result,

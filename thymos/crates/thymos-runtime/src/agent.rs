@@ -267,7 +267,7 @@ pub fn run_agent(
                 },
             );
             let result =
-                match run.submit_with_trace(intent.clone(), writ, step_idx, event_tx.as_ref()) {
+                match run.submit_with_trace(intent.clone(), writ, step_idx, event_tx.as_ref(), None) {
                     Ok(result) => result,
                     Err(err) => {
                         failures += 1;

@@ -490,17 +490,33 @@ impl<'a> Run<'a> {
 
     /// Submit one Intent. Runs it through the full Triad.
     pub fn submit(&self, intent: Intent, writ: &thymos_core::writ::Writ) -> Result<Step> {
-        self.submit_with_trace(intent, writ, 0, None)
+        self.submit_with_trace(intent, writ, 0, None, None)
+    }
+
+    /// Submit one Intent with provider routing evidence from a pre-Proposal
+    /// routing advisor (e.g. WisePick). The evidence is attached to the compiled
+    /// proposal — it does not affect `ProposalId`, but is recorded into the
+    /// ledgered envelope (commit / pending-approval), so it is immutable and
+    /// replay-safe. It never influences authority, budget, or policy.
+    pub fn submit_with_routing_evidence(
+        &self,
+        intent: Intent,
+        writ: &thymos_core::writ::Writ,
+        routing_evidence: thymos_core::proposal::RoutingEvidence,
+    ) -> Result<Step> {
+        self.submit_with_trace(intent, writ, 0, None, Some(routing_evidence))
     }
 
     /// Submit one intent while emitting structured trace events for operator
     /// surfaces that need live Intent → Proposal → Execution → Result state.
+    /// `routing_evidence`, if present, is attached to the compiled proposal.
     pub fn submit_with_trace(
         &self,
         intent: Intent,
         writ: &thymos_core::writ::Writ,
         step_index: u32,
         trace: Option<&crate::AgentEventCallback>,
+        routing_evidence: Option<thymos_core::proposal::RoutingEvidence>,
     ) -> Result<Step> {
         #[cfg(feature = "telemetry")]
         let _span = tracing::info_span!(
@@ -545,6 +561,29 @@ impl<'a> Run<'a> {
 
         #[cfg(feature = "telemetry")]
         drop(_compile_span);
+
+        // Attach routing evidence (if supplied) to the compiled proposal. It is
+        // outside ProposalBody, so ProposalId is unchanged; it rides into the
+        // ledgered envelope from here.
+        let compiled = match compiled {
+            Compiled::Staged(mut proposal) => {
+                proposal.routing_evidence = routing_evidence.clone();
+                Compiled::Staged(proposal)
+            }
+            Compiled::Suspended {
+                mut proposal,
+                channel,
+                reason,
+            } => {
+                proposal.routing_evidence = routing_evidence.clone();
+                Compiled::Suspended {
+                    proposal,
+                    channel,
+                    reason,
+                }
+            }
+            other => other,
+        };
 
         match compiled {
             Compiled::Rejected(reason) => {
@@ -715,6 +754,7 @@ impl<'a> Run<'a> {
                     policy_set_hash: self.runtime.policy.policy_set_hash(),
                     budget_cost,
                     compensates: None,
+                    routing_evidence: proposal.routing_evidence.clone(),
                     signature: None,
                 };
                 let commit = self.runtime.build_commit(commit_body)?;
@@ -1028,6 +1068,7 @@ impl<'a> Run<'a> {
             policy_set_hash: self.runtime.policy.policy_set_hash(),
             budget_cost,
             compensates: None,
+            routing_evidence: proposal.routing_evidence.clone(),
             signature: None,
         };
         let commit = self.runtime.build_commit(commit_body)?;
@@ -1177,6 +1218,7 @@ impl<'a> Run<'a> {
                 policy_set_hash: self.runtime.policy.policy_set_hash(),
                 budget_cost: BudgetCost::default(),
                 compensates: Some(original.id),
+                routing_evidence: None,
                 signature: None,
             };
             let commit = self.runtime.build_commit(body)?;
