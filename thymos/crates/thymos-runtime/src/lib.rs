@@ -25,6 +25,9 @@ pub use agent::{
     run_agent, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Termination,
 };
 
+pub mod feedback;
+pub use feedback::{routing_outcomes, RoutingOutcome};
+
 #[cfg(feature = "async")]
 pub mod agent_async;
 #[cfg(feature = "async")]
@@ -486,6 +489,15 @@ impl<'a> Run<'a> {
             }
         }
         None
+    }
+
+    /// Safe routing-feedback for this trajectory: minimal, non-sensitive
+    /// outcome records derived from the committed ledger (see
+    /// [`crate::feedback`]). A pull, not a push — no network egress; the caller
+    /// decides whether to forward these to a routing advisor's feedback channel.
+    pub fn routing_outcomes(&self) -> Result<Vec<crate::RoutingOutcome>> {
+        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
+        Ok(crate::routing_outcomes(&entries))
     }
 
     /// Submit one Intent. Runs it through the full Triad.
