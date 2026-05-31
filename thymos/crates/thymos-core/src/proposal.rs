@@ -2,10 +2,11 @@
 //!
 //! Spec reference: Section 2 (Execution Grammar), Section 3 (Compilation).
 //!
-//! ProposalId is content-addressed from the canonical hash of ProposalBody.
-//! routing_evidence lives on Proposal, NOT inside ProposalBody, so it does
-//! not affect ProposalId. It is supplementary data that influences only
-//! step 5 (capability registry resolution) per Section 3.
+//! `ProposalId` is content-addressed from the canonical hash of `ProposalBody`.
+//! The proposal contract is **v1-stable** (see `docs/rfcs/proposal-contract-v1.md`):
+//! it carries exactly the fields that define the action and its authorization,
+//! with no experimental or provider-supplied metadata. Provider routing metadata
+//! is deferred to a future RFC and is intentionally not part of this contract.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,42 +21,13 @@ use crate::ids::{IntentId, ProposalId, WritId};
 pub struct Proposal {
     pub id: ProposalId,
     pub body: ProposalBody,
-    /// EXPERIMENTAL — excluded from any v1 compatibility guarantee.
-    ///
-    /// Supplementary routing metadata. Never affects ProposalId, authority,
-    /// policy, or replay semantics. See Section 9 for the provider authority
-    /// boundary.
-    ///
-    /// NOTE (Phase I): the runtime does **not** read this field. It is inert.
-    /// Two unresolved questions must be answered before it can be relied upon
-    /// (see RFC `proposal-contract-v1.md`, "Unresolved Questions"):
-    ///   1. Signing — until resolved, `routing_evidence` is unauthenticated and
-    ///      MUST NOT be surfaced as a trustworthy audit artifact. Adding a
-    ///      signature will change the `PendingApproval` wire format.
-    ///   2. Storage — moving it to a separate ledger segment will also change
-    ///      the `PendingApproval` wire format.
-    /// Because it is serialized inside `PendingApproval` payloads, its on-wire
-    /// shape is part of the ledger compatibility surface. Treat it as unstable
-    /// until both questions are closed; prefer not depending on it in v1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub routing_evidence: Option<RoutingEvidence>,
 }
 
 impl Proposal {
-    /// Construct a Proposal from a body. The id is the content-hash of body;
-    /// routing_evidence is not hashed.
+    /// Construct a Proposal from a body. The id is the content-hash of body.
     pub fn new(body: ProposalBody) -> Result<Self> {
         let id = ProposalId(content_hash(&body)?);
-        Ok(Proposal {
-            id,
-            body,
-            routing_evidence: None,
-        })
-    }
-
-    pub fn with_routing_evidence(mut self, evidence: RoutingEvidence) -> Self {
-        self.routing_evidence = Some(evidence);
-        self
+        Ok(Proposal { id, body })
     }
 }
 
@@ -141,43 +113,6 @@ impl std::fmt::Display for RejectionReason {
     }
 }
 
-// ── RoutingEvidence ───────────────────────────────────────────────────────────
-//
-// Supplementary metadata from the provider routing layer. Lives on Proposal
-// (not ProposalBody) and MUST NOT affect authority, policy, or ledger hashes.
-// Influences only compiler step 5 (capability registry resolution).
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RoutingEvidence {
-    /// Hex-encoded content digest of the full routing decision payload, for
-    /// audit. The runtime treats this as opaque; the project's canonical hash
-    /// is BLAKE3 (see `crate::hash`), but providers MAY use any hex digest as
-    /// long as it is stable across their routing decisions.
-    pub decision_hash: String,
-    /// The provider:model string the router selected.
-    pub selected: String,
-    /// Other provider:model strings considered but not selected.
-    pub alternatives: Vec<String>,
-    /// Confidence in the selection, in basis points (0–10000 = 0.00%–100.00%).
-    /// Fixed-point to avoid floating-point in canonical data paths.
-    pub confidence: u32,
-    /// Machine-readable reason codes explaining the routing decision.
-    pub reason_codes: Vec<String>,
-    /// Estimated provider round-trip latency in milliseconds.
-    pub latency_estimate_ms: u64,
-    /// Estimated cost in USD millicents (1 USD = 100_000 millicents).
-    pub cost_estimate_usd: u64,
-    /// Fallback provider hint if the selected provider is unavailable.
-    pub fallback_hint: Option<FallbackHint>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FallbackHint {
-    pub provider: String,
-    pub model: Option<String>,
-    pub reason: String,
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -216,32 +151,6 @@ mod tests {
         let p1 = Proposal::new(make_body("kv_set")).unwrap();
         let p2 = Proposal::new(make_body("kv_del")).unwrap();
         assert_ne!(p1.id, p2.id);
-    }
-
-    #[test]
-    fn routing_evidence_does_not_affect_id() {
-        let body = make_body("kv_set");
-        let p_no_evidence = Proposal::new(body.clone()).unwrap();
-        let p_with_evidence = Proposal::new(body)
-            .unwrap()
-            .with_routing_evidence(RoutingEvidence {
-                decision_hash: "abc123".into(),
-                selected: "anthropic:claude-opus-4-7".into(),
-                alternatives: vec!["openai:gpt-4o".into()],
-                confidence: 9500,
-                reason_codes: vec!["cost_optimal".into()],
-                latency_estimate_ms: 800,
-                cost_estimate_usd: 42,
-                fallback_hint: Some(FallbackHint {
-                    provider: "openai".into(),
-                    model: Some("gpt-4o".into()),
-                    reason: "primary overloaded".into(),
-                }),
-            });
-        assert_eq!(
-            p_no_evidence.id, p_with_evidence.id,
-            "routing_evidence must not affect ProposalId"
-        );
     }
 
     #[test]
@@ -310,35 +219,6 @@ mod tests {
             "ProposalId must be identical after serialize → deserialize → recompute"
         );
         assert_eq!(original.id, round_tripped.id);
-    }
-
-    #[test]
-    fn proposal_id_is_stable_with_routing_evidence_round_trip() {
-        // The same property must hold even when routing_evidence is attached
-        // — it is serialized along with the Proposal but excluded from the id.
-        let body = make_body("kv_set");
-        let original = Proposal::new(body)
-            .unwrap()
-            .with_routing_evidence(RoutingEvidence {
-                decision_hash: "deadbeef".into(),
-                selected: "anthropic:opus".into(),
-                alternatives: vec![],
-                confidence: 8800,
-                reason_codes: vec!["primary".into()],
-                latency_estimate_ms: 200,
-                cost_estimate_usd: 17,
-                fallback_hint: None,
-            });
-
-        let json = serde_json::to_string(&original).unwrap();
-        let round_tripped: Proposal = serde_json::from_str(&json).unwrap();
-
-        let recomputed_id = ProposalId(content_hash(&round_tripped.body).unwrap());
-        assert_eq!(
-            original.id, recomputed_id,
-            "routing_evidence must not affect ProposalId after roundtrip"
-        );
-        assert_eq!(original.routing_evidence, round_tripped.routing_evidence);
     }
 
     #[test]

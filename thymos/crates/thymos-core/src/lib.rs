@@ -28,8 +28,8 @@ pub use hash::{canonical_json_bytes, content_hash, ContentHash};
 pub use ids::{CommitId, IntentId, LedgerEntryId, ProposalId, TrajectoryId, WritId};
 pub use intent::{Intent, IntentBody, IntentKind};
 pub use proposal::{
-    ExecutionPlan, FallbackHint, PolicyDecision, PolicyTrace, Proposal, ProposalBody,
-    ProposalStatus, RejectionReason, RoutingEvidence,
+    ExecutionPlan, PolicyDecision, PolicyTrace, Proposal, ProposalBody, ProposalStatus,
+    RejectionReason,
 };
 pub use world::{ResourceKey, World};
 pub use writ::{Budget, EffectCeiling, ToolPattern, Writ, WritBody};

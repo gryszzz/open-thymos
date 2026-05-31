@@ -6,16 +6,17 @@ Proposal Contract v1
 
 ## Status
 
-Accepted
+Stable (v1). The proposal contract is frozen: the `Proposal` / `ProposalBody` /
+`ProposalStatus` shapes below are the stable surface downstreams may depend on.
 
 ## Summary
 
-This RFC formalizes the proposal contract as it exists after Phase I stabilization.
-It specifies the canonical `Proposal` type, the `ProposalStatus` enumeration, the
-`RoutingEvidence` supplementary field, and the content-addressing rules for
-`ProposalId`. It affects runtime semantics (compilation output), ledger
-compatibility (serialized `PendingApproval` payloads), and provider semantics
-(routing metadata boundary). It does not affect replay correctness for entries
+This RFC specifies the stable v1 proposal contract: the canonical `Proposal`
+type, the `ProposalStatus` enumeration, and the content-addressing rules for
+`ProposalId`. A `Proposal` is fully content-addressed — it carries only its id
+and its body, with no experimental or provider-supplied fields. It affects
+runtime semantics (compilation output) and ledger compatibility (serialized
+`PendingApproval` payloads). It does not affect replay correctness for entries
 that contain no `PendingApproval` payloads.
 
 ## Motivation
@@ -29,11 +30,11 @@ data; the `Rejected` variant had no reason field. Both mismatched the grammar:
 Status := Staged | Suspended { channel, reason } | Rejected { reason }
 ```
 
-Additionally, the specification allows providers to attach routing metadata that
-influences capability registry resolution (step 5 of compilation) without
-granting additional authority. No type existed to carry this metadata, leaving
-providers with no protocol-compliant way to communicate routing decisions to the
-compiler.
+An earlier draft of this RFC also proposed an experimental `routing_evidence`
+field for provider routing metadata. It was never read by the runtime and was
+removed before stabilization (see "Proposed Semantics") so the v1 contract has
+no inert fields on its compatibility surface. Provider routing metadata, if ever
+needed, will be introduced by a separate RFC.
 
 ## Current Semantics
 
@@ -85,57 +86,37 @@ pub struct ProposalBody {
 pub struct Proposal {
     pub id: ProposalId,
     pub body: ProposalBody,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub routing_evidence: Option<RoutingEvidence>,
-}
-
-pub struct RoutingEvidence {
-    pub decision_hash: String,
-    pub selected: String,
-    pub alternatives: Vec<String>,
-    pub confidence: u32,           // basis points, 0–10000
-    pub reason_codes: Vec<String>,
-    pub latency_estimate_ms: u64,
-    pub cost_estimate_usd: u64,    // USD millicents
-    pub fallback_hint: Option<FallbackHint>,
-}
-
-pub struct FallbackHint {
-    pub provider: String,
-    pub model: Option<String>,
-    pub reason: String,
 }
 ```
 
-`ProposalId` remains `content_hash(body)`. `routing_evidence` is NOT part of
-`ProposalBody` and therefore does NOT affect `ProposalId`.
+`ProposalId` remains `content_hash(body)`. A `Proposal` carries exactly its
+content-addressed id and its body — nothing else. There is no provider-supplied
+or experimental field, so the contract is fully content-addressed and stable.
 
-The `Suspended` variant now embeds `channel` and `reason` directly in the
-status, matching Section 2. The compiler populates both fields from the policy
-engine's `RequireApproval` decision; the runtime reads them from the status
-when appending `PendingApproval` ledger entries.
+The `Suspended` variant embeds `channel` and `reason` directly in the status,
+matching Section 2. The compiler populates both fields from the policy engine's
+`RequireApproval` decision; the runtime reads them from the status when
+appending `PendingApproval` ledger entries.
 
-`confidence` and `cost_estimate_usd` use fixed-point integers to avoid
-floating-point values in canonical data paths (Section 10 requires deterministic
-serialization).
+> **Provider routing metadata** (previously a proposed experimental
+> `routing_evidence` field) is intentionally **not** part of this stable v1
+> contract. It was removed to avoid shipping an inert field on the
+> compatibility surface. If a future need arises to surface provider routing
+> decisions, it must be introduced by a separate RFC — outside `ProposalBody`,
+> signed, and never able to influence authority, policy, budget, or replay.
 
 ## Invariants
 
 - `ProposalId = blake3(canonical_json(ProposalBody))`.
-- `routing_evidence` MUST NOT influence ProposalId.
-- `routing_evidence` MUST NOT influence writ authority, budget checks, policy
-  decisions, or ledger entry hashes for any entry kind.
-- `routing_evidence` MAY influence step 5 (capability registry resolution) of
-  the compilation pipeline, and only step 5.
-- Provider adapters MUST NOT use `routing_evidence` to grant additional tool
-  authority, bypass policy, or mutate ledger state.
+- A `Proposal` contains only `id` and `body`; there are no fields outside the
+  content-addressed body.
 - `ProposalStatus::Suspended` MUST carry the same `channel` and `reason` values
   that appear in the `PendingApproval` ledger entry.
 - `ProposalStatus::Rejected::reason` is a human-readable summary string; it is
   distinct from `RejectionReason`, which is the structured enum used in
   `Rejection` ledger entries.
 - Floating-point values MUST NOT appear in any type that is part of a canonical
-  payload hash input. `RoutingEvidence` fields use fixed-point integers.
+  payload hash input.
 
 ## Ledger Impact
 
@@ -183,11 +164,9 @@ rather than being passed out-of-band from the compiler.
 Providers that implement the `Cognition` trait are unaffected. The trait
 signature `step(ctx) -> Result<CognitionStep>` does not change.
 
-Providers that supply routing metadata MAY attach a `RoutingEvidence` value to
-the `Proposal` via `Proposal::with_routing_evidence`. They MUST NOT use this
-field to influence compilation authority. The runtime MUST ignore
-`routing_evidence` for all purposes other than step 5 capability registry
-resolution.
+Providers cannot attach metadata to a `Proposal`: the contract has no
+provider-supplied field. Provider routing decisions, if ever surfaced, will be
+specified by a separate RFC and carried outside this contract.
 
 ## Tool Contract Impact
 
@@ -211,74 +190,48 @@ affect this interface.
 
 ## Security Considerations
 
-- `routing_evidence` is unauthenticated supplementary data. A malicious or
-  misconfigured provider could supply false routing metadata. The runtime MUST
-  enforce that `routing_evidence` cannot influence authority, budget, policy, or
-  ledger write access — only step 5 registry resolution.
-- `decision_hash` in `RoutingEvidence` is informational only. The runtime MUST
-  NOT use it as an authority proof.
-- `ProposalId` continues to be derived from `ProposalBody` only. A provider
-  cannot influence `ProposalId` by manipulating `routing_evidence`.
+- `ProposalId` is derived from `ProposalBody` only and the body contains no
+  provider-supplied data, so a provider cannot influence a proposal's identity.
 - The `Rejected { reason }` string in `ProposalStatus` is a human-readable
   summary and MUST NOT be used for authorization or policy decisions.
+- There is no unauthenticated metadata on the contract: removing the experimental
+  `routing_evidence` field eliminates a class of provider-supplied data that
+  would otherwise have to be carefully prevented from influencing authority.
 
 ## Alternatives
 
-**Embed `routing_evidence` in `ProposalBody`**: Rejected because this would
-include routing metadata in `ProposalId`, making provider routing decisions part
-of the proposal's canonical identity. This would couple provider behavior to the
-hash chain and complicate determinism guarantees.
+**Embed routing/provider metadata in `ProposalBody`**: Rejected because it would
+include provider routing decisions in `ProposalId`, coupling nondeterministic
+provider behavior to the proposal's canonical identity and the hash chain.
+
+**Keep an experimental `routing_evidence` field on `Proposal` (outside the
+body)**: Rejected for v1. The runtime never read it, yet it sat on the
+`PendingApproval` wire format and carried unresolved signing/storage questions —
+an inert field on the stability surface. Removed; reintroduce by RFC only when a
+concrete consumer and a signed design exist.
 
 **Use `channel` and `reason` as separate fields on `Proposal` alongside
 `status`**: Rejected because it duplicates data already carried by the status
 variant. Embedding in `Suspended { channel, reason }` keeps the status
 self-describing.
 
-**Floating-point `confidence` and `cost_estimate_usd`**: Rejected because
-floating-point JSON serialization is not guaranteed to be identical across
-platforms or Rust releases. Fixed-point integers (basis points, millicents)
-are deterministic and follow the pattern established by `Budget` fields.
-
 ## Test Plan
 
 - [x] `proposal_id_is_content_addressed`: same `ProposalBody` inputs → same ID
 - [x] `different_tool_yields_different_id`: tool name change → different ID
-- [x] `routing_evidence_does_not_affect_id`: presence of evidence → same ID
 - [x] `proposal_status_staged_serializes`: `{"kind":"staged"}`
 - [x] `proposal_status_suspended_serializes`: embeds channel and reason
 - [x] `proposal_status_rejected_serializes`: embeds reason
 - [x] `proposal_status_roundtrips`: all three variants survive serde roundtrip
+- [x] `proposal_id_is_stable_across_serialization_boundary`: serialize → deserialize → recompute id is stable
 - [x] Compiler: `RequireApproval` decision → `Suspended { channel, reason }` status
-- [x] Integration: `PendingApproval` ledger entry round-trips with new status format
+- [x] Integration: `PendingApproval` ledger entry round-trips with the status format
 - [x] Replay: pre-RFC ledger with `PendingApproval` entries returns a clear
   deserialization error rather than silently misfiring
 
 ## Unresolved Questions
 
-These questions do not affect **replay correctness**: `routing_evidence` lives on
-`Proposal` (not `ProposalBody`), is excluded from `ProposalId`, is not part of any
-commit delta, and is never folded by the replay verifier.
-
-They are **not** compatibility-neutral, however. `routing_evidence` is serialized
-inside `PendingApproval` ledger payloads, so its on-wire shape is part of the
-ledger compatibility surface, and answering either question later will change that
-wire format. For that reason `routing_evidence` is marked **experimental** and is
-**excluded from the v1 compatibility guarantee** (see `thymos-core`
-`Proposal::routing_evidence`). It is also currently **inert** — the runtime does
-not read it.
-
-- Should `routing_evidence` be signed by the provider to provide an audit trail?
-  Until resolved, `routing_evidence` is unauthenticated (its `decision_hash` is
-  provider-self-asserted) and MUST NOT be surfaced as a trustworthy audit
-  artifact. Adding a signature will add fields and break the `PendingApproval`
-  wire format. (Phase II concern, requires RFC.)
-- Should the ledger store `routing_evidence` separately from the `Proposal` to
-  avoid bloating `PendingApproval` payloads with supplementary data? Moving it
-  will also break the `PendingApproval` wire format. (Phase III ledger segment
-  format RFC.)
-- If `routing_evidence` is ever allowed to influence step 5 (capability registry
-  resolution), an unauthenticated provider field would influence execution. That
-  must be resolved (at minimum, signing) **before** any step-5 use is enabled.
-
-A v1 "stable" promise MUST NOT silently cover `routing_evidence` until the
-signing and storage questions are closed.
+None. The v1 contract is stable: `Proposal` carries only `id` and `body`, with
+no experimental or provider-supplied fields. Provider routing metadata is
+explicitly deferred to a future RFC and is not part of this contract's
+compatibility surface.
