@@ -11,15 +11,20 @@ use thymos_core::{
     writ::Writ,
 };
 
+pub mod json_policy;
+pub use json_policy::JsonPolicySet;
+
 pub trait Policy: Send + Sync {
-    /// Stable name used in `PolicyTrace.rules_evaluated`.
-    fn name(&self) -> &'static str;
+    /// Stable name used in `PolicyTrace.rules_evaluated`. Borrowed from the
+    /// policy so dynamically-loaded policies (e.g. JSON bundles) can carry their
+    /// own name; built-in policies return a string literal.
+    fn name(&self) -> &str;
 
     /// Version tag for this policy's logic. Bump it when the rule's behavior
     /// changes so the engine's `policy_set_hash` changes too — that lets replay
     /// detect that a trajectory was produced under a different policy version.
     /// Default: `"1"`.
-    fn version(&self) -> &'static str {
+    fn version(&self) -> &str {
         "1"
     }
 
@@ -99,7 +104,7 @@ impl Default for PolicyEngine {
 /// Denies anything not authorized by the Writ's tool scopes.
 pub struct WritAuthorityPolicy;
 impl Policy for WritAuthorityPolicy {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "writ.authority"
     }
     fn applies_to(&self, intent: &Intent) -> bool {
@@ -128,7 +133,7 @@ impl Policy for WritAuthorityPolicy {
 pub struct TenantIsolationPolicy;
 
 impl Policy for TenantIsolationPolicy {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "tenant.isolation"
     }
 
@@ -166,7 +171,7 @@ pub struct ThresholdApprovalPolicy {
 }
 
 impl Policy for ThresholdApprovalPolicy {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "threshold.approval"
     }
     fn applies_to(&self, intent: &Intent) -> bool {
