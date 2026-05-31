@@ -2699,7 +2699,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "axum 0.8.9",
  "clap",
@@ -2718,7 +2718,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-client"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "axum-test",
  "reqwest",
@@ -2732,7 +2732,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-cognition"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -2746,7 +2746,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-compiler"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2757,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "ed25519-dalek",
@@ -2770,7 +2770,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-ledger"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "deadpool-postgres",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-marketplace"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "hex",
@@ -2799,7 +2799,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-policy"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-runtime"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -2825,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-server"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2858,7 +2858,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-tools"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "blake3",
  "reqwest",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-worker"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
  "thymos-tools",

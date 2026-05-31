@@ -43,6 +43,8 @@ use thymos_cognition::{build_cognition, CognitionConfig, CognitionEvent, NonStre
 use thymos_core::{
     content_hash,
     crypto::{generate_signing_key, public_key_of},
+    intent::{Intent, IntentBody, IntentKind},
+    proposal::RoutingEvidence,
     writ::{Budget, DelegationBounds, EffectCeiling, TimeWindow, ToolPattern, Writ, WritBody},
     TrajectoryId,
 };
@@ -50,7 +52,8 @@ use thymos_ledger::{EntryPayload, Ledger};
 use thymos_policy::{PolicyEngine, WritAuthorityPolicy};
 use thymos_runtime::agent_async::ApprovalDecision;
 use thymos_runtime::{
-    AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Runtime, Termination,
+    AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Runtime, Step,
+    Termination,
 };
 use thymos_tools::{
     DelegateTool, FsPatchTool, FsReadTool, GrepTool, HttpTool, KvGetTool, KvSetTool, ListFilesTool,
@@ -457,6 +460,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/runs/{id}/cancel", post(cancel_run))
         .route("/writs/{writ_id}/revoke", post(revoke_writ_handler))
         .route("/writs/{writ_id}/restore", post(restore_writ_handler))
+        .route("/routed-submit", post(routed_submit))
         .route("/runs/{id}/delegations", get(get_delegations))
         .route("/runs/{id}/branch", post(post_branch))
         .route("/usage", get(get_usage))
@@ -620,6 +624,147 @@ fn writ_id_from_hex(writ_hex: &str) -> Result<thymos_core::WritId, &'static str>
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(thymos_core::WritId(thymos_core::ContentHash(arr)))
+}
+
+/// One governed action submitted with pre-Proposal routing evidence. This is the
+/// WisePick integration path: the advisor decides the route, the client posts the
+/// action + evidence, THYMOS governs (writ/effect/budget/policy), executes, and
+/// ledgers the result — with `routing_evidence` recorded immutably on the commit.
+#[derive(Debug, Deserialize)]
+pub struct RoutedSubmitRequest {
+    /// Tool to invoke.
+    pub tool: String,
+    /// Tool arguments.
+    #[serde(default)]
+    pub args: serde_json::Value,
+    /// Optional rationale recorded on the intent.
+    #[serde(default)]
+    pub rationale: String,
+    /// Routing evidence to bind into the ledgered proposal (audit/replay only).
+    #[serde(default)]
+    pub routing_evidence: Option<RoutingEvidence>,
+}
+
+/// Submit a single routed action. Creates its own trajectory, mints a writ
+/// scoped to the requested tool, attaches `routing_evidence`, and returns the
+/// governed outcome.
+async fn routed_submit(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<RoutedSubmitRequest>,
+) -> impl IntoResponse {
+    let runtime = state.runtime.clone();
+
+    // Fresh trajectory per routed action.
+    let seed = thymos_core::crypto::random_nonce();
+    let run = match runtime.create_run(&format!("routed:{}", req.tool), &seed) {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    let trajectory_hex = run.trajectory_id().to_string();
+
+    // Mint a writ scoped to just this tool.
+    let root_key = generate_signing_key();
+    let agent_key = generate_signing_key();
+    let writ = match Writ::sign(
+        WritBody {
+            issuer: "server".into(),
+            issuer_pubkey: public_key_of(&root_key),
+            subject: "routed".into(),
+            subject_pubkey: public_key_of(&agent_key),
+            nonce: thymos_core::crypto::random_nonce(),
+            parent: None,
+            tenant_id: String::new(),
+            tool_scopes: vec![ToolPattern::exact(&req.tool)],
+            budget: Budget {
+                tokens: 100_000,
+                tool_calls: 8,
+                wall_clock_ms: 300_000,
+                usd_millicents: 0,
+            },
+            effect_ceiling: EffectCeiling::read_write_local(),
+            time_window: TimeWindow {
+                not_before: 0,
+                expires_at: u64::MAX,
+            },
+            delegation: DelegationBounds {
+                max_depth: 1,
+                may_subdivide: false,
+            },
+        },
+        &root_key,
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let intent = match Intent::new(IntentBody {
+        parent_commit: None,
+        author: "routed-submit".into(),
+        kind: IntentKind::Act,
+        target: req.tool.clone(),
+        args: req.args.clone(),
+        rationale: req.rationale.clone(),
+        nonce: thymos_core::crypto::random_nonce(),
+    }) {
+        Ok(i) => i,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let result = match req.routing_evidence.clone() {
+        Some(ev) => run.submit_with_routing_evidence(intent, &writ, ev),
+        None => run.submit(intent, &writ),
+    };
+
+    let body = match result {
+        Ok(Step::Committed(id)) => serde_json::json!({
+            "status": "committed",
+            "trajectory_id": trajectory_hex,
+            "commit_id": id.to_string(),
+            "routing_evidence_recorded": req.routing_evidence.is_some(),
+        }),
+        Ok(Step::Rejected(reason)) => serde_json::json!({
+            "status": "rejected",
+            "trajectory_id": trajectory_hex,
+            "reason": reason.to_string(),
+        }),
+        Ok(Step::Suspended { channel, reason }) => serde_json::json!({
+            "status": "suspended",
+            "trajectory_id": trajectory_hex,
+            "channel": channel,
+            "reason": reason,
+        }),
+        Ok(Step::Delegated { child_trajectory_id, .. }) => serde_json::json!({
+            "status": "delegated",
+            "trajectory_id": trajectory_hex,
+            "child_trajectory_id": child_trajectory_id.to_string(),
+        }),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    (StatusCode::OK, Json(body)).into_response()
 }
 
 /// Revoke a writ by id. Subsequent submissions under it (or under any child

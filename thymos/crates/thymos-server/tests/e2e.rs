@@ -131,6 +131,45 @@ async fn revoke_writ_invalid_id_returns_400() {
 }
 
 #[tokio::test]
+async fn routed_submit_commits_and_records_routing_evidence() {
+    let server = test_server(test_state());
+    let resp = server
+        .post("/routed-submit")
+        .json(&json!({
+            "tool": "kv_set",
+            "args": { "key": "k", "value": "v" },
+            "rationale": "wisepick route",
+            "routing_evidence": {
+                "decision_hash": "abc123",
+                "selected": "anthropic:claude",
+                "alternatives": ["openai:gpt"],
+                "confidence_bps": 9500,
+                "reason_codes": ["cost_optimal"],
+                "latency_estimate_ms": 800,
+                "cost_estimate_millicents": 4200
+            }
+        }))
+        .await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    assert_eq!(body["status"], "committed");
+    assert_eq!(body["routing_evidence_recorded"], true);
+    assert!(body["commit_id"].is_string());
+}
+
+#[tokio::test]
+async fn routed_submit_unknown_tool_is_rejected_not_executed() {
+    let server = test_server(test_state());
+    let resp = server
+        .post("/routed-submit")
+        .json(&json!({ "tool": "ghost_tool", "args": {} }))
+        .await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    assert_eq!(body["status"], "rejected");
+}
+
+#[tokio::test]
 async fn create_run_with_cognition_config() {
     let server = test_server(test_state());
     let resp = server
