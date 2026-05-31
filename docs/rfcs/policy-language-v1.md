@@ -6,9 +6,27 @@ Declarative Policy Language v1
 
 ## Status
 
-Draft — design exploration only. No implementation is authorized by this
-document. This stub exists to capture the problem, options, and a recommended
-direction for review before any code is written.
+Accepted — MVP implemented (Option A: minimal JSON predicate DSL). Shipped in
+`thymos-policy::json_policy`:
+
+- `JsonPolicySet::from_json(&str)` loads a bundle `{ name, version, rules[] }` at
+  runtime (no recompile) and implements the existing `Policy` trait, so it plugs
+  straight into `PolicyEngine::with(...)`.
+- Rule `when` is a closed predicate DSL: leaf `{field, op, value}` with ops
+  `eq/ne/gt/lt/gte/lte/contains/starts_with/in`, combined by `all`/`any`/`not`.
+  Field paths resolve over `(Intent, Writ)` (`intent.target`, `intent.kind`,
+  `intent.author`, `intent.args.<k>`, `writ.tenant_id`, `writ.subject`,
+  `writ.issuer`).
+- Decisions: `permit` / `deny{reason}` / `require_approval{channel,reason}`.
+- Evaluation is deterministic over `(Intent, Writ)` — no clock, RNG, network, or
+  floats in rule data — and fail-closed (a bundle that does not parse, or names
+  an unknown op, is rejected at load).
+- The bundle `name@version` already flows into `PolicyEngine::policy_set_hash`,
+  so a changed bundle is detected by replay drift checks.
+
+Deferred to a follow-up (see Unresolved Questions): **signed bundles**
+(ed25519 over the canonical bundle, verified at load), `world.*` accessors, and
+CEL/Rego (Options B/C) if the closed DSL proves too limited.
 
 ## Summary
 
