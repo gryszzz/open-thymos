@@ -12,7 +12,7 @@ use thymos_core::{
 };
 
 pub mod json_policy;
-pub use json_policy::JsonPolicySet;
+pub use json_policy::{JsonPolicySet, SignedPolicyBundle};
 
 pub trait Policy: Send + Sync {
     /// Stable name used in `PolicyTrace.rules_evaluated`. Borrowed from the

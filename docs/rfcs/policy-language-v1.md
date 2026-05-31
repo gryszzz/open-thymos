@@ -24,9 +24,17 @@ Accepted — MVP implemented (Option A: minimal JSON predicate DSL). Shipped in
 - The bundle `name@version` already flows into `PolicyEngine::policy_set_hash`,
   so a changed bundle is detected by replay drift checks.
 
-Deferred to a follow-up (see Unresolved Questions): **signed bundles**
-(ed25519 over the canonical bundle, verified at load), `world.*` accessors, and
-CEL/Rego (Options B/C) if the closed DSL proves too limited.
+Also shipped:
+
+- **Signed bundles** — `JsonPolicySet::to_signed_json(signing_key)` emits a
+  `SignedPolicyBundle` (`{ policy, issuer_pubkey, signature }`) signed (ed25519)
+  over `canonical_json(policy)`; `from_signed_json(s, expected_issuer)` verifies
+  it (fail-closed) and can pin the issuer — same crypto as writs/signed commits.
+- **`world.*` accessors** — `world.<kind>.<id>` → resource value,
+  `world.<kind>.<id>.version` → version; read-only and deterministic.
+
+Deferred (see Unresolved Questions): CEL/Rego (Options B/C) only if the closed
+DSL proves too limited.
 
 ## Summary
 
