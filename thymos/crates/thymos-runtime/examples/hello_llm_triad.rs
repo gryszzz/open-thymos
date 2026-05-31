@@ -45,6 +45,7 @@ fn main() -> anyhow::Result<()> {
             issuer_pubkey: public_key_of(&root_key),
             subject: "llm-agent".into(),
             subject_pubkey: public_key_of(&agent_key),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_*")],

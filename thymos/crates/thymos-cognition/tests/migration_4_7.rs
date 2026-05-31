@@ -166,6 +166,7 @@ mod streaming {
                 issuer_pubkey: public_key_of(&root),
                 subject: "test".into(),
                 subject_pubkey: public_key_of(&subject),
+                nonce: [0u8; 16],
                 parent: None,
                 tenant_id: String::new(),
                 tool_scopes: vec![ToolPattern::exact("noop")],

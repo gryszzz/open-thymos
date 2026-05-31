@@ -65,6 +65,7 @@ fn sign_writ(issuer: &SigningKey, subject: &SigningKey, parent: Option<WritId>) 
             issuer_pubkey: public_key_of(issuer),
             subject: "agent".into(),
             subject_pubkey: public_key_of(subject),
+            nonce: [0u8; 16],
             parent,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("noop")],

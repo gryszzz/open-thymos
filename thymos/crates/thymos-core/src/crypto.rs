@@ -20,6 +20,16 @@ pub fn generate_signing_key() -> SigningKey {
     SigningKey::generate(&mut OsRng)
 }
 
+/// 16 random bytes for a writ nonce — makes each issued writ uniquely
+/// identified (and signed), so two otherwise-identical writs do not collide on
+/// the same content-addressed `WritId` and each can be revoked independently.
+pub fn random_nonce() -> [u8; 16] {
+    use rand::RngCore;
+    let mut nonce = [0u8; 16];
+    OsRng.fill_bytes(&mut nonce);
+    nonce
+}
+
 /// Extract the verifying (public) key bytes from a signing key.
 pub fn public_key_of(sk: &SigningKey) -> PublicKey {
     sk.verifying_key().to_bytes()

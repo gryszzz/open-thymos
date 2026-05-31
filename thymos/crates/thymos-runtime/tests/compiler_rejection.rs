@@ -125,6 +125,7 @@ fn signed_writ_with_ceiling(
             issuer_pubkey: public_key_of(&issuer),
             subject: "agent".into(),
             subject_pubkey: public_key_of(&subject),
+            nonce: [0u8; 16],
             parent: None,
             tenant_id: String::new(),
             tool_scopes,

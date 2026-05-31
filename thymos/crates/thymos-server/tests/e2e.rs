@@ -110,6 +110,27 @@ async fn get_nonexistent_run_returns_404() {
 }
 
 #[tokio::test]
+async fn revoke_and_restore_writ_endpoints() {
+    let server = test_server(test_state());
+    let writ_hex = "0".repeat(64); // valid 32-byte hex writ id
+
+    let resp = server.post(&format!("/writs/{writ_hex}/revoke")).await;
+    resp.assert_status_ok();
+    assert_eq!(resp.json::<Value>()["revoked"], true);
+
+    let resp = server.post(&format!("/writs/{writ_hex}/restore")).await;
+    resp.assert_status_ok();
+    assert_eq!(resp.json::<Value>()["restored"], true);
+}
+
+#[tokio::test]
+async fn revoke_writ_invalid_id_returns_400() {
+    let server = test_server(test_state());
+    let resp = server.post("/writs/not-hex/revoke").await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn create_run_with_cognition_config() {
     let server = test_server(test_state());
     let resp = server

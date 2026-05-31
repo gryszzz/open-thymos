@@ -455,6 +455,8 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/runs/{id}/approvals/{channel}", post(post_approval))
         .route("/runs/{id}/resume", post(resume_run))
         .route("/runs/{id}/cancel", post(cancel_run))
+        .route("/writs/{writ_id}/revoke", post(revoke_writ_handler))
+        .route("/writs/{writ_id}/restore", post(restore_writ_handler))
         .route("/runs/{id}/delegations", get(get_delegations))
         .route("/runs/{id}/branch", post(post_branch))
         .route("/usage", get(get_usage))
@@ -608,6 +610,61 @@ fn trajectory_from_hex(traj_hex: &str) -> Result<TrajectoryId, &'static str> {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(TrajectoryId(thymos_core::ContentHash(arr)))
+}
+
+fn writ_id_from_hex(writ_hex: &str) -> Result<thymos_core::WritId, &'static str> {
+    let bytes = hex::decode(writ_hex).map_err(|_| "invalid writ id")?;
+    if bytes.len() != 32 {
+        return Err("invalid writ id");
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    Ok(thymos_core::WritId(thymos_core::ContentHash(arr)))
+}
+
+/// Revoke a writ by id. Subsequent submissions under it (or under any child
+/// whose immediate parent is it) are rejected as AuthorityVoid by the compiler.
+async fn revoke_writ_handler(
+    State(state): State<Arc<AppState>>,
+    Path(writ_id): Path<String>,
+) -> impl IntoResponse {
+    match writ_id_from_hex(writ_id.trim()) {
+        Ok(id) => {
+            state.runtime.revoke_writ(id);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "revoked": true, "writ_id": writ_id })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+/// Reinstate a previously revoked writ (e.g. an erroneous revocation).
+async fn restore_writ_handler(
+    State(state): State<Arc<AppState>>,
+    Path(writ_id): Path<String>,
+) -> impl IntoResponse {
+    match writ_id_from_hex(writ_id.trim()) {
+        Ok(id) => {
+            state.runtime.revocations.restore(&id);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "restored": true, "writ_id": writ_id })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
 }
 
 fn run_record_for_access(
@@ -885,6 +942,7 @@ async fn resume_run(
                         issuer_pubkey: public_key_of(&root_key),
                         subject: format!("resumed-{}", run_id),
                         subject_pubkey: public_key_of(&agent_key),
+                        nonce: thymos_core::crypto::random_nonce(),
                         parent: None,
                         tenant_id: String::new(),
                         tool_scopes: vec![ToolPattern::exact("*")],
@@ -1060,6 +1118,7 @@ async fn create_run(
             issuer_pubkey: public_key_of(&root_key),
             subject,
             subject_pubkey: public_key_of(&agent_key),
+            nonce: thymos_core::crypto::random_nonce(),
             parent: None,
             tenant_id: tenant_id.clone(),
             tool_scopes: scopes,
