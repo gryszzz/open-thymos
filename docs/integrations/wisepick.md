@@ -111,6 +111,38 @@ runtime reads `routing_evidence` straight from the ledgered entry (keyed by
 `decision_hash`); it does not re-query the advisor. Your adapter's
 cached-decision mode is the canonical replay path.
 
+## Routing feedback (safe, pull-based)
+
+A routing advisor improves from execution outcomes. THYMOS can supply that
+signal without breaking determinism or data sovereignty:
+
+- **`GET /runs/{id_or_trajectory}/routing-outcomes`** returns the outcomes for a
+  trajectory (also accepts the `trajectory_id` returned by `/routed-submit`).
+- Each record is minimal and non-sensitive:
+
+  ```json
+  { "decision_hash": "deadbeef", "selected": "anthropic:claude", "status": "committed", "latency_ms": 42 }
+  ```
+
+  Keyed by `decision_hash` so the advisor joins it back to its own decision —
+  **never** intent args, tool output, tenant, writ, resource values, or any free
+  text.
+
+Properties that keep this safe and THYMOS-consistent:
+
+- **Pull, not push.** THYMOS initiates no egress; the advisor fetches outcomes
+  and decides what to do with them. The operator owns the data boundary.
+- **Out of the replay path.** Outcomes are derived from the committed ledger
+  after the fact; they are never read back into execution, so they cannot make
+  the same intent route differently on replay.
+- **Derived from the ledger** (the audit source of truth), so the export is
+  exactly what was committed — auditable and stable.
+
+A live, third-party *shared* feedback pool is a separate decision: any such loop
+must stay strictly on the forward path (never replay), and the operator should
+weigh telemetry egress explicitly. This endpoint is the building block that lets
+you do that on your own terms.
+
 ## What stays on each side
 
 | WisePick | OpenThymos |

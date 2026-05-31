@@ -653,3 +653,39 @@ async fn marketplace_requires_auth_when_jwt_configured() {
     let resp = server.get("/marketplace/packages").await;
     resp.assert_status(axum::http::StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn routing_outcomes_endpoint_returns_safe_records() {
+    let server = test_server(test_state());
+    // A routed action with evidence.
+    let resp = server
+        .post("/routed-submit")
+        .json(&json!({
+            "tool": "kv_set",
+            "args": { "key": "k", "value": "secret-value" },
+            "routing_evidence": {
+                "decision_hash": "deadbeef",
+                "selected": "anthropic:claude",
+                "alternatives": [],
+                "confidence_bps": 9000,
+                "reason_codes": ["cost_optimal"],
+                "latency_estimate_ms": 100,
+                "cost_estimate_millicents": 50
+            }
+        }))
+        .await;
+    resp.assert_status_ok();
+    let traj = resp.json::<Value>()["trajectory_id"].as_str().unwrap().to_string();
+
+    // Pull the safe feedback for that trajectory.
+    let resp = server.get(&format!("/runs/{traj}/routing-outcomes")).await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    let outcomes = body["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0]["decision_hash"], "deadbeef");
+    assert_eq!(outcomes[0]["selected"], "anthropic:claude");
+    // No workload content leaks through the feedback endpoint.
+    let raw = body.to_string();
+    assert!(!raw.contains("secret-value") && !raw.contains("\"k\""));
+}

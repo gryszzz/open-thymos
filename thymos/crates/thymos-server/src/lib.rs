@@ -52,8 +52,8 @@ use thymos_ledger::{EntryPayload, Ledger};
 use thymos_policy::{PolicyEngine, WritAuthorityPolicy};
 use thymos_runtime::agent_async::ApprovalDecision;
 use thymos_runtime::{
-    AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Runtime, Step,
-    Termination,
+    routing_outcomes, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent,
+    Runtime, Step, Termination,
 };
 use thymos_tools::{
     DelegateTool, FsPatchTool, FsReadTool, GrepTool, HttpTool, KvGetTool, KvSetTool, ListFilesTool,
@@ -462,6 +462,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/writs/{writ_id}/restore", post(restore_writ_handler))
         .route("/routed-submit", post(routed_submit))
         .route("/runs/{id}/delegations", get(get_delegations))
+        .route("/runs/{id}/routing-outcomes", get(get_routing_outcomes))
         .route("/runs/{id}/branch", post(post_branch))
         .route("/usage", get(get_usage))
         .route("/audit/entries", get(audit::get_audit_entries))
@@ -635,6 +636,8 @@ fn tenant_can_access(run_tenant: &str, caller_tenant: &str) -> bool {
 }
 
 fn trajectory_from_hex(traj_hex: &str) -> Result<TrajectoryId, &'static str> {
+    // Accept both the bare 32-byte hex and the `traj:<hex>` display form.
+    let traj_hex = traj_hex.strip_prefix("traj:").unwrap_or(traj_hex);
     let bytes = hex::decode(traj_hex).map_err(|_| "invalid trajectory id")?;
     if bytes.len() != 32 {
         return Err("invalid trajectory id");
@@ -2297,6 +2300,48 @@ async fn post_branch(
 }
 
 /// GET /runs/:id/delegations — list child trajectories created via delegation.
+/// Read-only: the safe routing-feedback records for a run (decision_hash,
+/// selected route, status, latency only — never workload content). A pull, not
+/// a push: an advisor fetches these and decides what to do with them; THYMOS
+/// initiates no egress.
+async fn get_routing_outcomes(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // Resolve to a trajectory: a known run id maps to its trajectory; otherwise
+    // the path is treated as a trajectory hex directly (e.g. the trajectory_id
+    // returned by /routed-submit, which is not tracked in the run store).
+    let traj_hex = {
+        let runs = state.runs.lock().unwrap();
+        runs.get(&id)
+            .map(|r| r.trajectory_id.clone())
+            .filter(|t| !t.is_empty())
+    }
+    .unwrap_or_else(|| id.clone());
+    let trajectory_id = match trajectory_from_hex(&traj_hex) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": e })),
+            )
+                .into_response()
+        }
+    };
+    match state.runtime.ledger.entries(trajectory_id) {
+        Ok(entries) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "outcomes": routing_outcomes(&entries) })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 async fn get_delegations(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
