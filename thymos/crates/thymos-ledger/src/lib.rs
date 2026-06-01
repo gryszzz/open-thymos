@@ -165,6 +165,23 @@ pub(crate) fn verify_integrity_entries(entries: &[Entry]) -> Result<()> {
                 )));
             }
         }
+        // The genesis payload commits to the trajectory it begins. Enforce that
+        // it equals the entry's own trajectory column — otherwise a root row
+        // relabeled/restored under a different trajectory id would still verify
+        // (the payload hash matches the unchanged payload, and cohesion only
+        // checks the column), defeating the binding this field exists to give.
+        if let EntryPayload::Root {
+            trajectory_id: claimed,
+            ..
+        } = &e.payload
+        {
+            if *claimed != e.trajectory_id {
+                return Err(Error::Invariant(format!(
+                    "root payload trajectory {} does not match entry trajectory {}",
+                    claimed, e.trajectory_id
+                )));
+            }
+        }
         // Root invariants: the first entry of any verified trajectory MUST
         // start the chain. Allowed kinds are Root (fresh trajectory) and
         // Branch (forked from a source trajectory).
@@ -466,6 +483,31 @@ mod tests {
         assert!(
             err.to_string().contains("belongs to trajectory"),
             "expected trajectory mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_root_relabeled_under_wrong_trajectory() {
+        // A root whose payload commits to trajectory A but whose entry column
+        // was relabeled to trajectory B must not verify. The payload hash still
+        // matches (payload is unchanged), so only the new payload-vs-column
+        // check catches the relabel.
+        let traj_a = TrajectoryId::new_from_seed(b"claimed-a");
+        let traj_b = TrajectoryId::new_from_seed(b"relabeled-b");
+        let relabeled = forge_entry(
+            traj_b,
+            None,
+            0,
+            EntryKind::Root,
+            EntryPayload::Root {
+                trajectory_id: traj_a,
+                note: "x".into(),
+            },
+        );
+        let err = verify_integrity_entries(&[relabeled]).unwrap_err();
+        assert!(
+            err.to_string().contains("root payload trajectory"),
+            "expected payload/column trajectory mismatch, got: {err}"
         );
     }
 
