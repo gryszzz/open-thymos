@@ -113,6 +113,12 @@ cached-decision mode is the canonical replay path.
 
 ## Routing feedback (safe, pull-based)
 
+> **Minimum version: `v0.4.4`.** The endpoint itself landed earlier, but v0.4.3
+> had a ledger bug where the **second** routed action for a given tool hit an
+> `entries.id` collision (the genesis entry id didn't bind the trajectory), so
+> it was dropped before commit — the feedback loop would stall after a single
+> call. v0.4.4 fixes it; pin to it before driving the loop.
+
 A routing advisor improves from execution outcomes. THYMOS can supply that
 signal without breaking determinism or data sovereignty:
 
