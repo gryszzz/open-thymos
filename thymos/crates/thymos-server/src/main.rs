@@ -189,7 +189,13 @@ async fn main() {
         shutdown_tx,
         active_runs: AtomicU32::new(0),
         marketplace,
+        default_cognition: config.default_cognition.clone(),
     });
+
+    eprintln!(
+        "default cognition provider: {} (runs without a `cognition` block use this)",
+        thymos_server::provider_label(&config.default_cognition.provider)
+    );
 
     let app = app(state.clone());
     eprintln!(
