@@ -2417,7 +2417,7 @@ async fn get_delegations(
 
 fn entry_to_dto(e: &thymos_ledger::Entry) -> EntryDto {
     let (kind, detail) = match &e.payload {
-        EntryPayload::Root { note } => ("root".into(), serde_json::json!({ "note": note })),
+        EntryPayload::Root { note, .. } => ("root".into(), serde_json::json!({ "note": note })),
         EntryPayload::Commit(c) => (
             "commit".into(),
             serde_json::json!({

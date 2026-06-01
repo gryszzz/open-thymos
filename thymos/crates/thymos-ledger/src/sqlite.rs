@@ -78,6 +78,7 @@ impl SqliteLedger {
 
     pub fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
         let payload = EntryPayload::Root {
+            trajectory_id,
             note: note.to_string(),
         };
         let entry = build_entry(trajectory_id, None, 0, EntryKind::Root, payload)?;

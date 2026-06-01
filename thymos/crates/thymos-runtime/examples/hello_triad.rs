@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     );
     for (i, e) in summary.entries.iter().enumerate() {
         let label = match &e.payload {
-            EntryPayload::Root { note } => format!("Root({note})"),
+            EntryPayload::Root { note, .. } => format!("Root({note})"),
             EntryPayload::Commit(c) => {
                 let op = c
                     .body

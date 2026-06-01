@@ -61,6 +61,11 @@ pub enum EntryKind {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EntryPayload {
     Root {
+        /// The trajectory this genesis entry begins. Binding it into the
+        /// payload makes the root entry id (a content hash of the payload)
+        /// unique per trajectory, so two runs created with the same `note`
+        /// against one shared ledger don't collide on `entries.id`.
+        trajectory_id: TrajectoryId,
         note: String,
     },
     Commit(Commit),
@@ -157,6 +162,23 @@ pub(crate) fn verify_integrity_entries(entries: &[Entry]) -> Result<()> {
                 return Err(Error::Invariant(format!(
                     "entry at seq {} belongs to trajectory {} but earlier entries belonged to {}",
                     e.seq, e.trajectory_id, t
+                )));
+            }
+        }
+        // The genesis payload commits to the trajectory it begins. Enforce that
+        // it equals the entry's own trajectory column — otherwise a root row
+        // relabeled/restored under a different trajectory id would still verify
+        // (the payload hash matches the unchanged payload, and cohesion only
+        // checks the column), defeating the binding this field exists to give.
+        if let EntryPayload::Root {
+            trajectory_id: claimed,
+            ..
+        } = &e.payload
+        {
+            if *claimed != e.trajectory_id {
+                return Err(Error::Invariant(format!(
+                    "root payload trajectory {} does not match entry trajectory {}",
+                    claimed, e.trajectory_id
                 )));
             }
         }
@@ -291,6 +313,26 @@ mod tests {
         l.verify_integrity(traj).unwrap();
     }
 
+    /// Regression: two trajectories created with the *same* note against one
+    /// shared ledger must not collide on `entries.id`. The root id is a content
+    /// hash that now binds the trajectory id, so distinct trajectories get
+    /// distinct roots even when the note is identical. (This is the routed-submit
+    /// path: every routed action for the same tool roots with note
+    /// `"routed:<tool>"` against the one process-wide ledger.)
+    #[test]
+    fn same_note_distinct_trajectories_do_not_collide() {
+        let l = Ledger::open_in_memory().unwrap();
+        let traj_a = TrajectoryId::new_from_seed(b"routed-a");
+        let traj_b = TrajectoryId::new_from_seed(b"routed-b");
+        let root_a = l.append_root(traj_a, "routed:kv_set").unwrap();
+        // Before the fix this second append failed with
+        // "UNIQUE constraint failed: entries.id".
+        let root_b = l.append_root(traj_b, "routed:kv_set").unwrap();
+        assert_ne!(root_a.id, root_b.id, "same-note roots must get distinct ids");
+        l.verify_integrity(traj_a).unwrap();
+        l.verify_integrity(traj_b).unwrap();
+    }
+
     #[test]
     fn determinism_same_inputs_same_id() {
         let l1 = Ledger::open_in_memory().unwrap();
@@ -422,6 +464,7 @@ mod tests {
             0,
             EntryKind::Root,
             EntryPayload::Root {
+                trajectory_id: traj_a,
                 note: "a".into(),
             },
         );
@@ -432,6 +475,7 @@ mod tests {
             1,
             EntryKind::Root,
             EntryPayload::Root {
+                trajectory_id: traj_b,
                 note: "b".into(),
             },
         );
@@ -439,6 +483,31 @@ mod tests {
         assert!(
             err.to_string().contains("belongs to trajectory"),
             "expected trajectory mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_root_relabeled_under_wrong_trajectory() {
+        // A root whose payload commits to trajectory A but whose entry column
+        // was relabeled to trajectory B must not verify. The payload hash still
+        // matches (payload is unchanged), so only the new payload-vs-column
+        // check catches the relabel.
+        let traj_a = TrajectoryId::new_from_seed(b"claimed-a");
+        let traj_b = TrajectoryId::new_from_seed(b"relabeled-b");
+        let relabeled = forge_entry(
+            traj_b,
+            None,
+            0,
+            EntryKind::Root,
+            EntryPayload::Root {
+                trajectory_id: traj_a,
+                note: "x".into(),
+            },
+        );
+        let err = verify_integrity_entries(&[relabeled]).unwrap_err();
+        assert!(
+            err.to_string().contains("root payload trajectory"),
+            "expected payload/column trajectory mismatch, got: {err}"
         );
     }
 
@@ -465,6 +534,7 @@ mod tests {
             7,
             EntryKind::Root,
             EntryPayload::Root {
+                trajectory_id: traj,
                 note: "x".into(),
             },
         );
@@ -485,6 +555,7 @@ mod tests {
             0,
             EntryKind::Root,
             EntryPayload::Root {
+                trajectory_id: traj,
                 note: "x".into(),
             },
         );
