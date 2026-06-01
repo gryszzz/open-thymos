@@ -39,7 +39,8 @@ use tokio::sync::{broadcast, oneshot, watch};
 use tower_http::cors::{Any, CorsLayer};
 
 use execution::ExecutionSession;
-use thymos_cognition::{build_cognition, CognitionConfig, CognitionEvent, NonStreamingAdapter};
+use thymos_cognition::{build_cognition, CognitionEvent, NonStreamingAdapter};
+pub use thymos_cognition::{CognitionConfig, CognitionProvider};
 use thymos_core::{
     content_hash,
     crypto::{generate_signing_key, public_key_of},
@@ -80,6 +81,70 @@ impl RuntimeMode {
     }
 }
 
+/// Human-readable name for a cognition provider (for logs and `/health`).
+pub fn provider_label(p: &CognitionProvider) -> &'static str {
+    match p {
+        CognitionProvider::Anthropic => "anthropic",
+        CognitionProvider::Openai => "openai",
+        CognitionProvider::Local => "local",
+        CognitionProvider::Lmstudio => "lmstudio",
+        CognitionProvider::Huggingface => "huggingface",
+        CognitionProvider::Mock => "mock",
+    }
+}
+
+/// Resolve the cognition provider used for runs that don't specify their own
+/// `cognition` block. Resolution order:
+///   1. `THYMOS_DEFAULT_PROVIDER` (anthropic | openai | local | lmstudio |
+///      huggingface | mock), optionally with `THYMOS_DEFAULT_MODEL`.
+///   2. Auto-detect a configured API key: `ANTHROPIC_API_KEY`, then
+///      `OPENAI_API_KEY`.
+///   3. Fall back to `mock`.
+///
+/// This removes the "I exported my key but every run is silently mock" footgun:
+/// export a key (or set the provider var) and runs that omit `cognition` use it.
+pub fn resolve_default_cognition() -> CognitionConfig {
+    let model = std::env::var("THYMOS_DEFAULT_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+
+    let provider = match std::env::var("THYMOS_DEFAULT_PROVIDER")
+        .ok()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+    {
+        Some(p) => match p.as_str() {
+            "anthropic" => CognitionProvider::Anthropic,
+            "openai" => CognitionProvider::Openai,
+            "local" => CognitionProvider::Local,
+            "lmstudio" => CognitionProvider::Lmstudio,
+            "huggingface" => CognitionProvider::Huggingface,
+            "mock" => CognitionProvider::Mock,
+            other => {
+                eprintln!(
+                    "warn: unknown THYMOS_DEFAULT_PROVIDER '{other}', defaulting to mock"
+                );
+                CognitionProvider::Mock
+            }
+        },
+        None => {
+            if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+                CognitionProvider::Anthropic
+            } else if std::env::var("OPENAI_API_KEY").is_ok() {
+                CognitionProvider::Openai
+            } else {
+                CognitionProvider::Mock
+            }
+        }
+    };
+
+    CognitionConfig {
+        provider,
+        model,
+        ..CognitionConfig::default()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub runtime_mode: RuntimeMode,
@@ -93,6 +158,8 @@ pub struct ServerConfig {
     pub max_concurrent_runs_per_tenant: u32,
     pub max_concurrent_runs_global: u32,
     pub tool_manifest_dirs: Vec<String>,
+    /// Provider used for runs that omit their own `cognition` block.
+    pub default_cognition: CognitionConfig,
 }
 
 impl ServerConfig {
@@ -178,6 +245,7 @@ impl ServerConfig {
             max_concurrent_runs_per_tenant,
             max_concurrent_runs_global,
             tool_manifest_dirs,
+            default_cognition: resolve_default_cognition(),
         })
     }
 }
@@ -348,6 +416,9 @@ pub struct AppState {
     pub active_runs: AtomicU32,
     /// Tool marketplace.
     pub marketplace: marketplace_api::MarketplaceState,
+    /// Provider used for runs that omit their own `cognition` block. Resolved
+    /// from env at startup (see [`resolve_default_cognition`]).
+    pub default_cognition: CognitionConfig,
 }
 
 #[derive(Deserialize)]
@@ -893,6 +964,7 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             RuntimeMode::Reference => "reference",
             RuntimeMode::Production => "production",
         },
+        "default_provider": provider_label(&state.default_cognition.provider),
         "shutdown": *state.shutdown_tx.borrow(),
     }))
 }
@@ -913,6 +985,7 @@ async fn ready(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             RuntimeMode::Reference => "reference",
             RuntimeMode::Production => "production",
         },
+        "default_provider": provider_label(&state.default_cognition.provider),
         "shutdown": shutting_down,
         "checks": {
             "run_store": run_store_ready,
@@ -1048,7 +1121,10 @@ async fn resume_run(
     let task = req.task.clone();
 
     tokio::spawn(async move {
-        let config = req.cognition.unwrap_or_default();
+        let config = req
+            .cognition
+            .clone()
+            .unwrap_or_else(|| state2.default_cognition.clone());
         // `build_cognition` may call `reqwest::blocking::ClientBuilder::build()`,
         // which internally creates and drops a current-thread tokio runtime.
         // Dropping a runtime from inside an async context panics, so construct
@@ -1397,8 +1473,12 @@ async fn create_run(
     let task2 = task.clone();
 
     tokio::spawn(async move {
-        // Build cognition from per-run config (or default to mock).
-        let config = req.cognition.unwrap_or_default();
+        // Build cognition from per-run config, or the server's configured
+        // default provider (env-resolved) instead of silently using mock.
+        let config = req
+            .cognition
+            .clone()
+            .unwrap_or_else(|| state2.default_cognition.clone());
         // `build_cognition` may call `reqwest::blocking::ClientBuilder::build()`,
         // which internally creates and drops a current-thread tokio runtime.
         // Dropping a runtime from inside an async context panics, so construct
@@ -2482,5 +2562,51 @@ fn entry_to_dto(e: &thymos_ledger::Entry) -> EntryDto {
         id: e.id.short().to_string(),
         detail,
         commit_id,
+    }
+}
+
+#[cfg(test)]
+mod onboarding_tests {
+    use super::*;
+
+    #[test]
+    fn provider_labels_are_stable() {
+        assert_eq!(provider_label(&CognitionProvider::Anthropic), "anthropic");
+        assert_eq!(provider_label(&CognitionProvider::Openai), "openai");
+        assert_eq!(provider_label(&CognitionProvider::Local), "local");
+        assert_eq!(provider_label(&CognitionProvider::Lmstudio), "lmstudio");
+        assert_eq!(provider_label(&CognitionProvider::Huggingface), "huggingface");
+        assert_eq!(provider_label(&CognitionProvider::Mock), "mock");
+    }
+
+    #[test]
+    fn explicit_default_provider_env_wins_and_is_case_insensitive() {
+        // An explicit THYMOS_DEFAULT_PROVIDER short-circuits key auto-detection,
+        // so this is deterministic regardless of any API keys in the env.
+        let prev = std::env::var("THYMOS_DEFAULT_PROVIDER").ok();
+        let prev_model = std::env::var("THYMOS_DEFAULT_MODEL").ok();
+
+        std::env::set_var("THYMOS_DEFAULT_PROVIDER", "  OpenAI ");
+        std::env::set_var("THYMOS_DEFAULT_MODEL", "gpt-4o-mini");
+        let cfg = resolve_default_cognition();
+        assert_eq!(cfg.provider, CognitionProvider::Openai);
+        assert_eq!(cfg.model.as_deref(), Some("gpt-4o-mini"));
+
+        std::env::set_var("THYMOS_DEFAULT_PROVIDER", "definitely-not-a-provider");
+        assert_eq!(
+            resolve_default_cognition().provider,
+            CognitionProvider::Mock,
+            "unknown provider falls back to mock"
+        );
+
+        // Restore prior env so we don't perturb other tests.
+        match prev {
+            Some(v) => std::env::set_var("THYMOS_DEFAULT_PROVIDER", v),
+            None => std::env::remove_var("THYMOS_DEFAULT_PROVIDER"),
+        }
+        match prev_model {
+            Some(v) => std::env::set_var("THYMOS_DEFAULT_MODEL", v),
+            None => std::env::remove_var("THYMOS_DEFAULT_MODEL"),
+        }
     }
 }

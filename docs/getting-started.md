@@ -129,7 +129,9 @@ What you should see:
 
 ## 4. Switch to a real model
 
-Thymos keeps the same runtime and tool model. You only swap the proposer.
+Thymos keeps the same runtime and tool model. You only swap the proposer — and
+you just set a key. **Any run that doesn't specify its own `cognition` block now
+uses the provider you configured** (instead of silently falling back to mock).
 
 ### Anthropic
 
@@ -149,7 +151,24 @@ OPENAI_API_KEY=... cargo run -p thymos-server
 OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_API_KEY=local cargo run -p thymos-server
 ```
 
-Then create runs with the provider you want from the web app, CLI, or API.
+Confirm which provider is active (no more guessing whether you're on mock):
+
+```bash
+curl http://localhost:3001/health
+# { "status": "ok", "mode": "reference", "default_provider": "anthropic", ... }
+```
+
+Resolution order for the default provider:
+
+1. `THYMOS_DEFAULT_PROVIDER` (`anthropic` | `openai` | `local` | `lmstudio` |
+   `huggingface` | `mock`), with optional `THYMOS_DEFAULT_MODEL`.
+2. Otherwise the first key found — `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`.
+3. Otherwise `mock`.
+
+A run can still override per-request by sending a `cognition` block to
+`POST /runs` or `--provider` on the CLI. See
+[`thymos/.env.example`](https://github.com/gryszzz/open-thymos/blob/main/thymos/.env.example)
+for the full set of runtime variables.
 
 ## 5. Load programmable capabilities
 
