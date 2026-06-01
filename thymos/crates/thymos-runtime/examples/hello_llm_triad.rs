@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
     println!("\n== ledger ({} entries)", run_again.len());
     for (i, e) in run_again.iter().enumerate() {
         let label = match &e.payload {
-            EntryPayload::Root { note } => format!("Root({note})"),
+            EntryPayload::Root { note, .. } => format!("Root({note})"),
             EntryPayload::Commit(c) => {
                 let op = c
                     .body
