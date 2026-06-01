@@ -28,6 +28,7 @@ fn test_state() -> Arc<AppState> {
         shutdown_tx,
         active_runs: AtomicU32::new(0),
         marketplace: Arc::new(thymos_marketplace::MarketplaceService::in_memory()),
+        default_cognition: thymos_server::CognitionConfig::default(),
     })
 }
 
