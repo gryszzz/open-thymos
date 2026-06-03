@@ -16,7 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use thymos_server::{
     app, auth, default_runtime_with_capabilities, middleware, persistent_runtime_with_capabilities,
-    run_store, telemetry, AppState, RunStatus, RunSummaryDto, RuntimeMode, ServerConfig,
+    provider_label, run_store, telemetry, AppState, CognitionProvider, RunStatus, RunSummaryDto,
+    RuntimeMode, ServerConfig,
 };
 
 #[tokio::main]
@@ -38,6 +39,25 @@ async fn main() {
     if let Some(url) = &config.postgres_url {
         eprintln!(
             "note: THYMOS_POSTGRES_URL is set to '{url}', but the HTTP runtime still uses the synchronous SQLite ledger path until the runtime/ledger trait refactor lands"
+        );
+    }
+
+    // Be loud about the default cognition provider. The biggest deployment
+    // footgun is running with the silent mock and assuming real cognition.
+    if matches!(config.default_cognition.provider, CognitionProvider::Mock) {
+        eprintln!(
+            "WARNING: default cognition provider is MOCK — runs that omit their own `cognition` block return canned, deterministic output, NOT a real model. Set ANTHROPIC_API_KEY / OPENAI_API_KEY or THYMOS_DEFAULT_PROVIDER to use a live model. (/health reports cognition_live=false)"
+        );
+    } else {
+        eprintln!(
+            "cognition: default provider = {} (live){}",
+            provider_label(&config.default_cognition.provider),
+            config
+                .default_cognition
+                .model
+                .as_deref()
+                .map(|m| format!(", model = {m}"))
+                .unwrap_or_default()
         );
     }
 
