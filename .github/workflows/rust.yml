@@ -26,3 +26,10 @@ jobs:
         run: cargo build --workspace --verbose
       - name: Test
         run: cargo test --workspace --verbose
+      # The Postgres ledger backend is feature-gated and not part of the default
+      # build, so guard it against bit-rot: compile the backend and its gated
+      # integration test (which only runs against a real DB via THYMOS_TEST_POSTGRES_URL).
+      - name: Check Postgres backend (compile-only)
+        run: |
+          cargo check -p thymos-ledger --no-default-features --features postgres
+          cargo test  -p thymos-ledger --features postgres --test postgres_integration --no-run

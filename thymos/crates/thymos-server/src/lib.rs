@@ -965,6 +965,10 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             RuntimeMode::Production => "production",
         },
         "default_provider": provider_label(&state.default_cognition.provider),
+        // Honest signal: false means runs that omit their own `cognition` block
+        // are answered by the deterministic mock, NOT a real model. Set an API
+        // key (or THYMOS_DEFAULT_PROVIDER) to make this true.
+        "cognition_live": !matches!(state.default_cognition.provider, CognitionProvider::Mock),
         "shutdown": *state.shutdown_tx.borrow(),
     }))
 }
