@@ -31,6 +31,11 @@ services or API keys:
   (`submit → compile → govern → execute → ledger`).
 - **HTTP server surface**: `/runs`, `/routed-submit`, `/routing-outcomes`, auth
   on control-plane endpoints, tenant scoping — e2e tested.
+- **CLI `audit <run-id>`**: renders a trajectory's whole governance trail — the
+  commit chain, rejections, suspensions, delegations, the policy decision behind
+  each committed action, and a replay-verification verdict. Pure renderer
+  unit-tested across every entry kind; live wiring e2e tested
+  (`crates/thymos-cli`).
 - **WisePick routing-evidence integration**: forward path + data-sovereignty
   (no intent args / tool output / tenant / writ leak into feedback records).
 

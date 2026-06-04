@@ -47,6 +47,38 @@ Intent → Proposal → Commit
 
 ---
 
+## What it's for
+
+If "the model just did **what?!**" is an unacceptable failure mode for you, this is the
+kernel that makes agent actions **authorized, auditable, and replayable** instead of
+trust-the-prompt. Concretely:
+
+- **Agents that touch money, infra, or data.** A model can *propose* anything, but a
+  signed capability writ — tool scopes, effect ceiling (read / write / external /
+  irreversible), budget, time window — decides what actually runs. Effects are enforced
+  *in the compiler*, not by prompt convention.
+- **Audit & compliance for AI actions.** Every action is an append-only, hash-chained
+  ledger entry recording *what was done, under whose authority, and which policy decision
+  permitted it*. `thymos audit <run-id>` renders that whole trail for a human — the
+  artifact an auditor actually wants.
+- **Post-incident forensics via deterministic replay.** Replay folds committed deltas to
+  reconstruct the exact world state, and *rejects* compiler drift, policy drift, and
+  unsigned commits. "The agent did something bad on Tuesday" becomes reproducible and
+  verifiable, not guesswork.
+- **Multi-tenant agent platforms.** Tenant-scoped writs and delegation where a parent
+  mints a child writ that is a *strict subset* of its own authority — so agents you host
+  for others can't exceed granted authority or cross tenant boundaries.
+- **A governance layer under a router.** Routing decides what's *optimal*; THYMOS decides
+  what's *allowed* and proves what *happened*. Routing evidence is recorded for audit but
+  **never** read for authority (see the [WisePick integration](docs/integrations/wisepick.md)).
+- **Human-in-the-loop approval gates.** Irreversible actions can suspend for quorum
+  approval instead of executing — "the agent drafts the wire transfer; a human signs off."
+
+**What it is _not_ (yet):** a turnkey product. It's a reference kernel — see
+[STATUS.md](STATUS.md) for the honest line between what's enforced-and-tested and what's
+still gated (Postgres on the HTTP path, live-model CI proofs, the end-to-end delegation
+demo).
+
 ## The Threat Model
 
 OpenThymos treats cognition as **untrusted input**. The runtime enforces this structurally:
@@ -224,6 +256,8 @@ cd thymos
 cargo test --workspace --features sqlite
 cargo run -p thymos-server
 thymos replay <run-id> --verify   # prove a recorded trajectory folds to its world
+thymos audit <run-id>             # the whole governance trail: commits, rejections,
+                                  # policy decision per action, + replay verdict
 ```
 
 ## Repository
