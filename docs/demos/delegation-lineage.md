@@ -104,5 +104,5 @@ swarms** that must stay inside their lane: you can hand a task to a sub-agent an
 *know* — structurally, and provably after the fact — that it could not exceed the
 authority you granted, touch another tenant, or silently mutate your state.
 
-See also: [Deterministic Replay](/open-thymos/demos/deterministic-replay/) ·
-[Policy Intercept & Approval](/open-thymos/demos/policy-intercept-approval/).
+See also: [Deterministic Replay]({{ '/demos/deterministic-replay' | relative_url }}) ·
+[Policy Intercept & Approval]({{ '/demos/policy-intercept-approval' | relative_url }}).
