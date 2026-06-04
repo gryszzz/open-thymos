@@ -1,18 +1,9 @@
 <div align="center">
-  
-<div align="center">
-  <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
-</div>
-<div align="center">
 
-![Stars](https://img.shields.io/github/stars/gryszzz/open-thymos?style=for-the-badge)
+<img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 
-![License](https://img.shields.io/github/license/gryszzz/open-thymos?style=for-the-badge)
+![Stars](https://img.shields.io/github/stars/gryszzz/open-thymos?style=for-the-badge) ![License](https://img.shields.io/github/license/gryszzz/open-thymos?style=for-the-badge) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
-![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
-
-<div align="center">
-  
 # open-thymos
 
 </div>
