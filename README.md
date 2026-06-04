@@ -1,18 +1,9 @@
 <div align="center">
-  
-<div align="center">
-  <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
-</div>
-<div align="center">
 
-![Stars](https://img.shields.io/github/stars/gryszzz/open-thymos?style=for-the-badge)
+<img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 
-![License](https://img.shields.io/github/license/gryszzz/open-thymos?style=for-the-badge)
+[![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
-![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
-
-<div align="center">
-  
 # open-thymos
 
 </div>
@@ -226,9 +217,9 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 
 ## Quick Start
 
-The fastest honest demo — build the server, drive one governed run end to end
-(Intent → Proposal → Commit), print the world projection, and shut it down.
-[`scripts/quickstart.sh`](scripts/quickstart.sh) does the real onboarding.
+**Fastest path — one command.** Builds the server, drives one governed run end to
+end (Intent → Proposal → Commit), prints the world projection, and shuts down.
+[`scripts/quickstart.sh`](scripts/quickstart.sh) is the real onboarding:
 
 ```bash
 # A) Local proof, no secrets (deterministic mock provider)
@@ -236,7 +227,7 @@ The fastest honest demo — build the server, drive one governed run end to end
 # Expected: provider=mock, one run completes, final world projection prints.
 
 # B) Live cognition proof (real model)
-ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize the runtime boundary"
+ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize the runtime"
 # Expected: /health shows the live provider; a committed run exists; the world reflects it.
 ```
 
@@ -244,28 +235,54 @@ ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize
 (writ / effect / budget / policy) *before* any commit; the ledger records the
 run; `/health` reports whether cognition is live or mock.
 
-**What it does not prove yet** (see [STATUS.md](STATUS.md)): that the HTTP runtime
-is using Postgres (it uses SQLite today); that the gated `live_provider` /
-`postgres_integration` proofs have run.
+**Manual path.** Start the runtime once, then attach from any client (CLI, web
+console, VS Code, terminal) — they all observe the same run state:
 
-Multi-agent delegation *is* now demonstrable — parent mints a child writ ⊆ its own
-authority, child runs on its own trajectory, the ledger shows the lineage, replay
-reconstructs both:
+```bash
+cd thymos
+cargo run -p thymos-server          # http://localhost:3001 — mock cognition by default
+```
+
+```bash
+# In another terminal: drive a run and follow it live. --provider defaults to
+# `auto`, which uses whatever the server resolved (mock until you set a key).
+cd thymos
+cargo run -p thymos-cli -- run "Map the repo and summarize the runtime" --follow
+
+# The whole governance trail for a run: commits, rejections, the policy
+# decision per action, and a replay-verification verdict.
+cargo run -p thymos-cli -- audit <run_id>
+
+# Fold a run's ledger to its world; check which provider is actually live.
+cargo run -p thymos-cli -- replay <run_id> --verify
+cargo run -p thymos-cli -- doctor
+```
+
+Install the `thymos` shorthand with `cargo install --path thymos/crates/thymos-cli`.
+
+**Multi-agent delegation is demonstrable** — a parent mints a child writ ⊆ its own
+authority, the child runs on its own trajectory, the ledger shows the lineage, and
+replay reconstructs both:
 
 ```bash
 cargo run --example delegation_lineage -p thymos-runtime   # see docs/demos/delegation-lineage.md
 ```
 
-Or work directly with the workspace and CLI:
+**Verify everything** (default: mock cognition, SQLite, governance enforced):
 
 ```bash
 cd thymos
-cargo test --workspace --features sqlite
-cargo run -p thymos-server
-thymos replay <run-id> --verify   # prove a recorded trajectory folds to its world
-thymos audit <run-id>             # the whole governance trail: commits, rejections,
-                                  # policy decision per action, + replay verdict
+cargo test --workspace
 ```
+
+Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
+see **[Getting Started](docs/getting-started.md)**. The remaining gated proofs
+(live-model cognition and `postgres_integration` against a real database) run in
+CI when their secrets are present; see [STATUS.md](STATUS.md).
+```
+
+Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
+see **[Getting Started](docs/getting-started.md)**.
 
 ## Repository
 

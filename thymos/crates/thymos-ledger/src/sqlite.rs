@@ -494,6 +494,95 @@ impl SqliteLedger {
     }
 }
 
+/// `LedgerStore` for the SQLite backend. Each method delegates to the
+/// inherent method of the same name, so the trait is a pure re-exposure of the
+/// existing surface with no behavior change. `has_trajectory`,
+/// `verify_integrity`, and `anchor` use the trait defaults — identical to the
+/// inherent versions, which are themselves defined over `entries`/`head`.
+impl crate::LedgerStore for SqliteLedger {
+    fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
+        SqliteLedger::append_root(self, trajectory_id, note)
+    }
+
+    fn append_commit(&self, commit: Commit) -> Result<Entry> {
+        SqliteLedger::append_commit(self, commit)
+    }
+
+    fn append_rejection(
+        &self,
+        trajectory_id: TrajectoryId,
+        intent_id: IntentId,
+        reason: RejectionReason,
+    ) -> Result<Entry> {
+        SqliteLedger::append_rejection(self, trajectory_id, intent_id, reason)
+    }
+
+    fn append_pending_approval(
+        &self,
+        trajectory_id: TrajectoryId,
+        proposal: Proposal,
+        channel: String,
+        reason: String,
+    ) -> Result<Entry> {
+        SqliteLedger::append_pending_approval(self, trajectory_id, proposal, channel, reason)
+    }
+
+    fn append_delegation(
+        &self,
+        trajectory_id: TrajectoryId,
+        child_trajectory_id: TrajectoryId,
+        task: &str,
+        final_answer: Option<String>,
+    ) -> Result<Entry> {
+        SqliteLedger::append_delegation(self, trajectory_id, child_trajectory_id, task, final_answer)
+    }
+
+    fn append_branch_root(
+        &self,
+        new_trajectory_id: TrajectoryId,
+        source_trajectory_id: TrajectoryId,
+        source_commit_id: CommitId,
+        note: &str,
+    ) -> Result<Entry> {
+        SqliteLedger::append_branch_root(
+            self,
+            new_trajectory_id,
+            source_trajectory_id,
+            source_commit_id,
+            note,
+        )
+    }
+
+    fn head(&self, trajectory_id: TrajectoryId) -> Result<(ContentHash, u64)> {
+        SqliteLedger::head(self, trajectory_id)
+    }
+
+    fn entries(&self, trajectory_id: TrajectoryId) -> Result<Vec<Entry>> {
+        SqliteLedger::entries(self, trajectory_id)
+    }
+
+    fn query_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+        limit: Option<u32>,
+    ) -> Result<Vec<AuditEntry>> {
+        SqliteLedger::query_entries(self, trajectory_id, kind, from_ts, to_ts, limit)
+    }
+
+    fn count_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+    ) -> Result<u64> {
+        SqliteLedger::count_entries(self, trajectory_id, kind, from_ts, to_ts)
+    }
+}
+
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     let id_bytes: Vec<u8> = row.get(0)?;
     let traj_bytes: Vec<u8> = row.get(1)?;

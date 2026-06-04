@@ -6,6 +6,10 @@
 //! All operations are async. Callers (the runtime, server) must run them
 //! inside a tokio context.
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
 use deadpool_postgres::{Config, Pool, Runtime};
 use tokio_postgres::NoTls;
 
@@ -501,4 +505,214 @@ fn row_to_entry(row: &tokio_postgres::Row) -> Result<Entry> {
         kind,
         payload,
     })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Blocking facade: a synchronous `LedgerStore` over the async `PostgresLedger`.
+//
+// The runtime and the `LedgerStore` trait are synchronous, but `PostgresLedger`
+// is async. We cannot bridge with `block_on` on the request executor: the HTTP
+// server calls sync ledger methods *from tokio worker threads* (async handlers
+// and `run_agent_streaming`), where `Runtime::block_on` / `Handle::block_on`
+// panics ("cannot block the current thread from within a runtime").
+//
+// So the facade owns a dedicated OS thread running its *own* multi-thread tokio
+// runtime plus the connection pool. Each sync call ships a future to that thread
+// over a tokio unbounded channel (whose `send` is itself synchronous) and blocks
+// on a plain `std::sync::mpsc` reply. The only blocking is a std channel `recv`
+// on the *caller's* thread — never a tokio runtime — so it is safe from any
+// context (sync or async) and cannot deadlock against the request executor.
+// This realizes RFC `runtime-ledger-trait-v1` Option A.
+
+// A job is a `Send` closure that, when run *on the worker thread*, produces the
+// actual per-call future. The future itself need not be `Send` (the Postgres
+// query builder holds `!Send` params across awaits); only the closure crosses
+// the thread boundary, and it captures only `Send` data.
+type LedgerJob = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send>;
+
+/// Synchronous [`crate::LedgerStore`] adapter over [`PostgresLedger`]. Build it
+/// with [`BlockingPostgresLedger::connect`]; drop it to stop the worker thread.
+pub struct BlockingPostgresLedger {
+    job_tx: tokio::sync::mpsc::UnboundedSender<LedgerJob>,
+    ledger: Arc<PostgresLedger>,
+    // Owned so the worker thread's lifetime is tied to this value. The thread
+    // exits once `job_tx` is dropped (channel closes) when the facade drops.
+    _worker: std::thread::JoinHandle<()>,
+}
+
+impl BlockingPostgresLedger {
+    /// Connect to Postgres on a dedicated runtime thread and bootstrap the
+    /// schema. Blocks until the connection is established (or fails).
+    pub fn connect(conn_str: &str) -> Result<Self> {
+        let conn_str = conn_str.to_string();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<Arc<PostgresLedger>>>();
+        let (job_tx, mut job_rx) = tokio::sync::mpsc::unbounded_channel::<LedgerJob>();
+
+        let worker = std::thread::Builder::new()
+            .name("thymos-pg-ledger".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        let _ =
+                            ready_tx.send(Err(Error::Ledger(format!("pg facade runtime: {e}"))));
+                        return;
+                    }
+                };
+                // A `LocalSet` lets us `spawn_local` the per-call futures, which
+                // need not be `Send`. Concurrency is cooperative on this single
+                // thread — fine for I/O-bound ledger ops, where overlapping
+                // awaits on the connection pool still progress.
+                let local = tokio::task::LocalSet::new();
+                local.block_on(&rt, async move {
+                    let ledger = match PostgresLedger::connect(&conn_str).await {
+                        Ok(l) => Arc::new(l),
+                        Err(e) => {
+                            let _ = ready_tx.send(Err(e));
+                            return;
+                        }
+                    };
+                    if ready_tx.send(Ok(ledger)).is_err() {
+                        return; // caller stopped waiting
+                    }
+                    // Drive jobs until every sender drops (the facade is gone).
+                    while let Some(job) = job_rx.recv().await {
+                        tokio::task::spawn_local(job());
+                    }
+                });
+            })
+            .map_err(|e| Error::Ledger(format!("pg facade thread: {e}")))?;
+
+        let ledger = ready_rx
+            .recv()
+            .map_err(|_| Error::Ledger("pg facade thread exited before ready".into()))??;
+
+        Ok(Self {
+            job_tx,
+            ledger,
+            _worker: worker,
+        })
+    }
+
+    /// Ship an async operation to the worker thread and block until it returns.
+    fn call<T, F, Fut>(&self, f: F) -> T
+    where
+        F: FnOnce(Arc<PostgresLedger>) -> Fut + Send + 'static,
+        Fut: Future<Output = T> + 'static,
+        T: Send + 'static,
+    {
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel::<T>();
+        let ledger = self.ledger.clone();
+        let job: LedgerJob = Box::new(move || {
+            Box::pin(async move {
+                let out = f(ledger).await;
+                let _ = reply_tx.send(out);
+            }) as Pin<Box<dyn Future<Output = ()>>>
+        });
+        self.job_tx
+            .send(job)
+            .expect("thymos postgres ledger worker thread is not running");
+        reply_rx
+            .recv()
+            .expect("thymos postgres ledger worker dropped the reply")
+    }
+}
+
+impl crate::LedgerStore for BlockingPostgresLedger {
+    fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
+        let note = note.to_string();
+        self.call(move |l| async move { l.append_root(trajectory_id, &note).await })
+    }
+    fn append_commit(&self, commit: Commit) -> Result<Entry> {
+        self.call(move |l| async move { l.append_commit(commit).await })
+    }
+    fn append_rejection(
+        &self,
+        trajectory_id: TrajectoryId,
+        intent_id: IntentId,
+        reason: RejectionReason,
+    ) -> Result<Entry> {
+        self.call(move |l| async move { l.append_rejection(trajectory_id, intent_id, reason).await })
+    }
+    fn append_pending_approval(
+        &self,
+        trajectory_id: TrajectoryId,
+        proposal: Proposal,
+        channel: String,
+        reason: String,
+    ) -> Result<Entry> {
+        self.call(move |l| async move {
+            l.append_pending_approval(trajectory_id, proposal, channel, reason)
+                .await
+        })
+    }
+    fn append_delegation(
+        &self,
+        trajectory_id: TrajectoryId,
+        child_trajectory_id: TrajectoryId,
+        task: &str,
+        final_answer: Option<String>,
+    ) -> Result<Entry> {
+        let task = task.to_string();
+        self.call(move |l| async move {
+            l.append_delegation(trajectory_id, child_trajectory_id, &task, final_answer)
+                .await
+        })
+    }
+    fn append_branch_root(
+        &self,
+        new_trajectory_id: TrajectoryId,
+        source_trajectory_id: TrajectoryId,
+        source_commit_id: CommitId,
+        note: &str,
+    ) -> Result<Entry> {
+        let note = note.to_string();
+        self.call(move |l| async move {
+            l.append_branch_root(new_trajectory_id, source_trajectory_id, source_commit_id, &note)
+                .await
+        })
+    }
+    fn head(&self, trajectory_id: TrajectoryId) -> Result<(ContentHash, u64)> {
+        self.call(move |l| async move { l.head(trajectory_id).await })
+    }
+    fn entries(&self, trajectory_id: TrajectoryId) -> Result<Vec<Entry>> {
+        self.call(move |l| async move { l.entries(trajectory_id).await })
+    }
+    fn query_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+        limit: Option<u32>,
+    ) -> Result<Vec<AuditEntry>> {
+        let kind = kind.map(|s| s.to_string());
+        self.call(move |l| async move {
+            l.query_entries(trajectory_id, kind.as_deref(), from_ts, to_ts, limit)
+                .await
+        })
+    }
+    fn count_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+    ) -> Result<u64> {
+        let kind = kind.map(|s| s.to_string());
+        self.call(move |l| async move {
+            l.count_entries(trajectory_id, kind.as_deref(), from_ts, to_ts)
+                .await
+        })
+    }
+    fn has_trajectory(&self, trajectory_id: TrajectoryId) -> bool {
+        self.call(move |l| async move { l.has_trajectory(trajectory_id).await })
+    }
+    fn verify_integrity(&self, trajectory_id: TrajectoryId) -> Result<()> {
+        self.call(move |l| async move { l.verify_integrity(trajectory_id).await })
+    }
+    // `anchor` uses the trait default (entries-based) — identical across backends.
 }

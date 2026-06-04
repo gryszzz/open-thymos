@@ -49,7 +49,7 @@ use thymos_core::{
     writ::{Budget, DelegationBounds, EffectCeiling, TimeWindow, ToolPattern, Writ, WritBody},
     TrajectoryId,
 };
-use thymos_ledger::{EntryPayload, Ledger};
+use thymos_ledger::{EntryPayload, Ledger, LedgerStore};
 use thymos_policy::{PolicyEngine, WritAuthorityPolicy};
 use thymos_runtime::agent_async::ApprovalDecision;
 use thymos_runtime::{
@@ -190,14 +190,24 @@ impl ServerConfig {
         )?;
 
         if runtime_mode == RuntimeMode::Production && ledger_path.is_none() {
-            if postgres_url.is_some() {
+            // Postgres is an acceptable durable backend only when this binary was
+            // actually built with the `postgres` feature; otherwise the URL would
+            // be silently ignored, so we reject it.
+            #[cfg(feature = "postgres")]
+            let postgres_durable = postgres_url.is_some();
+            #[cfg(not(feature = "postgres"))]
+            let postgres_durable = false;
+
+            if !postgres_durable {
+                if postgres_url.is_some() {
+                    return Err(
+                        "THYMOS_POSTGRES_URL is set but this binary was built without the `postgres` feature; rebuild with `--features postgres`, or set THYMOS_LEDGER_PATH.".into(),
+                    );
+                }
                 return Err(
-                    "THYMOS_POSTGRES_URL is configured, but the server runtime is still wired to the synchronous SQLite ledger path. For now, production mode requires THYMOS_LEDGER_PATH.".into(),
+                    "production mode requires THYMOS_LEDGER_PATH (or THYMOS_POSTGRES_URL with the `postgres` feature) so the ledger is not ephemeral".into(),
                 );
             }
-            return Err(
-                "production mode requires THYMOS_LEDGER_PATH so the ledger is not ephemeral".into(),
-            );
         }
 
         if runtime_mode == RuntimeMode::Production && tool_fabric != "worker" {
@@ -384,13 +394,20 @@ pub struct ResourceDto {
     pub value: serde_json::Value,
 }
 
+/// The server holds *either* ledger backend (SQLite or the Postgres blocking
+/// facade) behind one concrete type by boxing the `LedgerStore`. The backend is
+/// chosen once at startup; handlers stay non-generic. The single dynamic-
+/// dispatch hop per ledger op is negligible next to database I/O and cognition
+/// latency.
+pub type ServerRuntime = Runtime<Box<dyn LedgerStore>>;
+
 /// Shared application state.
 pub struct AppState {
     pub runtime_mode: RuntimeMode,
     pub cors_allowed_origins: Option<Vec<String>>,
     pub max_concurrent_runs_per_tenant: u32,
     pub max_concurrent_runs_global: u32,
-    pub runtime: Arc<Runtime>,
+    pub runtime: Arc<ServerRuntime>,
     pub runs: Mutex<HashMap<String, RunRecord>>,
     /// Ledger entry events per run.
     pub event_channels: Mutex<HashMap<String, broadcast::Sender<EntryDto>>>,
@@ -450,7 +467,7 @@ pub struct ApprovalRequest {
 }
 
 /// Build a runtime with a file-backed ledger.
-pub fn persistent_runtime(ledger_path: &str) -> Arc<Runtime> {
+pub fn persistent_runtime(ledger_path: &str) -> Arc<ServerRuntime> {
     persistent_runtime_with_capabilities(ledger_path, &[])
 }
 
@@ -458,23 +475,38 @@ pub fn persistent_runtime(ledger_path: &str) -> Arc<Runtime> {
 pub fn persistent_runtime_with_capabilities(
     ledger_path: &str,
     tool_manifest_dirs: &[String],
-) -> Arc<Runtime> {
+) -> Arc<ServerRuntime> {
     let ledger = Ledger::open(ledger_path).expect("open file-backed ledger");
-    build_runtime(ledger, tool_manifest_dirs)
+    build_runtime(Box::new(ledger), tool_manifest_dirs)
+}
+
+/// Build a runtime backed by Postgres (via the synchronous blocking facade) and
+/// manifest-backed capabilities. Available with the `postgres` feature.
+#[cfg(feature = "postgres")]
+pub fn postgres_runtime_with_capabilities(
+    conn_str: &str,
+    tool_manifest_dirs: &[String],
+) -> Arc<ServerRuntime> {
+    let ledger = thymos_ledger::postgres::BlockingPostgresLedger::connect(conn_str)
+        .expect("connect to Postgres ledger");
+    build_runtime(Box::new(ledger), tool_manifest_dirs)
 }
 
 /// Build the default runtime with an in-memory ledger (for testing).
-pub fn default_runtime() -> Arc<Runtime> {
+pub fn default_runtime() -> Arc<ServerRuntime> {
     default_runtime_with_capabilities(&[])
 }
 
 /// Build the default runtime with manifest-backed capabilities.
-pub fn default_runtime_with_capabilities(tool_manifest_dirs: &[String]) -> Arc<Runtime> {
+pub fn default_runtime_with_capabilities(tool_manifest_dirs: &[String]) -> Arc<ServerRuntime> {
     let ledger = Ledger::open_in_memory().expect("open in-memory ledger");
-    build_runtime(ledger, tool_manifest_dirs)
+    build_runtime(Box::new(ledger), tool_manifest_dirs)
 }
 
-fn build_runtime(ledger: Ledger, tool_manifest_dirs: &[String]) -> Arc<Runtime> {
+fn build_runtime(
+    ledger: Box<dyn LedgerStore>,
+    tool_manifest_dirs: &[String],
+) -> Arc<ServerRuntime> {
     let mut tools = ToolRegistry::new();
     tools.register(KvSetTool::default());
     tools.register(KvGetTool::default());

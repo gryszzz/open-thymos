@@ -36,11 +36,6 @@ async fn main() {
         }
     };
 
-    if let Some(url) = &config.postgres_url {
-        eprintln!(
-            "note: THYMOS_POSTGRES_URL is set to '{url}', but the HTTP runtime still uses the synchronous SQLite ledger path until the runtime/ledger trait refactor lands"
-        );
-    }
 
     // Be loud about the default cognition provider. The biggest deployment
     // footgun is running with the silent mock and assuming real cognition.
@@ -61,7 +56,28 @@ async fn main() {
         );
     }
 
-    let runtime = if let Some(path) = &config.ledger_path {
+    // Backend selection: Postgres (if configured and this binary was built with
+    // the `postgres` feature) → SQLite file → in-memory.
+    let runtime = if let Some(url) = config.postgres_url.as_deref() {
+        #[cfg(feature = "postgres")]
+        {
+            eprintln!("ledger: postgres (synchronous blocking facade) at {url}");
+            thymos_server::postgres_runtime_with_capabilities(url, &config.tool_manifest_dirs)
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            eprintln!(
+                "note: THYMOS_POSTGRES_URL is set to '{url}', but this binary was built without the `postgres` feature; falling back to SQLite. Rebuild with `--features postgres` to use Postgres."
+            );
+            if let Some(path) = &config.ledger_path {
+                eprintln!("ledger: sqlite file-backed at {path}");
+                persistent_runtime_with_capabilities(path, &config.tool_manifest_dirs)
+            } else {
+                eprintln!("ledger: in-memory reference mode");
+                default_runtime_with_capabilities(&config.tool_manifest_dirs)
+            }
+        }
+    } else if let Some(path) = &config.ledger_path {
         eprintln!("ledger: sqlite file-backed at {path}");
         persistent_runtime_with_capabilities(path, &config.tool_manifest_dirs)
     } else {
