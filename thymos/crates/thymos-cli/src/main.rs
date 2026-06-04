@@ -40,8 +40,11 @@ enum Commands {
         /// Maximum steps (default: 16).
         #[arg(long, default_value = "16")]
         max_steps: u32,
-        /// Cognition provider: anthropic, openai, local, lmstudio, huggingface, mock.
-        #[arg(long, default_value = "mock")]
+        /// Cognition provider. Default `auto` uses the server's configured
+        /// provider (which resolves THYMOS_DEFAULT_PROVIDER, then the first API
+        /// key, then mock). Pass anthropic / openai / local / lmstudio /
+        /// huggingface / mock to override it for this run.
+        #[arg(long, default_value = "auto")]
         provider: String,
         /// Model override.
         #[arg(long)]
@@ -257,8 +260,32 @@ async fn main() {
 
     if let Err(e) = result {
         eprintln!("error: {e}");
+        if is_connection_error(&e) {
+            eprintln!();
+            eprintln!("Could not reach the Thymos server at {}.", cli.url);
+            eprintln!("Is it running?  Start it with:  cargo run -p thymos-server");
+            eprintln!("Point at another server with  --url <addr>  or  THYMOS_URL=<addr>.");
+        }
         std::process::exit(1);
     }
+}
+
+/// Heuristic over the stringified transport error: did we fail because nothing
+/// was listening / reachable, rather than because the server returned an error?
+fn is_connection_error(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    // reqwest's top-level Display is just "error sending request for url (…)" —
+    // the connect/DNS cause lives in the source chain, which is dropped when the
+    // error is stringified. For a CLI a failure to even send the request means
+    // the server is unreachable (an HTTP-status error takes a different path),
+    // so this phrase is a reliable signal on its own.
+    m.contains("error sending request")
+        || m.contains("connection refused")
+        || m.contains("error trying to connect")
+        || m.contains("tcp connect error")
+        || m.contains("connection reset")
+        || m.contains("dns error")
+        || m.contains("failed to lookup")
 }
 
 fn color_enabled() -> bool {
@@ -372,12 +399,16 @@ pub(crate) async fn start_run(
     let mut body = serde_json::json!({
         "task": options.task,
         "max_steps": options.max_steps,
-        "cognition": {
-            "provider": options.provider,
-        },
     });
-    if let Some(m) = options.model {
-        body["cognition"]["model"] = serde_json::json!(m);
+    // `auto` means "don't override the server's configured provider" — so we omit
+    // the cognition block entirely and let the server's own resolution order win
+    // (THYMOS_DEFAULT_PROVIDER -> first API key -> mock). An explicit provider is
+    // sent as a per-run override; `--model` pairs with an explicit provider.
+    if !options.provider.eq_ignore_ascii_case("auto") {
+        body["cognition"] = serde_json::json!({ "provider": options.provider });
+        if let Some(m) = options.model {
+            body["cognition"]["model"] = serde_json::json!(m);
+        }
     }
     if let Some(s) = options.scopes {
         let scope_list: Vec<&str> = s.split(',').collect();
@@ -413,7 +444,11 @@ pub(crate) async fn cmd_run(
 
     println!("Run started: {run_id}");
     println!("  task: {}", options.start.task);
-    println!("  provider: {}", options.start.provider);
+    if options.start.provider.eq_ignore_ascii_case("auto") {
+        println!("  provider: auto (server default)");
+    } else {
+        println!("  provider: {}", options.start.provider);
+    }
     println!();
     if options.follow {
         println!("--- streaming ---");
@@ -717,6 +752,21 @@ pub(crate) async fn cmd_doctor(
                     status.as_u16(),
                     body["mode"].as_str().unwrap_or("unknown mode")
                 ),
+            );
+            // The single most common first-run footgun: not knowing whether the
+            // server is answering with a real model or the deterministic mock.
+            let provider = body["default_provider"].as_str().unwrap_or("unknown");
+            let live = body["cognition_live"].as_bool().unwrap_or(false);
+            status_line(
+                "cognition",
+                live,
+                if live {
+                    format!("{provider} (live model)")
+                } else {
+                    format!(
+                        "{provider} — MOCK, not a real model (set ANTHROPIC_API_KEY / OPENAI_API_KEY)"
+                    )
+                },
             );
         }
         Err(err) => status_line("runtime health", false, format!("offline: {err}")),

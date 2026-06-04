@@ -133,6 +133,11 @@ Thymos keeps the same runtime and tool model. You only swap the proposer — and
 you just set a key. **Any run that doesn't specify its own `cognition` block now
 uses the provider you configured** (instead of silently falling back to mock).
 
+The CLI cooperates: `thymos run` defaults to `--provider auto`, which sends **no**
+provider override, so your runs use whatever the server resolved. Once the server
+has a key, the same `thymos run "…"` uses the real model with no CLI change. Pass
+`--provider mock` to force the deterministic mock for a single run.
+
 ### Anthropic
 
 ```bash
