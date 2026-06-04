@@ -195,19 +195,35 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 
 ## Quick Start
 
+The fastest honest demo — build the server, drive one governed run end to end
+(Intent → Proposal → Commit), print the world projection, and shut it down.
+[`scripts/quickstart.sh`](scripts/quickstart.sh) does the real onboarding.
+
+```bash
+# A) Local proof, no secrets (deterministic mock provider)
+./scripts/quickstart.sh
+# Expected: provider=mock, one run completes, final world projection prints.
+
+# B) Live cognition proof (real model)
+ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize the runtime boundary"
+# Expected: /health shows the live provider; a committed run exists; the world reflects it.
+```
+
+**What this proves:** an intent enters through `/runs`; the runtime governs
+(writ / effect / budget / policy) *before* any commit; the ledger records the
+run; `/health` reports whether cognition is live or mock.
+
+**What it does not prove yet** (see [STATUS.md](STATUS.md)): that the HTTP runtime
+is using Postgres (it uses SQLite today); that the gated `live_provider` /
+`postgres_integration` proofs have run; the Phase II parent→child delegation demo.
+
+Or work directly with the workspace and CLI:
+
 ```bash
 cd thymos
 cargo test --workspace --features sqlite
-```
-
-```bash
 cargo run -p thymos-server
-```
-
-```bash
-# Follow a run from terminal
-thymos run "summarize the open issues" --writ ./writs/dev.json
-thymos replay run_847 --verify
+thymos replay <run-id> --verify   # prove a recorded trajectory folds to its world
 ```
 
 ## Repository
