@@ -359,6 +359,95 @@ pub trait LedgerStore: Send + Sync {
     }
 }
 
+/// Forwarding impl so a boxed trait object is itself a `LedgerStore`. This lets
+/// a caller hold *either* backend behind one concrete type — e.g. the HTTP
+/// server selecting SQLite or Postgres at startup and running
+/// `Runtime<Box<dyn LedgerStore>>` — without making every signature generic.
+/// Every method, including the derived defaults, forwards to the inner value so
+/// a backend that overrides a default is still honored.
+impl LedgerStore for Box<dyn LedgerStore> {
+    fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
+        (**self).append_root(trajectory_id, note)
+    }
+    fn append_commit(&self, commit: Commit) -> Result<Entry> {
+        (**self).append_commit(commit)
+    }
+    fn append_rejection(
+        &self,
+        trajectory_id: TrajectoryId,
+        intent_id: IntentId,
+        reason: RejectionReason,
+    ) -> Result<Entry> {
+        (**self).append_rejection(trajectory_id, intent_id, reason)
+    }
+    fn append_pending_approval(
+        &self,
+        trajectory_id: TrajectoryId,
+        proposal: Proposal,
+        channel: String,
+        reason: String,
+    ) -> Result<Entry> {
+        (**self).append_pending_approval(trajectory_id, proposal, channel, reason)
+    }
+    fn append_delegation(
+        &self,
+        trajectory_id: TrajectoryId,
+        child_trajectory_id: TrajectoryId,
+        task: &str,
+        final_answer: Option<String>,
+    ) -> Result<Entry> {
+        (**self).append_delegation(trajectory_id, child_trajectory_id, task, final_answer)
+    }
+    fn append_branch_root(
+        &self,
+        new_trajectory_id: TrajectoryId,
+        source_trajectory_id: TrajectoryId,
+        source_commit_id: CommitId,
+        note: &str,
+    ) -> Result<Entry> {
+        (**self).append_branch_root(
+            new_trajectory_id,
+            source_trajectory_id,
+            source_commit_id,
+            note,
+        )
+    }
+    fn head(&self, trajectory_id: TrajectoryId) -> Result<(ContentHash, u64)> {
+        (**self).head(trajectory_id)
+    }
+    fn entries(&self, trajectory_id: TrajectoryId) -> Result<Vec<Entry>> {
+        (**self).entries(trajectory_id)
+    }
+    fn query_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+        limit: Option<u32>,
+    ) -> Result<Vec<AuditEntry>> {
+        (**self).query_entries(trajectory_id, kind, from_ts, to_ts, limit)
+    }
+    fn count_entries(
+        &self,
+        trajectory_id: Option<TrajectoryId>,
+        kind: Option<&str>,
+        from_ts: Option<u64>,
+        to_ts: Option<u64>,
+    ) -> Result<u64> {
+        (**self).count_entries(trajectory_id, kind, from_ts, to_ts)
+    }
+    fn has_trajectory(&self, trajectory_id: TrajectoryId) -> bool {
+        (**self).has_trajectory(trajectory_id)
+    }
+    fn verify_integrity(&self, trajectory_id: TrajectoryId) -> Result<()> {
+        (**self).verify_integrity(trajectory_id)
+    }
+    fn anchor(&self, trajectory_id: TrajectoryId) -> Result<MerkleAnchor> {
+        (**self).anchor(trajectory_id)
+    }
+}
+
 #[cfg(all(test, feature = "sqlite"))]
 mod tests {
     use super::*;
@@ -457,6 +546,26 @@ mod tests {
 
         let l = Ledger::open_in_memory().unwrap();
         exercise(&l);
+    }
+
+    /// `Box<dyn LedgerStore>` is itself a `LedgerStore`, so a single boxed value
+    /// can stand in for any backend (the server's runtime-time backend choice).
+    #[test]
+    fn boxed_dyn_ledger_store_forwards() {
+        let boxed: Box<dyn LedgerStore> = Box::new(Ledger::open_in_memory().unwrap());
+        let traj = TrajectoryId::new_from_seed(b"boxed-dyn");
+        let root = boxed.append_root(traj, "via-box").unwrap();
+        assert_eq!(root.seq, 0);
+        let c1 = trivial_commit(traj, Some(CommitId(root.id)), 1);
+        boxed.append_commit(c1).unwrap();
+        assert_eq!(boxed.head(traj).unwrap().1, 1);
+        assert_eq!(boxed.entries(traj).unwrap().len(), 2);
+        boxed.verify_integrity(traj).unwrap();
+        // It can also parameterize the runtime-facing generic surface.
+        fn takes_store<L: LedgerStore>(l: &L, t: TrajectoryId) -> usize {
+            l.entries(t).unwrap().len()
+        }
+        assert_eq!(takes_store(&boxed, traj), 2);
     }
 
     /// Regression: two trajectories created with the *same* note against one

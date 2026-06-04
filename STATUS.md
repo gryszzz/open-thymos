@@ -53,15 +53,21 @@ never produces a false failure — and proves the real path when you supply it.
   server now logs a `WARNING` at startup in that case and `/health` reports
   `cognition_live: false`. Set a key to make it live; the provider is then
   auto-detected.
-- **Postgres is not yet the HTTP runtime path.** The async Postgres backend
-  exists and is tested in isolation, but the HTTP server still uses the
-  synchronous SQLite path. The runtime/ledger trait refactor has now landed:
-  `thymos-ledger` defines a `LedgerStore` trait and `thymos-runtime`'s `Runtime`
-  and `Run` are generic over it (`Runtime<L: LedgerStore = Ledger>`), proven by
-  a test that drives a full agent loop through a non-default backend. What
-  remains is a blocking facade that adapts the async Postgres backend to the
-  synchronous `LedgerStore` surface, plus wiring it into the server's
-  construction path. The server prints a note when `THYMOS_POSTGRES_URL` is set.
+- **Postgres is now a selectable HTTP runtime backend (feature-gated).** The
+  runtime/ledger trait refactor has landed end to end: `thymos-ledger` defines a
+  `LedgerStore` trait; `thymos-runtime`'s `Runtime`/`Run` are generic over it
+  (`Runtime<L: LedgerStore = Ledger>`); and a `BlockingPostgresLedger` facade
+  adapts the async Postgres backend to the synchronous trait by driving futures
+  on a dedicated runtime thread (so it is safe to call from the server's async
+  handlers — `block_on` would panic there). The server selects the backend at
+  startup: with the `postgres` feature built and `THYMOS_POSTGRES_URL` set, it
+  runs `Runtime<Box<dyn LedgerStore>>` over Postgres; otherwise it uses SQLite.
+  The **default build remains SQLite** (no Postgres dependency compiled). Proof
+  is gated on a live database (`THYMOS_TEST_POSTGRES_URL`): one test asserts the
+  facade yields a byte-identical content-addressed chain to SQLite from the same
+  inputs, another asserts the sync facade is safe to call from inside a tokio
+  runtime. These run in the Postgres CI job once DB secrets exist; they skip
+  cleanly (print `SKIP`, pass) otherwise.
 - **`thymos-worker` is intentionally a thin binary.** It is the process-isolation
   boundary for sandboxed tool execution; the substance lives in
   `thymos_tools::worker_entrypoint` (kept in the library so it is unit-tested and

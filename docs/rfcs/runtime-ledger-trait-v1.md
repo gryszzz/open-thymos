@@ -1,7 +1,34 @@
 # RFC: Runtime/Ledger trait refactor (v1)
 
-Status: Draft
+Status: Implemented (steps 1–4; step 5 gated on a live DB)
 Tracking: #22 (Phase III — distributed execution ledger)
+
+## Implementation status
+
+All five migration steps have shipped:
+
+1. ✅ `LedgerStore` trait in `thymos-ledger`, impl for `SqliteLedger` (pure addition).
+2. ✅ `Runtime`/`Run` made generic — `Runtime<L: LedgerStore = Ledger>`. The
+   default type parameter keeps every existing concrete call site (server,
+   tests) compiling unchanged.
+3. ✅ Postgres blocking facade — `BlockingPostgresLedger` (`feature = "postgres"`).
+4. ✅ Server backend selection. The server holds `Runtime<Box<dyn LedgerStore>>`
+   (Option from the "Decision needed" section: `Box<dyn>` chosen over a viral
+   generic, since ledger ops are not the hot path) and picks SQLite or Postgres
+   from `THYMOS_POSTGRES_URL` + the `postgres` feature. The "still uses SQLite"
+   note is replaced.
+5. ✅ (gated) Backend-independence + async-safety tests, on `THYMOS_TEST_POSTGRES_URL`.
+
+**One deviation from the sketch below, forced by the `block_on` risk this RFC
+flagged:** the facade does *not* use `Handle::block_on`. The server calls sync
+ledger methods from tokio worker threads (async handlers, `run_agent_streaming`),
+where `block_on` panics ("cannot block the current thread from within a runtime").
+So the facade owns a dedicated OS thread running its own current-thread runtime +
+`LocalSet`; sync methods ship a `Send` job closure to it over a channel and block
+only on a `std::sync::mpsc` reply on the caller's thread. This is safe from any
+context. (The per-call futures are `!Send` because the Postgres query builder
+holds `!Send` params across awaits, which is why the closure — not the future —
+is what crosses the thread boundary.)
 
 ## Summary
 
