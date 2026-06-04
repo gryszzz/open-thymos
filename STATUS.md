@@ -55,8 +55,13 @@ never produces a false failure — and proves the real path when you supply it.
   auto-detected.
 - **Postgres is not yet the HTTP runtime path.** The async Postgres backend
   exists and is tested in isolation, but the HTTP server still uses the
-  synchronous SQLite path until the runtime/ledger trait refactor lands. The
-  server prints a note when `THYMOS_POSTGRES_URL` is set.
+  synchronous SQLite path. The runtime/ledger trait refactor has now landed:
+  `thymos-ledger` defines a `LedgerStore` trait and `thymos-runtime`'s `Runtime`
+  and `Run` are generic over it (`Runtime<L: LedgerStore = Ledger>`), proven by
+  a test that drives a full agent loop through a non-default backend. What
+  remains is a blocking facade that adapts the async Postgres backend to the
+  synchronous `LedgerStore` surface, plus wiring it into the server's
+  construction path. The server prints a note when `THYMOS_POSTGRES_URL` is set.
 - **`thymos-worker` is intentionally a thin binary.** It is the process-isolation
   boundary for sandboxed tool execution; the substance lives in
   `thymos_tools::worker_entrypoint` (kept in the library so it is unit-tested and

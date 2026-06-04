@@ -16,7 +16,7 @@ use thymos_core::{
     writ::BudgetCost,
     CommitId, TrajectoryId, COMPILER_VERSION,
 };
-use thymos_ledger::{project_commits, Entry, EntryPayload, Ledger};
+use thymos_ledger::{project_commits, Entry, EntryPayload, Ledger, LedgerStore};
 use thymos_policy::PolicyEngine;
 use thymos_tools::{EffectClass, ToolInvocation, ToolRegistry};
 
@@ -144,8 +144,8 @@ impl Clock for FixedClock {
     }
 }
 
-pub struct Runtime {
-    pub ledger: Ledger,
+pub struct Runtime<L: LedgerStore = Ledger> {
+    pub ledger: L,
     pub tools: ToolRegistry,
     pub policy: PolicyEngine,
     pub delegation_keyring: Option<DelegationKeyring>,
@@ -263,8 +263,8 @@ pub struct ApprovalProgress {
     pub satisfied: bool,
 }
 
-impl Runtime {
-    pub fn new(ledger: Ledger, tools: ToolRegistry, policy: PolicyEngine) -> Self {
+impl<L: LedgerStore> Runtime<L> {
+    pub fn new(ledger: L, tools: ToolRegistry, policy: PolicyEngine) -> Self {
         Runtime {
             ledger,
             tools,
@@ -340,7 +340,7 @@ impl Runtime {
     }
 
     /// Create a new trajectory and return a Run bound to it.
-    pub fn create_run(&self, note: &str, seed: &[u8]) -> Result<Run<'_>> {
+    pub fn create_run(&self, note: &str, seed: &[u8]) -> Result<Run<'_, L>> {
         let trajectory_id = TrajectoryId::new_from_seed(seed);
         self.ledger.append_root(trajectory_id, note)?;
         Ok(Run {
@@ -352,7 +352,7 @@ impl Runtime {
     /// Resume an existing trajectory. The Run picks up where it left off;
     /// world projection will fold every commit already in the ledger. Returns
     /// an error if the trajectory hasn't been rooted yet.
-    pub fn resume_run(&self, trajectory_id: TrajectoryId) -> Result<Run<'_>> {
+    pub fn resume_run(&self, trajectory_id: TrajectoryId) -> Result<Run<'_, L>> {
         if !self.ledger.has_trajectory(trajectory_id) {
             return Err(Error::Ledger(format!(
                 "trajectory {:?} does not exist",
@@ -366,8 +366,8 @@ impl Runtime {
     }
 }
 
-pub struct Run<'a> {
-    runtime: &'a Runtime,
+pub struct Run<'a, L: LedgerStore = Ledger> {
+    runtime: &'a Runtime<L>,
     trajectory_id: TrajectoryId,
 }
 
@@ -388,14 +388,14 @@ pub enum Step {
     },
 }
 
-impl<'a> Run<'a> {
+impl<'a, L: LedgerStore> Run<'a, L> {
     pub fn trajectory_id(&self) -> TrajectoryId {
         self.trajectory_id
     }
 
     /// Accessor for the enclosing runtime. Used by the agent loop to reach
     /// the ledger for observation lookup.
-    pub fn runtime(&self) -> &Runtime {
+    pub fn runtime(&self) -> &Runtime<L> {
         self.runtime
     }
 
@@ -440,7 +440,7 @@ impl<'a> Run<'a> {
 
     /// Create a new trajectory branched from a specific commit in this
     /// trajectory. The new Run starts with the world state as of that commit.
-    pub fn branch_from(&self, commit_id: CommitId, note: &str) -> Result<Run<'_>> {
+    pub fn branch_from(&self, commit_id: CommitId, note: &str) -> Result<Run<'_, L>> {
         let seed = format!("branch-{}-{}", self.trajectory_id, commit_id);
         let new_traj = TrajectoryId::new_from_seed(seed.as_bytes());
         self.runtime
@@ -1274,8 +1274,8 @@ impl<'a> Run<'a> {
 /// Project world state for a trajectory, optionally stopping at a specific
 /// commit (inclusive). Handles recursive ancestor chains for branched
 /// trajectories.
-fn project_world_up_to(
-    ledger: &Ledger,
+fn project_world_up_to<L: LedgerStore>(
+    ledger: &L,
     trajectory_id: TrajectoryId,
     up_to: Option<CommitId>,
 ) -> Result<World> {

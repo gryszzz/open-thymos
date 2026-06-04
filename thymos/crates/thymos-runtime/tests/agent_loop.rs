@@ -217,6 +217,127 @@ fn run_agent_rejects_on_budget_exhaustion() {
     assert_eq!(summary.rejections, 1);
 }
 
+/// Step 2 proof: the runtime is generic over *any* `LedgerStore`, not only the
+/// default SQLite `Ledger`. `WrapLedger` is a distinct concrete type that
+/// implements the trait by delegating to an inner `Ledger`; building a
+/// `Runtime<WrapLedger>` and driving a full agent loop through it proves the
+/// generic refactor works end-to-end with an arbitrary backend — the exact
+/// shape a Phase III Postgres facade will take.
+mod backend_agnostic {
+    use super::*;
+    use thymos_core::{
+        commit::Commit,
+        ids::IntentId,
+        proposal::{Proposal, RejectionReason},
+        CommitId, ContentHash, Result, TrajectoryId,
+    };
+    use thymos_ledger::{AuditEntry, Entry, LedgerStore};
+
+    /// A `LedgerStore` that is *not* `Ledger`, delegating to one inside.
+    struct WrapLedger(Ledger);
+
+    impl LedgerStore for WrapLedger {
+        fn append_root(&self, t: TrajectoryId, note: &str) -> Result<Entry> {
+            self.0.append_root(t, note)
+        }
+        fn append_commit(&self, c: Commit) -> Result<Entry> {
+            self.0.append_commit(c)
+        }
+        fn append_rejection(
+            &self,
+            t: TrajectoryId,
+            i: IntentId,
+            r: RejectionReason,
+        ) -> Result<Entry> {
+            self.0.append_rejection(t, i, r)
+        }
+        fn append_pending_approval(
+            &self,
+            t: TrajectoryId,
+            p: Proposal,
+            channel: String,
+            reason: String,
+        ) -> Result<Entry> {
+            self.0.append_pending_approval(t, p, channel, reason)
+        }
+        fn append_delegation(
+            &self,
+            t: TrajectoryId,
+            child: TrajectoryId,
+            task: &str,
+            final_answer: Option<String>,
+        ) -> Result<Entry> {
+            self.0.append_delegation(t, child, task, final_answer)
+        }
+        fn append_branch_root(
+            &self,
+            new_t: TrajectoryId,
+            src: TrajectoryId,
+            src_commit: CommitId,
+            note: &str,
+        ) -> Result<Entry> {
+            self.0.append_branch_root(new_t, src, src_commit, note)
+        }
+        fn head(&self, t: TrajectoryId) -> Result<(ContentHash, u64)> {
+            self.0.head(t)
+        }
+        fn entries(&self, t: TrajectoryId) -> Result<Vec<Entry>> {
+            self.0.entries(t)
+        }
+        fn query_entries(
+            &self,
+            t: Option<TrajectoryId>,
+            kind: Option<&str>,
+            from_ts: Option<u64>,
+            to_ts: Option<u64>,
+            limit: Option<u32>,
+        ) -> Result<Vec<AuditEntry>> {
+            self.0.query_entries(t, kind, from_ts, to_ts, limit)
+        }
+        fn count_entries(
+            &self,
+            t: Option<TrajectoryId>,
+            kind: Option<&str>,
+            from_ts: Option<u64>,
+            to_ts: Option<u64>,
+        ) -> Result<u64> {
+            self.0.count_entries(t, kind, from_ts, to_ts)
+        }
+    }
+
+    #[test]
+    fn runtime_drives_a_non_default_ledger_backend() {
+        let ledger = WrapLedger(Ledger::open_in_memory().unwrap());
+        let mut tools = ToolRegistry::new();
+        tools.register(KvSetTool::default());
+        tools.register(KvGetTool::default());
+        let policy = PolicyEngine::new().with(WritAuthorityPolicy);
+        // The whole point: `Runtime` parameterized by a backend that is *not*
+        // the default `Ledger`.
+        let runtime: Runtime<WrapLedger> = Runtime::new(ledger, tools, policy);
+
+        let writ = root_writ();
+        let set = mk_intent("kv_set", serde_json::json!({"key": "k", "value": "v"}), 1);
+        let get = mk_intent("kv_get", serde_json::json!({"key": "k"}), 2);
+        let mut cognition = MockCognition::new(vec![vec![set], vec![get]], Some("done".into()));
+
+        let summary = run_agent(
+            &runtime,
+            &mut cognition,
+            "drive a non-default backend",
+            &writ,
+            AgentRunOptions { max_steps: 8 },
+            None,
+        )
+        .expect("agent run on wrapped backend");
+
+        assert_eq!(summary.intents_submitted, 2);
+        assert_eq!(summary.commits, 2);
+        assert!(matches!(summary.terminated_by, Termination::CognitionDone));
+        assert_eq!(summary.final_answer.as_deref(), Some("done"));
+    }
+}
+
 #[test]
 #[ignore = "timing benchmark — run with --include-ignored --nocapture"]
 fn bench_execution_overhead_per_proposal() {

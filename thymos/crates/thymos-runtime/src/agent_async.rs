@@ -17,7 +17,7 @@ use thymos_core::{
     writ::Writ,
     ProposalId,
 };
-use thymos_ledger::{Entry, EntryPayload};
+use thymos_ledger::{Entry, EntryPayload, LedgerStore};
 
 use super::agent::{
     emit_event, AgentEventCallback, AgentRunOptions, AgentRunSummary, AgentTraceEvent, Termination,
@@ -48,8 +48,8 @@ pub type ApprovalRequester = Box<
 /// `approval_requester` is called when a proposal needs human approval. If
 /// `None`, suspensions terminate the run (Phase 1 behavior).
 #[allow(clippy::too_many_arguments)]
-pub async fn run_agent_streaming(
-    runtime: &Runtime,
+pub async fn run_agent_streaming<L: LedgerStore>(
+    runtime: &Runtime<L>,
     cognition: &mut dyn StreamingCognition,
     task: &str,
     writ: &Writ,
@@ -368,7 +368,7 @@ pub async fn run_agent_streaming(
 }
 
 /// Find the ProposalId of the most recent PendingApproval entry in this run.
-fn find_last_pending_proposal(run: &Run<'_>) -> Result<ProposalId> {
+fn find_last_pending_proposal<L: LedgerStore>(run: &Run<'_, L>) -> Result<ProposalId> {
     let entries: Vec<Entry> = run.runtime().ledger.entries(run.trajectory_id())?;
     for e in entries.into_iter().rev() {
         if let EntryPayload::PendingApproval { proposal, .. } = &e.payload {
@@ -381,7 +381,10 @@ fn find_last_pending_proposal(run: &Run<'_>) -> Result<ProposalId> {
 }
 
 /// Fetch the Observation from the commit that just landed.
-fn last_observation(run: &Run<'_>, commit_id: thymos_core::CommitId) -> Result<Observation> {
+fn last_observation<L: LedgerStore>(
+    run: &Run<'_, L>,
+    commit_id: thymos_core::CommitId,
+) -> Result<Observation> {
     let entries: Vec<Entry> = run.runtime().ledger.entries(run.trajectory_id())?;
     for e in entries.into_iter().rev() {
         if let EntryPayload::Commit(c) = &e.payload {

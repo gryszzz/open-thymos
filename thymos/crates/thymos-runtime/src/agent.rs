@@ -23,7 +23,7 @@ use thymos_core::{
     writ::Writ,
     TrajectoryId,
 };
-use thymos_ledger::{Entry, EntryPayload};
+use thymos_ledger::{Entry, EntryPayload, LedgerStore};
 
 use crate::{Run, Runtime, Step};
 
@@ -165,8 +165,8 @@ pub(crate) fn emit_event(event_tx: Option<&AgentEventCallback>, event: AgentTrac
 /// Drive a Cognition to completion against the Thymos runtime.
 ///
 /// The loop is explicit: cognition proposes, runtime decides, ledger remembers.
-pub fn run_agent(
-    runtime: &Runtime,
+pub fn run_agent<L: LedgerStore>(
+    runtime: &Runtime<L>,
     cognition: &mut dyn Cognition,
     task: &str,
     writ: &Writ,
@@ -363,7 +363,10 @@ pub fn run_agent(
 
 /// Fetch the Observation from the commit that just landed. The ledger is the
 /// source of truth — we don't trust cached values.
-fn last_observation(run: &Run<'_>, commit_id: thymos_core::CommitId) -> Result<Observation> {
+fn last_observation<L: LedgerStore>(
+    run: &Run<'_, L>,
+    commit_id: thymos_core::CommitId,
+) -> Result<Observation> {
     let entries: Vec<Entry> = run.runtime().ledger.entries(run.trajectory_id())?;
     for e in entries.into_iter().rev() {
         if let EntryPayload::Commit(c) = &e.payload {
