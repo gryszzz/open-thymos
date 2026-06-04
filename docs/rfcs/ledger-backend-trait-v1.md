@@ -6,10 +6,20 @@ Ledger Backend Trait — make SQLite and Postgres interchangeable on the runtime
 
 ## Status
 
-Draft — design for review. No implementation is authorized by this document; it
-exists so the trait surface and the sync/async boundary are agreed *before* code
-touches the authority/replay core. (Per the project standard: RFC before code for
-core-touching changes.)
+**Superseded by [`runtime-ledger-trait-v1.md`](runtime-ledger-trait-v1.md),
+which tracks the shipped implementation (PR #28).** That RFC and this one
+independently specify the *same* Option A design — a synchronous `LedgerStore`
+trait with a Postgres blocking facade — but the implementation landed under the
+other document, so this one is retained only for its design discussion. See the
+implemented RFC for the as-built design, including the one deviation it forced: a
+dedicated facade thread (current-thread runtime + `LocalSet`) instead of
+`Handle::block_on`, because the server calls sync ledger methods from tokio
+worker threads where `block_on` panics.
+
+_Original status:_ Draft — design for review. No implementation is authorized by
+this document; it exists so the trait surface and the sync/async boundary are
+agreed *before* code touches the authority/replay core. (Per the project
+standard: RFC before code for core-touching changes.)
 
 ## Summary
 
