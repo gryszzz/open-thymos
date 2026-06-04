@@ -179,6 +179,29 @@ async fn cli_health_and_run_flow_against_live_server() {
     assert!(replay_stdout.contains("OpenThymos replay"));
     assert!(replay_stdout.contains("result: replay verified"));
 
+    // `audit` composes ledger entries + replay verdict into one trail.
+    let audit = run_cli(&url, &["audit", &run_id]);
+    assert!(
+        audit.status.success(),
+        "audit failed:\nstdout:\n{}\nstderr:\n{}",
+        stdout(&audit),
+        stderr(&audit)
+    );
+    let audit_stdout = stdout(&audit);
+    assert!(audit_stdout.contains("OpenThymos audit"));
+    assert!(audit_stdout.contains(&format!("run:              {run_id}")));
+    assert!(audit_stdout.contains("ROOT        trajectory bound"));
+    assert!(audit_stdout.contains("[integrity] verified"));
+    assert!(audit_stdout.contains("replay verified"));
+
+    // `audit --json` is machine-readable: entries + replay report.
+    let audit_json = run_cli(&url, &["audit", &run_id, "--json"]);
+    assert!(audit_json.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout(&audit_json)).expect("audit --json is valid json");
+    assert!(parsed.get("entries").is_some());
+    assert!(parsed.get("replay").is_some());
+
     server.abort();
     let _ = server.await;
 }
