@@ -55,7 +55,17 @@ services:
     profiles:
       - local
 
-  # Optional: Postgres for production ledger backend.
+  # Optional: Postgres for the production ledger backend.
+  #
+  # Run the gated ledger integration tests against it locally:
+  #   docker compose --profile postgres up -d postgres
+  #   THYMOS_TEST_POSTGRES_URL=postgres://thymos:thymos@localhost:5432/thymos \
+  #     cargo test -p thymos-ledger --features postgres \
+  #     --test postgres_integration -- --ignored --nocapture
+  #
+  # Or run the server itself on Postgres (build with the `postgres` feature):
+  #   THYMOS_POSTGRES_URL=postgres://thymos:thymos@localhost:5432/thymos \
+  #     cargo run -p thymos-server --features postgres
   postgres:
     image: postgres:16-alpine
     environment:
@@ -66,6 +76,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thymos -d thymos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     profiles:
       - postgres
 

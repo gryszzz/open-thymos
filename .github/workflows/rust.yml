@@ -36,3 +36,38 @@ jobs:
           # The server can now select the Postgres backend at startup; guard that
           # wiring (Runtime<Box<dyn LedgerStore>> + BlockingPostgresLedger) too.
           cargo check -p thymos-server --features postgres
+
+  # Run the gated Postgres integration tests for real against a live database.
+  # This is the proof that the Postgres ledger backend (and the blocking facade
+  # the HTTP server uses) actually works — not just compiles. The same tests
+  # skip cleanly when THYMOS_TEST_POSTGRES_URL is unset (e.g. local `cargo test`).
+  postgres-integration:
+    name: Postgres ledger (live)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: thymos_test
+          POSTGRES_USER: thymos
+          POSTGRES_PASSWORD: thymos
+        ports:
+          - 5432:5432
+        # Hold the job until Postgres is accepting connections.
+        options: >-
+          --health-cmd "pg_isready -U thymos -d thymos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: thymos
+      - name: Run gated Postgres integration tests
+        env:
+          THYMOS_TEST_POSTGRES_URL: postgres://thymos:thymos@localhost:5432/thymos_test
+        run: |
+          cargo test -p thymos-ledger --features postgres \
+            --test postgres_integration -- --ignored --nocapture

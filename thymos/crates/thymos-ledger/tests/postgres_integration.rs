@@ -173,28 +173,25 @@ fn blocking_facade_matches_sqlite() {
     let pg = BlockingPostgresLedger::connect(&url).expect("connect blocking facade");
     let sqlite = thymos_ledger::Ledger::open_in_memory().expect("open sqlite");
 
-    // Distinct trajectory ids so the run is repeatable against a shared DB, but
-    // the *same* logical script, so the content-addressed payloads (and thus the
-    // ids) line up position-for-position across backends.
-    let traj_pg = unique_traj("indep-pg");
-    let traj_sq = unique_traj("indep-sq");
+    // The *same* trajectory id through both backends: ledger entry ids are
+    // content-addressed over the trajectory id and parent links, so identical
+    // inputs must yield an identical chain. SQLite is a fresh in-memory store;
+    // the unique seed keeps the shared Postgres DB collision-free across runs.
+    let traj = unique_traj("indep");
 
-    let pg_ids = drive_script(&pg, traj_pg);
-    let sq_ids = drive_script(&sqlite, traj_sq);
+    let pg_ids = drive_script(&pg, traj);
+    let sq_ids = drive_script(&sqlite, traj);
 
-    // The root payload binds the trajectory id, so the genesis ids differ by
-    // construction; every *commit* id is trajectory-independent and must match.
-    assert_eq!(pg_ids.len(), sq_ids.len(), "same number of entries");
+    // Every entry id — root included — must match position-for-position.
     assert_eq!(
-        &pg_ids[1..],
-        &sq_ids[1..],
-        "commit chain must be byte-identical across backends"
+        pg_ids, sq_ids,
+        "the full content-addressed chain must be byte-identical across backends"
     );
 
-    // Heads agree on seq, and each head id equals the backend's own last entry.
-    assert_eq!(pg.head(traj_pg).unwrap().1, 2);
-    assert_eq!(sqlite.head(traj_sq).unwrap().1, 2);
-    assert_eq!(pg.head(traj_pg).unwrap().0, *pg_ids.last().unwrap());
+    // Heads agree, and each head id equals the backend's own last entry.
+    assert_eq!(pg.head(traj).unwrap(), sqlite.head(traj).unwrap());
+    assert_eq!(pg.head(traj).unwrap().1, 2);
+    assert_eq!(pg.head(traj).unwrap().0, *pg_ids.last().unwrap());
 
     eprintln!("PROOF: Postgres blocking facade yields a chain identical to SQLite");
 }
