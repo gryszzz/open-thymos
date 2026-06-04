@@ -76,8 +76,7 @@ trust-the-prompt. Concretely:
 
 **What it is _not_ (yet):** a turnkey product. It's a reference kernel — see
 [STATUS.md](STATUS.md) for the honest line between what's enforced-and-tested and what's
-still gated (Postgres on the HTTP path, live-model CI proofs, the end-to-end delegation
-demo).
+still gated (Postgres on the HTTP path, live-model CI proofs run in CI).
 
 ## The Threat Model
 
@@ -247,7 +246,15 @@ run; `/health` reports whether cognition is live or mock.
 
 **What it does not prove yet** (see [STATUS.md](STATUS.md)): that the HTTP runtime
 is using Postgres (it uses SQLite today); that the gated `live_provider` /
-`postgres_integration` proofs have run; the Phase II parent→child delegation demo.
+`postgres_integration` proofs have run.
+
+Multi-agent delegation *is* now demonstrable — parent mints a child writ ⊆ its own
+authority, child runs on its own trajectory, the ledger shows the lineage, replay
+reconstructs both:
+
+```bash
+cargo run --example delegation_lineage -p thymos-runtime   # see docs/demos/delegation-lineage.md
+```
 
 Or work directly with the workspace and CLI:
 
