@@ -36,6 +36,14 @@ services or API keys:
   each committed action, and a replay-verification verdict. Pure renderer
   unit-tested across every entry kind; live wiring e2e tested
   (`crates/thymos-cli`).
+- **Multi-agent delegation, demonstrable.** A parent mints a child writ that is a
+  verified *strict subset* of its authority, the child runs on its own
+  trajectory, and the parent→child lineage is on the ledger. Tenant boundaries
+  can't be crossed by delegation and the child can't mutate parent state; replay
+  reconstructs both trajectories. Runnable
+  (`cargo run --example delegation_lineage -p thymos-runtime`), asserted
+  property-by-property (`crates/thymos-runtime/tests/delegation.rs`), and walked
+  through in [`docs/demos/delegation-lineage.md`](docs/demos/delegation-lineage.md).
 - **WisePick routing-evidence integration**: forward path + data-sovereignty
   (no intent args / tool output / tenant / writ leak into feedback records).
 
