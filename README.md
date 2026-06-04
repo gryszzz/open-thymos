@@ -38,6 +38,37 @@ Intent → Proposal → Commit
 
 ---
 
+## What it's for
+
+If "the model just did **what?!**" is an unacceptable failure mode for you, this is the
+kernel that makes agent actions **authorized, auditable, and replayable** instead of
+trust-the-prompt. Concretely:
+
+- **Agents that touch money, infra, or data.** A model can *propose* anything, but a
+  signed capability writ — tool scopes, effect ceiling (read / write / external /
+  irreversible), budget, time window — decides what actually runs. Effects are enforced
+  *in the compiler*, not by prompt convention.
+- **Audit & compliance for AI actions.** Every action is an append-only, hash-chained
+  ledger entry recording *what was done, under whose authority, and which policy decision
+  permitted it*. `thymos audit <run-id>` renders that whole trail for a human — the
+  artifact an auditor actually wants.
+- **Post-incident forensics via deterministic replay.** Replay folds committed deltas to
+  reconstruct the exact world state, and *rejects* compiler drift, policy drift, and
+  unsigned commits. "The agent did something bad on Tuesday" becomes reproducible and
+  verifiable, not guesswork.
+- **Multi-tenant agent platforms.** Tenant-scoped writs and delegation where a parent
+  mints a child writ that is a *strict subset* of its own authority — so agents you host
+  for others can't exceed granted authority or cross tenant boundaries.
+- **A governance layer under a router.** Routing decides what's *optimal*; THYMOS decides
+  what's *allowed* and proves what *happened*. Routing evidence is recorded for audit but
+  **never** read for authority (see the [WisePick integration](docs/integrations/wisepick.md)).
+- **Human-in-the-loop approval gates.** Irreversible actions can suspend for quorum
+  approval instead of executing — "the agent drafts the wire transfer; a human signs off."
+
+**What it is _not_ (yet):** a turnkey product. It's a reference kernel — see
+[STATUS.md](STATUS.md) for the honest line between what's enforced-and-tested and what's
+still gated (Postgres on the HTTP path, live-model CI proofs run in CI).
+
 ## The Threat Model
 
 OpenThymos treats cognition as **untrusted input**. The runtime enforces this structurally:
@@ -105,12 +136,32 @@ the runtime today and covered by tests:
 - **Drift detection on replay.** Replay can pin the compiler version, the
   policy-set hash, and commit signatures — flagging compiler, policy, or
   identity drift long after a run.
+- **Writ revocation + anti-replay.** A capability can be pulled at runtime (the
+  compiler rejects it, with a one-level child cascade); every writ carries a
+  nonce so it is individually identifiable.
+- **Idempotency.** An `External` / `Irreversible` tool executes at most once per
+  content-addressed proposal — retries and re-approvals return the prior commit.
+- **Multi-party approval.** A suspended proposal can require M-of-N distinct
+  approvers; any explicit denial vetoes. Irreversible, non-compensable tools can
+  be gated to *require* approval.
+- **Compensation / saga rollback.** Compensable tools are undone newest-first —
+  including across delegated child trajectories — and each rollback is itself a
+  recorded, replayable commit.
+- **External anchoring.** A Merkle root over a trajectory's entries gives
+  third-party tamper-evidence on top of the internal hash chain.
+- **Pluggable clock.** Time-window checks read an injectable clock (an attested
+  source, or a fixed clock in tests), not the bare host wall clock.
+- **Declarative policy.** Signed JSON policy bundles loadable at runtime
+  (`eq/ne/gt/lt/in/contains` + `all/any/not` over intent / writ / world), in
+  addition to in-process Rust policies.
+- **Routing evidence (advisor integration).** Optional provider routing metadata
+  is recorded immutably in the ledger (excluded from `ProposalId`) and never read
+  for authority — plus a safe, pull-based `/routing-outcomes` feedback export
+  that leaks no workload content. See [WisePick integration](docs/integrations/wisepick.md).
 
-**Not yet — tracked on the [roadmap](docs/roadmap.md):** idempotency and
-compensation for irreversible tools, writ revocation and anti-replay, multi-party
-(quorum) approval, external Merkle anchoring of the ledger, host-clock
-attestation, and a declarative policy language ([RFC draft](docs/rfcs/policy-language-v1.md)).
-Replay verifies and folds the ledger — it does not re-execute cognition or tools.
+For the precise, adversarially-written line between *proven*, *gated*, and *not
+built*, see **[STATUS.md](STATUS.md)**. Replay verifies and folds the ledger — it
+does not (and for an LLM cannot) re-execute cognition or tools.
 
 ## Capability Writs
 
@@ -166,15 +217,23 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 
 ## Quick Start
 
-**Fastest path — one command.** Builds the runtime, starts it, drives one real
-`Intent → Proposal → Commit` run end to end, prints the final world, and cleans
-up after itself:
+**Fastest path — one command.** Builds the server, drives one governed run end to
+end (Intent → Proposal → Commit), prints the world projection, and shuts down.
+[`scripts/quickstart.sh`](scripts/quickstart.sh) is the real onboarding:
 
 ```bash
+# A) Local proof, no secrets (deterministic mock provider)
 ./scripts/quickstart.sh
-# Connect a real model instead of the mock:
-ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh
+# Expected: provider=mock, one run completes, final world projection prints.
+
+# B) Live cognition proof (real model)
+ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize the runtime"
+# Expected: /health shows the live provider; a committed run exists; the world reflects it.
 ```
+
+**What this proves:** an intent enters through `/runs`; the runtime governs
+(writ / effect / budget / policy) *before* any commit; the ledger records the
+run; `/health` reports whether cognition is live or mock.
 
 **Manual path.** Start the runtime once, then attach from any client (CLI, web
 console, VS Code, terminal) — they all observe the same run state:
@@ -185,24 +244,41 @@ cargo run -p thymos-server          # http://localhost:3001 — mock cognition b
 ```
 
 ```bash
-# In another terminal: drive a run and follow it live (no API key needed)
+# In another terminal: drive a run and follow it live. --provider defaults to
+# `auto`, which uses whatever the server resolved (mock until you set a key).
 cd thymos
-cargo run -p thymos-cli -- run "Map the repo and summarize the runtime" --provider mock --follow
+cargo run -p thymos-cli -- run "Map the repo and summarize the runtime" --follow
 
-# Verify + fold that run's ledger (use the run id printed above)
+# The whole governance trail for a run: commits, rejections, the policy
+# decision per action, and a replay-verification verdict.
+cargo run -p thymos-cli -- audit <run_id>
+
+# Fold a run's ledger to its world; check which provider is actually live.
 cargo run -p thymos-cli -- replay <run_id> --verify
-
-# Check runtime health and which cognition provider is actually live
 cargo run -p thymos-cli -- doctor
 ```
 
 Install the `thymos` shorthand with `cargo install --path thymos/crates/thymos-cli`.
+
+**Multi-agent delegation is demonstrable** — a parent mints a child writ ⊆ its own
+authority, the child runs on its own trajectory, the ledger shows the lineage, and
+replay reconstructs both:
+
+```bash
+cargo run --example delegation_lineage -p thymos-runtime   # see docs/demos/delegation-lineage.md
+```
 
 **Verify everything** (default: mock cognition, SQLite, governance enforced):
 
 ```bash
 cd thymos
 cargo test --workspace
+```
+
+Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
+see **[Getting Started](docs/getting-started.md)**. The remaining gated proofs
+(live-model cognition and `postgres_integration` against a real database) run in
+CI when their secrets are present; see [STATUS.md](STATUS.md).
 ```
 
 Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —

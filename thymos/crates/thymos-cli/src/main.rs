@@ -91,6 +91,17 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Print a trajectory's full governance story: the commit chain,
+    /// rejections, suspensions, delegations, the policy decision behind each
+    /// committed action, and a replay-verification verdict. This is the audit
+    /// trail rendered for a human — the demo of "the boundary worked".
+    Audit {
+        /// Run ID.
+        run_id: String,
+        /// Print the raw JSON (ledger entries + replay report) instead.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show API gateway usage stats.
     Usage,
     /// Health check.
@@ -209,6 +220,9 @@ async fn main() {
                 json,
             )
             .await
+        }
+        Commands::Audit { run_id, json } => {
+            cmd_audit(&client, &cli.url, cli.api_key.as_deref(), &run_id, json).await
         }
         Commands::Usage => cmd_usage(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Health => cmd_health(&client, &cli.url).await,
@@ -690,6 +704,273 @@ pub(crate) async fn cmd_replay(
     println!();
     println!("result: replay verified");
     Ok(())
+}
+
+/// Render one short, hex-prefix label for a content-addressed id.
+fn short_id(v: &Value) -> String {
+    v.as_str().map(|s| s.chars().take(12).collect()).unwrap_or_default()
+}
+
+/// Human-readable rendering of a `PolicyDecision` / `RejectionReason`
+/// (both serialize as `{ "kind": ..., "detail": ... }`).
+fn tagged_reason(v: &Value) -> String {
+    let kind = v["kind"].as_str().unwrap_or("?");
+    match &v["detail"] {
+        Value::Null => kind.to_string(),
+        Value::String(s) => format!("{kind}: {s}"),
+        Value::Object(o) => {
+            let parts: Vec<String> = o
+                .iter()
+                .map(|(k, val)| format!("{k}={}", val.as_str().unwrap_or(&val.to_string())))
+                .collect();
+            format!("{kind} ({})", parts.join(", "))
+        }
+        other => format!("{kind}: {other}"),
+    }
+}
+
+/// `thymos audit <run-id>` — compose the ledger entries and the replay report
+/// into one human-readable governance trail. Pure read: it only GETs
+/// `/audit/entries` and `/runs/:id/replay`.
+pub(crate) async fn cmd_audit(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    run_id: &str,
+    raw_json: bool,
+) -> Result<(), String> {
+    // 1. Ledger entries for this run's trajectory.
+    let mut req = client
+        .get(format!("{url}/audit/entries"))
+        .query(&[("run_id", run_id)]);
+    for (k, v) in auth_headers(api_key) {
+        req = req.header(&k, &v);
+    }
+    let entries_body = json_body_or_error(req.send().await.map_err(|e| e.to_string())?).await?;
+
+    // 2. Replay verdict (best-effort: a trajectory with no commits still audits).
+    let mut rreq = client.get(format!("{url}/runs/{run_id}/replay"));
+    for (k, v) in auth_headers(api_key) {
+        rreq = rreq.header(&k, &v);
+    }
+    let replay = match rreq.send().await {
+        Ok(resp) => json_body_or_error(resp).await.ok(),
+        Err(_) => None,
+    };
+
+    if raw_json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "entries": entries_body["entries"],
+                "replay": replay,
+            }))
+            .unwrap()
+        );
+        return Ok(());
+    }
+
+    let empty = vec![];
+    let entries = entries_body["entries"].as_array().unwrap_or(&empty);
+    print!("{}", render_audit(run_id, entries, replay.as_ref()));
+    Ok(())
+}
+
+/// Pure renderer for `thymos audit`: turn the ledger entries (+ optional replay
+/// report) into the human-readable governance trail. Kept side-effect-free so it
+/// is unit-testable against synthetic entries covering every entry kind.
+pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Value>) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+
+    let trajectory = entries
+        .first()
+        .and_then(|e| e["trajectory_id"].as_str())
+        .or_else(|| replay.and_then(|r| r["trajectory_id"].as_str()))
+        .unwrap_or("?");
+
+    let _ = writeln!(out, "OpenThymos audit");
+    let _ = writeln!(out, "run:              {run_id}");
+    let _ = writeln!(out, "trajectory:       {trajectory}");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "ledger ({} entries)", entries.len());
+
+    let mut commits = 0u64;
+    let mut rejections = 0u64;
+    for e in entries {
+        let seq = e["seq"].as_u64().unwrap_or(0);
+        let p = &e["payload"];
+        let prefix = format!("  #{seq:<3}");
+        match p["type"].as_str().unwrap_or("?") {
+            "root" => {
+                let note = p["note"].as_str().unwrap_or("");
+                let _ = writeln!(out, "{prefix} ROOT        trajectory bound  {note:?}");
+            }
+            "commit" => {
+                commits += 1;
+                let body = &p["body"];
+                let tool = body["observations"]
+                    .as_array()
+                    .and_then(|o| o.first())
+                    .and_then(|o| o["tool"].as_str())
+                    .unwrap_or("?");
+                let decision = tagged_reason(&body["policy_trace"]["decision"]);
+                let rules = body["policy_trace"]["rules_evaluated"]
+                    .as_array()
+                    .map(|r| {
+                        r.iter()
+                            .filter_map(|x| x.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_default();
+                let writ = short_id(&body["writ_id"]);
+                let signed = if body["signature"].is_string() {
+                    " signed✓"
+                } else {
+                    ""
+                };
+                let _ = write!(out, "{prefix} COMMIT      {tool:<16} policy={decision}");
+                if !rules.is_empty() {
+                    let _ = write!(out, " [{rules}]");
+                }
+                let _ = write!(out, " writ={writ}{signed}");
+                if body["compensates"].is_string() {
+                    let _ = write!(out, " compensates={}", short_id(&body["compensates"]));
+                }
+                if body["routing_evidence"].is_object() {
+                    let _ = write!(
+                        out,
+                        " route={}",
+                        body["routing_evidence"]["selected"].as_str().unwrap_or("?")
+                    );
+                }
+                let _ = writeln!(out);
+            }
+            "rejection" => {
+                rejections += 1;
+                let _ = writeln!(out, "{prefix} REJECTED    {}", tagged_reason(&p["reason"]));
+            }
+            "pending_approval" => {
+                let channel = p["channel"].as_str().unwrap_or("?");
+                let reason = p["reason"].as_str().unwrap_or("");
+                let _ = writeln!(out, "{prefix} SUSPENDED   channel={channel} reason={reason:?}");
+            }
+            "delegation" => {
+                let child = short_id(&p["child_trajectory_id"]);
+                let task = p["task"].as_str().unwrap_or("");
+                let _ = writeln!(out, "{prefix} DELEGATION  child={child} task={task:?}");
+            }
+            "branch" => {
+                let src = short_id(&p["source_trajectory_id"]);
+                let commit = short_id(&p["source_commit_id"]);
+                let _ = writeln!(out, "{prefix} BRANCH      from {src}@{commit}");
+            }
+            other => {
+                let _ = writeln!(out, "{prefix} {other}");
+            }
+        }
+    }
+
+    let _ = writeln!(out);
+    if let Some(r) = replay {
+        let verified = r["verified"].as_bool();
+        let final_hash = r["final_world_hash"].as_str().unwrap_or("?");
+        let head_seq = r["head_seq"].as_u64().unwrap_or(0);
+        let _ = writeln!(out, "replay");
+        let _ = writeln!(
+            out,
+            "  [integrity] {}",
+            if verified == Some(false) { "FAILED" } else { "verified" }
+        );
+        let _ = writeln!(
+            out,
+            "  commits replayed:   {}",
+            r["commits_replayed"].as_u64().unwrap_or(commits)
+        );
+        let _ = writeln!(
+            out,
+            "  rejected proposals: {}",
+            r["rejected_proposals"].as_u64().unwrap_or(rejections)
+        );
+        let _ = writeln!(out, "  head sequence:      {head_seq}");
+        let _ = writeln!(out, "  final world hash:   {final_hash}");
+        let _ = writeln!(out);
+        let verdict = if verified == Some(false) {
+            "replay verification FAILED"
+        } else {
+            "replay verified"
+        };
+        let _ = writeln!(
+            out,
+            "result: {commits} commits, {rejections} rejections — {verdict}"
+        );
+    } else {
+        let _ = writeln!(
+            out,
+            "replay: unavailable (run has no trajectory or replay endpoint errored)"
+        );
+        let _ = writeln!(out);
+        let _ = writeln!(out, "result: {commits} commits, {rejections} rejections");
+    }
+    out
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::render_audit;
+    use serde_json::json;
+
+    #[test]
+    fn renders_every_entry_kind_and_verdict() {
+        let entries = vec![
+            json!({"seq":0,"trajectory_id":"deadbeefcafe0000","payload":{"type":"root","note":"demo"}}),
+            json!({"seq":1,"payload":{"type":"commit","body":{
+                "writ_id":"ab12ab12ab12ab12",
+                "observations":[{"tool":"kv_set","latency_ms":42}],
+                "policy_trace":{"rules_evaluated":["WritAuthority"],"decision":{"kind":"permit"}},
+                "signature":"ff",
+                "routing_evidence":{"selected":"anthropic:claude"}
+            }}}),
+            json!({"seq":2,"payload":{"type":"rejection","reason":{"kind":"policy_denied","detail":"writ does not authorize tool 'delete_all'"}}}),
+            json!({"seq":3,"payload":{"type":"pending_approval","channel":"ops","reason":"irreversible"}}),
+            json!({"seq":4,"payload":{"type":"delegation","child_trajectory_id":"cccc1111dddd2222","task":"sub-task"}}),
+            json!({"seq":5,"payload":{"type":"commit","body":{
+                "writ_id":"ab12ab12ab12ab12",
+                "observations":[{"tool":"kv_del","latency_ms":3}],
+                "policy_trace":{"rules_evaluated":[],"decision":{"kind":"permit"}},
+                "compensates":"99aa99aa99aa99aa","signature":null
+            }}}),
+        ];
+        let replay = json!({"verified":true,"commits_replayed":2,"rejected_proposals":1,"head_seq":5,"final_world_hash":"f4cfe88219"});
+        let out = render_audit("run-x", &entries, Some(&replay));
+
+        assert!(out.contains("trajectory:       deadbeefcafe0000"));
+        assert!(out.contains("ROOT        trajectory bound  \"demo\""));
+        // commit: tool, human-readable policy decision, rules, short writ, signed mark, route
+        assert!(out.contains("COMMIT      kv_set"));
+        assert!(out.contains("policy=permit [WritAuthority]"));
+        assert!(out.contains("writ=ab12ab12ab12"));
+        assert!(out.contains("signed✓"));
+        assert!(out.contains("route=anthropic:claude"));
+        // rejection renders the tagged reason
+        assert!(out.contains("REJECTED    policy_denied: writ does not authorize tool 'delete_all'"));
+        assert!(out.contains("SUSPENDED   channel=ops"));
+        assert!(out.contains("DELEGATION  child=cccc1111dddd"));
+        // compensation commit
+        assert!(out.contains("compensates=99aa99aa99aa"));
+        // verdict line
+        assert!(out.contains("[integrity] verified"));
+        assert!(out.contains("result: 2 commits, 1 rejections — replay verified"));
+    }
+
+    #[test]
+    fn failed_integrity_and_missing_replay() {
+        let entries = vec![json!({"seq":0,"trajectory_id":"aa","payload":{"type":"root","note":"x"}})];
+        let failed = json!({"verified":false,"final_world_hash":"z","head_seq":0});
+        assert!(render_audit("r", &entries, Some(&failed)).contains("replay verification FAILED"));
+        assert!(render_audit("r", &entries, None).contains("replay: unavailable"));
+    }
 }
 
 pub(crate) async fn cmd_usage(
