@@ -34,6 +34,13 @@ Runtime capabilities:
 - model-spend budgeting (cognition token/USD usage debited against the writ budget)
 - fork-proof append (unique `(trajectory, seq)` invariant under an immediate transaction)
 - replay drift detection (compiler version, policy-set hash, commit signatures)
+- writ revocation (compiler stage, one-level child cascade) + anti-replay nonce
+- idempotency (exactly-once execution for External/Irreversible tools per proposal)
+- multi-party (M-of-N) approval quorum + irreversible/non-compensable approval gate
+- compensation / saga rollback (incl. cross-trajectory) with recorded compensations
+- external Merkle anchoring of the ledger; pluggable (attestable) clock
+- declarative signed JSON policy bundles ([policy-language-v1](rfcs/policy-language-v1.md), implemented)
+- routing-evidence (Proposal Contract v1, Option 2) + safe pull-based feedback export
 
 Execution guarantee: no tool execution without a staged or approved proposal,
 and no effect beyond the writ's effect ceiling.
@@ -41,10 +48,13 @@ and no effect beyond the writ's effect ceiling.
 Scaling implication: correctness remains local and inspectable before
 distributed concerns are introduced.
 
-Not yet in Phase I (tracked for later phases): idempotency and compensation for
-irreversible tools, writ revocation and anti-replay, multi-party (quorum)
-approval, external Merkle anchoring of the ledger, host-clock attestation, and a
-declarative policy language ([policy-language-v1 RFC draft](rfcs/policy-language-v1.md)).
+Most of the original Phase I "later" list has shipped (above). What remains
+(see [STATUS.md](../STATUS.md) for the precise, adversarial line):
+- Postgres as the *HTTP runtime* path — the async backend is implemented and
+  tested in isolation, but the server still uses the synchronous SQLite path
+  until the runtime/ledger trait refactor lands.
+- `routing_evidence` is recorded verbatim (not redacted) — provider metadata,
+  never read for authority; a redaction pass over it is an optional follow-up.
 
 ## Phase II - Multi-Agent Coordination
 
