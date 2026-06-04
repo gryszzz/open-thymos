@@ -114,12 +114,32 @@ the runtime today and covered by tests:
 - **Drift detection on replay.** Replay can pin the compiler version, the
   policy-set hash, and commit signatures — flagging compiler, policy, or
   identity drift long after a run.
+- **Writ revocation + anti-replay.** A capability can be pulled at runtime (the
+  compiler rejects it, with a one-level child cascade); every writ carries a
+  nonce so it is individually identifiable.
+- **Idempotency.** An `External` / `Irreversible` tool executes at most once per
+  content-addressed proposal — retries and re-approvals return the prior commit.
+- **Multi-party approval.** A suspended proposal can require M-of-N distinct
+  approvers; any explicit denial vetoes. Irreversible, non-compensable tools can
+  be gated to *require* approval.
+- **Compensation / saga rollback.** Compensable tools are undone newest-first —
+  including across delegated child trajectories — and each rollback is itself a
+  recorded, replayable commit.
+- **External anchoring.** A Merkle root over a trajectory's entries gives
+  third-party tamper-evidence on top of the internal hash chain.
+- **Pluggable clock.** Time-window checks read an injectable clock (an attested
+  source, or a fixed clock in tests), not the bare host wall clock.
+- **Declarative policy.** Signed JSON policy bundles loadable at runtime
+  (`eq/ne/gt/lt/in/contains` + `all/any/not` over intent / writ / world), in
+  addition to in-process Rust policies.
+- **Routing evidence (advisor integration).** Optional provider routing metadata
+  is recorded immutably in the ledger (excluded from `ProposalId`) and never read
+  for authority — plus a safe, pull-based `/routing-outcomes` feedback export
+  that leaks no workload content. See [WisePick integration](docs/integrations/wisepick.md).
 
-**Not yet — tracked on the [roadmap](docs/roadmap.md):** idempotency and
-compensation for irreversible tools, writ revocation and anti-replay, multi-party
-(quorum) approval, external Merkle anchoring of the ledger, host-clock
-attestation, and a declarative policy language ([RFC draft](docs/rfcs/policy-language-v1.md)).
-Replay verifies and folds the ledger — it does not re-execute cognition or tools.
+For the precise, adversarially-written line between *proven*, *gated*, and *not
+built*, see **[STATUS.md](STATUS.md)**. Replay verifies and folds the ledger — it
+does not (and for an LLM cannot) re-execute cognition or tools.
 
 ## Capability Writs
 
