@@ -166,20 +166,47 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 
 ## Quick Start
 
+**Fastest path — one command.** Builds the runtime, starts it, drives one real
+`Intent → Proposal → Commit` run end to end, prints the final world, and cleans
+up after itself:
+
+```bash
+./scripts/quickstart.sh
+# Connect a real model instead of the mock:
+ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh
+```
+
+**Manual path.** Start the runtime once, then attach from any client (CLI, web
+console, VS Code, terminal) — they all observe the same run state:
+
 ```bash
 cd thymos
-cargo test --workspace --features sqlite
+cargo run -p thymos-server          # http://localhost:3001 — mock cognition by default
 ```
 
 ```bash
-cargo run -p thymos-server
+# In another terminal: drive a run and follow it live (no API key needed)
+cd thymos
+cargo run -p thymos-cli -- run "Map the repo and summarize the runtime" --provider mock --follow
+
+# Verify + fold that run's ledger (use the run id printed above)
+cargo run -p thymos-cli -- replay <run_id> --verify
+
+# Check runtime health and which cognition provider is actually live
+cargo run -p thymos-cli -- doctor
 ```
 
+Install the `thymos` shorthand with `cargo install --path thymos/crates/thymos-cli`.
+
+**Verify everything** (default: mock cognition, SQLite, governance enforced):
+
 ```bash
-# Follow a run from terminal
-thymos run "summarize the open issues" --writ ./writs/dev.json
-thymos replay run_847 --verify
+cd thymos
+cargo test --workspace
 ```
+
+Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
+see **[Getting Started](docs/getting-started.md)**.
 
 ## Repository
 

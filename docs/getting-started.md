@@ -256,6 +256,29 @@ Use this when you want:
 - deploy-time concurrency tuning
 - a more production-shaped runtime boundary
 
+## 8. Postgres ledger backend (optional)
+
+The durable ledger defaults to SQLite. To run it on Postgres instead, build the
+server with the `postgres` feature and point it at a database:
+
+```bash
+# Bring up a local Postgres (or use your own); from thymos/:
+docker compose --profile postgres up -d postgres
+
+THYMOS_POSTGRES_URL=postgres://thymos:thymos@localhost:5432/thymos \
+  cargo run -p thymos-server --features postgres
+```
+
+The startup log prints `ledger: postgres (synchronous blocking facade) at …`
+when it connects. Notes:
+
+- Without the `postgres` feature, `THYMOS_POSTGRES_URL` is ignored — the server
+  logs a note and stays on SQLite. The **default build compiles no Postgres
+  dependencies**.
+- Replay is byte-identical across backends: the same trajectory yields the same
+  content-addressed chain on SQLite and Postgres (this is asserted by the gated
+  `postgres_integration` tests).
+
 ## Where to go next
 
 - [Interfaces]({{ '/interfaces' | relative_url }}) — pick the surface that fits you
