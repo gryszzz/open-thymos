@@ -17,7 +17,7 @@ use crate::{
     StartRunOptions,
 };
 
-const BLUE: &str = "\x1b[38;2;119;169;255m";
+const VIOLET: &str = "\x1b[38;2;199;125;255m";
 const GREEN: &str = "\x1b[38;2;52;211;153m";
 const DIM: &str = "\x1b[2m";
 const BOLD: &str = "\x1b[1m";
@@ -163,7 +163,7 @@ fn c(code: &str) -> &str {
 fn print_shell_banner(url: &str) {
     println!(
         "{}{}THYMOS SHELL{}  {}shared execution runtime{}",
-        c(BLUE),
+        c(VIOLET),
         c(BOLD),
         c(RESET),
         c(DIM),
