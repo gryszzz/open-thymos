@@ -12,7 +12,22 @@ Base URL: `http://localhost:3001`
 
 ### GET /health
 
-Returns server liveness and runtime mode.
+Returns liveness plus the runtime facts an operator should not have to infer:
+
+```json
+{
+  "status": "ok",
+  "mode": "reference",
+  "default_provider": "mock",
+  "cognition_live": false,
+  "shutdown": false
+}
+```
+
+Use `cognition_live` to distinguish a real model from the deterministic mock,
+and `mode` to distinguish the `reference` runtime from `production`. The HTTP
+runtime is SQLite-backed today; see [STATUS.md](https://github.com/gryszzz/open-thymos/blob/main/STATUS.md)
+for the gated `live_provider` / `postgres_integration` proofs.
 
 ## Runs
 
