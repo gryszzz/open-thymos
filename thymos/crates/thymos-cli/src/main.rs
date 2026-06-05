@@ -28,7 +28,7 @@ struct Cli {
     api_key: Option<String>,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -178,7 +178,13 @@ async fn main() {
     let cli = Cli::parse();
     let client = reqwest::Client::new();
 
-    let result = match cli.command {
+    // Bare `thymos` (no subcommand) → branded home screen.
+    let Some(command) = cli.command else {
+        cmd_home(&cli.url);
+        return;
+    };
+
+    let result = match command {
         Commands::Run {
             task,
             max_steps,
@@ -330,7 +336,7 @@ fn paint(code: &str, text: impl AsRef<str>) -> String {
     }
 }
 
-fn brand_banner() {
+pub(crate) fn brand_banner() {
     // Wordmark art, painted top→bottom in the brand violet gradient
     // (#c77dff → #7c3aed) so it reads as a glowing logo lockup.
     const ART: [&str; 8] = [
@@ -419,6 +425,64 @@ fn status_line(label: &str, ok: bool, detail: impl AsRef<str>) {
         paint(C_WARN, "CHK")
     };
     println!("{marker}  {label:<24} {}", detail.as_ref());
+}
+
+/// One aligned `command  description` row for the home screen.
+fn home_row(cmd: &str, desc: &str) {
+    println!(
+        "    {}{}",
+        paint(C_VIOLET, format!("{cmd:<30}")),
+        paint(C_DIM, desc)
+    );
+}
+
+fn home_section(title: &str) {
+    println!();
+    println!("  {}", paint(C_VIOLET_B, title));
+}
+
+/// `thymos` with no subcommand: the branded home — banner, what it is, and the
+/// command map. Pure print; no network.
+fn cmd_home(url: &str) {
+    brand_banner();
+    println!(
+        "  {}",
+        paint(C_DIM, "A governed execution runtime — cognition proposes, the runtime")
+    );
+    println!(
+        "  {}",
+        paint(C_DIM, "governs every effect, the ledger records and replays.")
+    );
+
+    home_section("RUN");
+    home_row("run \"<task>\" --follow", "start a governed run; stream Intent → Proposal → Commit");
+    home_row("status <run-id>", "run status + summary");
+    home_row("stream <run-id>", "live execution feed");
+
+    home_section("GOVERNANCE");
+    home_row("audit <run-id>", "the full governance trail + replay verdict");
+    home_row("replay <run-id>", "verify the ledger folds to its world");
+    home_row("world <run-id>", "current projected world state");
+    home_row("approve <run-id> <channel>", "clear a human-in-the-loop gate");
+
+    home_section("SETUP");
+    home_row("doctor", "branded readiness dashboard");
+    home_row("providers", "list cognition providers / presets");
+    home_row("health", "server liveness · live-vs-mock · ledger backend");
+    home_row("shell", "interactive Thymos terminal");
+
+    println!();
+    println!("  {} {}", paint(C_DIM, "server"), paint(C_STAR, url));
+    println!(
+        "  {} {}",
+        paint(C_DIM, "repo  "),
+        paint(C_VIOLET, "https://github.com/gryszzz/open-thymos")
+    );
+    println!();
+    println!(
+        "  {}",
+        paint(C_DIM, "`thymos <command> --help` for details · `thymos shell` for a session")
+    );
 }
 
 fn mask_secret(value: Option<&str>) -> String {

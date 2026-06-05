@@ -161,26 +161,31 @@ fn c(code: &str) -> &str {
 }
 
 fn print_shell_banner(url: &str) {
+    crate::brand_banner();
     println!(
-        "{}{}THYMOS SHELL{}  {}shared execution runtime{}",
+        "  {}{}interactive shell{}   {}endpoint{} {}",
         c(VIOLET),
         c(BOLD),
         c(RESET),
         c(DIM),
-        c(RESET)
+        c(RESET),
+        url
     );
-    println!("{}endpoint{}  {}", c(DIM), c(RESET), url);
     println!(
-        "{}flow{}      intent -> proposal -> execution -> result",
+        "  {}flow{}   intent → proposal → commit → ledger",
         c(DIM),
         c(RESET)
     );
     println!(
-        "{}quick{}     set preset code | set workspace . | auto \"verify the repo\"",
+        "  {}try{}    set preset code · set workspace . · run \"...\" --follow",
         c(GREEN),
         c(RESET)
     );
-    println!("type `help` for commands, `show` for config, `exit` to leave.");
+    println!(
+        "  {}help{}   `help` for commands · `show` for config · `exit` to leave",
+        c(DIM),
+        c(RESET)
+    );
     println!();
 }
 
@@ -224,12 +229,15 @@ async fn dispatch(
         return Ok(Continue::Keep);
     }
     let tokens: Vec<String> = raw_tokens.iter().map(|t| state.expand(t)).collect();
-    let cmd = tokens[0].as_str();
-    let args: Vec<&str> = tokens[1..].iter().map(String::as_str).collect();
+    // Tolerate a redundant leading `thymos` — users arriving from the CLI often
+    // type `thymos health` inside the shell, where the command is just `health`.
+    let start = if tokens.len() > 1 && tokens[0] == "thymos" { 1 } else { 0 };
+    let cmd = tokens[start].as_str();
+    let args: Vec<&str> = tokens[start + 1..].iter().map(String::as_str).collect();
 
     match cmd {
         "exit" | "quit" => return Ok(Continue::Exit),
-        "help" => print_help(),
+        "help" | "thymos" => print_help(),
         "show" => print_state(state),
         "set" => set_value(state, &args)?,
         "health" => cmd_health(client, url).await?,
