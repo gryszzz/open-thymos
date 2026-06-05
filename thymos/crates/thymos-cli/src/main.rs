@@ -327,22 +327,41 @@ fn paint(code: &str, text: impl AsRef<str>) -> String {
 }
 
 fn brand_banner() {
+    // Wordmark art, painted top→bottom in the brand violet gradient
+    // (#c77dff → #7c3aed) so it reads as a glowing logo lockup.
+    const ART: [&str; 8] = [
+        r"  _______ _                              ",
+        r" |__   __| |                             ",
+        r"    | |  | |__  _   _ _ __ ___   ___  ___ ",
+        r"    | |  | '_ \| | | | '_ ` _ \ / _ \/ __|",
+        r"    | |  | | | | |_| | | | | | | (_) \__ \",
+        r"    |_|  |_| |_|\__, |_| |_| |_|\___/|___/",
+        r"                 __/ |                    ",
+        r"                |___/                     ",
+    ];
+    let (top, bot) = ((199.0_f32, 125.0, 255.0), (124.0_f32, 58.0, 237.0));
+    let span = (ART.len() - 1).max(1) as f32;
+    println!();
+    for (i, line) in ART.iter().enumerate() {
+        let t = i as f32 / span;
+        let r = (top.0 + (bot.0 - top.0) * t) as u8;
+        let g = (top.1 + (bot.1 - top.1) * t) as u8;
+        let b = (top.2 + (bot.2 - top.2) * t) as u8;
+        println!("{}", paint(&format!("38;2;{r};{g};{b};1"), line));
+    }
     println!(
-        "{}",
-        paint(
-            "38;2;119;169;255;1",
-            r#"
-  _______ _                              
- |__   __| |                             
-    | |  | |__  _   _ _ __ ___   ___  ___
-    | |  | '_ \| | | | '_ ` _ \ / _ \/ __|
-    | |  | | | | |_| | | | | | | (_) \__ \
-    |_|  |_| |_|\__, |_| |_| |_|\___/|___/
-                 __/ |                    
-                |___/   governed runtime
-"#
-        )
+        "    {}   {}",
+        paint("38;2;199;125;255;1", "◆ OPEN-THYMOS"),
+        paint("38;2;139;233;255", "governed execution runtime"),
     );
+    println!(
+        "       {}",
+        paint(
+            "38;2;109;119;137",
+            "cognition proposes · the runtime governs · the ledger records",
+        ),
+    );
+    println!();
 }
 
 fn status_line(label: &str, ok: bool, detail: impl AsRef<str>) {
@@ -1164,7 +1183,7 @@ pub(crate) async fn cmd_doctor(
     );
 
     println!();
-    println!("{}", paint("38;2;119;169;255;1", "Next moves"));
+    println!("{}", paint("38;2;199;125;255;1", "Next moves"));
     println!("  thymos config");
     println!("  thymos shell");
     println!("  thymos run \"Inspect this repo and explain the runtime\" --provider mock --follow");
@@ -1195,7 +1214,7 @@ pub(crate) fn cmd_config(url: &str, api_key: Option<&str>) -> Result<(), String>
         installed_thymos.unwrap_or_else(|| "run scripts/install.sh".into()),
     );
     println!();
-    println!("{}", paint("38;2;119;169;255;1", "Clean terminal workflow"));
+    println!("{}", paint("38;2;199;125;255;1", "Clean terminal workflow"));
     println!("  1. thymos doctor");
     println!("  2. thymos shell");
     println!("  3. set preset code");
