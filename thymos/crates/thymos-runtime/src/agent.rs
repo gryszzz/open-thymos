@@ -173,7 +173,11 @@ pub fn run_agent<L: LedgerStore>(
     opts: AgentRunOptions,
     event_tx: Option<AgentEventCallback>,
 ) -> Result<AgentRunSummary> {
-    let run = runtime.create_run(task, task.as_bytes())?;
+    // Seed the trajectory from the writ id (unique per run via the writ's
+    // random nonce), NOT the task text — otherwise re-running the same task
+    // string derives the same trajectory and collides on the append-only
+    // ledger's (trajectory_id, seq) ROOT entry.
+    let run = runtime.create_run(task, writ.id.0.as_bytes())?;
     let trajectory_id = run.trajectory_id();
     emit_event(
         event_tx.as_ref(),

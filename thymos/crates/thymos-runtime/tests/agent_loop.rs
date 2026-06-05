@@ -21,6 +21,10 @@ fn build_runtime() -> Runtime {
 }
 
 fn root_writ() -> Writ {
+    root_writ_with_nonce([0u8; 16])
+}
+
+fn root_writ_with_nonce(nonce: [u8; 16]) -> Writ {
     let root_key = generate_signing_key();
     let agent_key = generate_signing_key();
     Writ::sign(
@@ -29,7 +33,7 @@ fn root_writ() -> Writ {
             issuer_pubkey: public_key_of(&root_key),
             subject: "test-agent".into(),
             subject_pubkey: public_key_of(&agent_key),
-            nonce: [0u8; 16],
+            nonce,
             parent: None,
             tenant_id: String::new(),
             tool_scopes: vec![ToolPattern::exact("kv_*")],
@@ -65,6 +69,44 @@ fn mk_intent(target: &str, args: serde_json::Value, nonce: u8) -> CoreIntent {
         nonce: [nonce; 16],
     })
     .unwrap()
+}
+
+#[test]
+fn same_task_text_distinct_writs_do_not_collide() {
+    // Regression: the trajectory must be seeded from the writ (unique per run
+    // via its nonce), NOT the task text. Two runs of the *same task string*
+    // (each with its own writ, as the server mints them) must get distinct
+    // trajectories and both succeed — otherwise the second collides on the
+    // append-only ledger's (trajectory_id, seq) ROOT.
+    let runtime = build_runtime();
+    let task = "Set greeting to hello, then read it back";
+
+    let go = |writ: &Writ| {
+        let set = mk_intent("kv_set", serde_json::json!({"key": "k", "value": "v"}), 1);
+        let mut cognition = MockCognition::new(vec![vec![set]], Some("done".into()));
+        run_agent(
+            &runtime,
+            &mut cognition,
+            task,
+            writ,
+            AgentRunOptions { max_steps: 4 },
+            None,
+        )
+    };
+
+    let writ_a = root_writ_with_nonce([1u8; 16]);
+    let writ_b = root_writ_with_nonce([2u8; 16]);
+    assert_ne!(writ_a.id, writ_b.id, "distinct nonces → distinct writ ids");
+
+    let a = go(&writ_a).expect("first run of the task");
+    let b = go(&writ_b).expect("second run of the SAME task must not collide");
+
+    assert_ne!(
+        a.trajectory_id, b.trajectory_id,
+        "same task + distinct writs must yield distinct trajectories"
+    );
+    assert_eq!(a.commits, 1);
+    assert_eq!(b.commits, 1);
 }
 
 #[test]
