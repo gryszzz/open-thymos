@@ -90,7 +90,7 @@ jobs:
             org.opencontainers.image.description=Execution substrate for governed machine cognition. Separates cognition from execution through the typed Intent -> Proposal -> Commit protocol.
             org.opencontainers.image.vendor=Exponet Labs
             org.opencontainers.image.licenses=Apache-2.0
-            org.opencontainers.image.documentation=https://github.com/gryszzz/OpenThymos#readme
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}#readme
       - uses: docker/build-push-action@v6
         with:
           context: thymos
