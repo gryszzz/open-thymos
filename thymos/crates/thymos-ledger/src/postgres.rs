@@ -52,6 +52,17 @@ impl PostgresLedger {
         client
             .batch_execute(
                 r#"
+                BEGIN;
+                -- `CREATE TABLE IF NOT EXISTS` is NOT atomic against the system
+                -- catalogs: two connections bootstrapping a fresh database at the
+                -- same time (multiple server replicas on first boot, or parallel
+                -- tests sharing one database) can race and fail with a catalog
+                -- unique violation. Serialize bootstrap behind a transaction-scoped
+                -- advisory lock so exactly one connection runs the DDL; the others
+                -- wait, then find the tables already exist. The key is an arbitrary
+                -- fixed constant unique to this schema.
+                SELECT pg_advisory_xact_lock(7479796814201601);
+
                 CREATE TABLE IF NOT EXISTS entries (
                     id             BYTEA PRIMARY KEY,
                     trajectory_id  BYTEA NOT NULL,
@@ -79,6 +90,7 @@ impl PostgresLedger {
                     head_seq       BIGINT NOT NULL,
                     PRIMARY KEY (trajectory_id, branch)
                 );
+                COMMIT;
                 "#,
             )
             .await
@@ -622,6 +634,9 @@ impl BlockingPostgresLedger {
 }
 
 impl crate::LedgerStore for BlockingPostgresLedger {
+    fn backend(&self) -> &'static str {
+        "postgres"
+    }
     fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
         let note = note.to_string();
         self.call(move |l| async move { l.append_root(trajectory_id, &note).await })

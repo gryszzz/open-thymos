@@ -357,6 +357,14 @@ pub trait LedgerStore: Send + Sync {
         verify_integrity_entries(&entries)?;
         Ok(compute_anchor(trajectory_id, &entries))
     }
+
+    /// A short, stable name for the concrete durable backend — `"sqlite"`,
+    /// `"postgres"`, etc. The server reports this on `/health` so an operator can
+    /// confirm *which* store is actually live (the same transparency principle as
+    /// `cognition_live`). Defaults to `"unknown"` for backends that don't override.
+    fn backend(&self) -> &'static str {
+        "unknown"
+    }
 }
 
 /// Forwarding impl so a boxed trait object is itself a `LedgerStore`. This lets
@@ -445,6 +453,9 @@ impl LedgerStore for Box<dyn LedgerStore> {
     }
     fn anchor(&self, trajectory_id: TrajectoryId) -> Result<MerkleAnchor> {
         (**self).anchor(trajectory_id)
+    }
+    fn backend(&self) -> &'static str {
+        (**self).backend()
     }
 }
 

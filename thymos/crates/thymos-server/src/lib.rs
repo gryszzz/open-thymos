@@ -1005,6 +1005,9 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         // are answered by the deterministic mock, NOT a real model. Set an API
         // key (or THYMOS_DEFAULT_PROVIDER) to make this true.
         "cognition_live": !matches!(state.default_cognition.provider, CognitionProvider::Mock),
+        // Which durable ledger backend is actually live ("sqlite" | "postgres").
+        // So an operator can confirm Postgres is in use, not just configured.
+        "ledger": state.runtime.ledger.backend(),
         "shutdown": *state.shutdown_tx.borrow(),
     }))
 }
