@@ -121,8 +121,12 @@ under their own ledgers and writs.
 ## CLI
 
 ```bash
+thymos audit run_847
 thymos replay run_847 --verify --fold-world --policy-trace
 ```
+
+Use `audit` when a human needs the governance trail; use `replay` when a tool
+or script needs the verifier/fold result directly.
 
 Expected verifier phases:
 
