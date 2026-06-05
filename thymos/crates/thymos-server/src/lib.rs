@@ -646,6 +646,10 @@ fn extract_tenant_id(
 /// revoke/restore). When a JWT layer is configured, the caller's claims must
 /// include the `admin` role; otherwise (no auth layer — local/dev mode) it is
 /// permitted, consistent with the rest of the server being open when unconfigured.
+// The `Err` is an axum `Response` by design — the rejection path returns it
+// straight to the handler. Boxing it would only complicate the call sites for a
+// rarely-taken branch, so the large-variant lint is not worth honoring here.
+#[allow(clippy::result_large_err)]
 fn require_admin(
     jwt_claims: &Option<axum::Extension<auth::JwtClaims>>,
 ) -> Result<(), axum::response::Response> {
@@ -1001,6 +1005,9 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         // are answered by the deterministic mock, NOT a real model. Set an API
         // key (or THYMOS_DEFAULT_PROVIDER) to make this true.
         "cognition_live": !matches!(state.default_cognition.provider, CognitionProvider::Mock),
+        // Which durable ledger backend is actually live ("sqlite" | "postgres").
+        // So an operator can confirm Postgres is in use, not just configured.
+        "ledger": state.runtime.ledger.backend(),
         "shutdown": *state.shutdown_tx.borrow(),
     }))
 }

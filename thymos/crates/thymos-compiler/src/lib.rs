@@ -5,20 +5,23 @@
 //! typed `RejectionReason` that the runtime will append to the ledger.
 //!
 //! Stages (order matters — authority precedes surface visibility):
-//!   1. Kind gate         — Phase 1 only supports `Act` intents.
-//!   2. Signature check   — writ signature must verify.
-//!   2b. Revocation check — writ (or its parent) must not be revoked.
-//!   3. Time-window check — now must lie within [not_before, expires_at].
-//!   4. Writ binding      — tool scope check (before tool surface is consulted).
-//!   5. Tool resolution   — lookup in the ToolRegistry; unknown -> UnknownTool.
-//!   5b. Effect ceiling   — tool effect class must be granted by the writ.
-//!   6. Budget check      — estimated cost vs remaining writ budget.
-//!   7. Type check        — delegate to ToolContract::validate_args.
-//!   8. Precondition      — contract-declared; evaluated against World.
-//!   9. Policy eval       — run the PolicyEngine over (Intent, Writ, World).
-//!   9b. Compensation gate — optionally require approval for an irreversible,
-//!                           non-compensable tool.
-//!  10. Emit Proposal     — with full PolicyTrace, or a typed rejection.
+//!
+//! ```text
+//! 1.  Kind gate          — Phase 1 only supports `Act` intents.
+//! 2.  Signature check    — writ signature must verify.
+//! 2b. Revocation check   — writ (or its parent) must not be revoked.
+//! 3.  Time-window check  — now must lie within [not_before, expires_at].
+//! 4.  Writ binding       — tool scope check (before tool surface is consulted).
+//! 5.  Tool resolution    — lookup in the ToolRegistry; unknown -> UnknownTool.
+//! 5b. Effect ceiling     — tool effect class must be granted by the writ.
+//! 6.  Budget check       — estimated cost vs remaining writ budget.
+//! 7.  Type check         — delegate to ToolContract::validate_args.
+//! 8.  Precondition       — contract-declared; evaluated against World.
+//! 9.  Policy eval        — run the PolicyEngine over (Intent, Writ, World).
+//! 9b. Compensation gate  — optionally require approval for an irreversible,
+//!                          non-compensable tool.
+//! 10. Emit Proposal      — with full PolicyTrace, or a typed rejection.
+//! ```
 
 use std::collections::HashSet;
 
