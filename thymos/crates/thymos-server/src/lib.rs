@@ -82,21 +82,15 @@ impl RuntimeMode {
 }
 
 /// Human-readable name for a cognition provider (for logs and `/health`).
-pub fn provider_label(p: &CognitionProvider) -> &'static str {
-    match p {
-        CognitionProvider::Anthropic => "anthropic",
-        CognitionProvider::Openai => "openai",
-        CognitionProvider::Local => "local",
-        CognitionProvider::Lmstudio => "lmstudio",
-        CognitionProvider::Huggingface => "huggingface",
-        CognitionProvider::Mock => "mock",
-    }
+pub fn provider_label(p: &CognitionProvider) -> &str {
+    p.as_str()
 }
 
 /// Resolve the cognition provider used for runs that don't specify their own
 /// `cognition` block. Resolution order:
-///   1. `THYMOS_DEFAULT_PROVIDER` (anthropic | openai | local | lmstudio |
-///      huggingface | mock), optionally with `THYMOS_DEFAULT_MODEL`.
+///   1. `THYMOS_DEFAULT_PROVIDER` — `anthropic`, `openai`, `mock`, or any preset
+///      name from `thymos_cognition::presets` (`groq`, `openrouter`, `ollama`,
+///      …), optionally with `THYMOS_DEFAULT_MODEL`.
 ///   2. Auto-detect a configured API key: `ANTHROPIC_API_KEY`, then
 ///      `OPENAI_API_KEY`.
 ///   3. Fall back to `mock`.
@@ -113,20 +107,11 @@ pub fn resolve_default_cognition() -> CognitionConfig {
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty())
     {
-        Some(p) => match p.as_str() {
-            "anthropic" => CognitionProvider::Anthropic,
-            "openai" => CognitionProvider::Openai,
-            "local" => CognitionProvider::Local,
-            "lmstudio" => CognitionProvider::Lmstudio,
-            "huggingface" => CognitionProvider::Huggingface,
-            "mock" => CognitionProvider::Mock,
-            other => {
-                eprintln!(
-                    "warn: unknown THYMOS_DEFAULT_PROVIDER '{other}', defaulting to mock"
-                );
-                CognitionProvider::Mock
-            }
-        },
+        // Native names map to their dedicated adapters; any other name (groq,
+        // openrouter, ollama, …) becomes `Named` and resolves against the preset
+        // registry when cognition is built. An unknown name warns + falls back
+        // to mock there.
+        Some(p) => CognitionProvider::from_name(&p),
         None => {
             if std::env::var("ANTHROPIC_API_KEY").is_ok() {
                 CognitionProvider::Anthropic
@@ -2635,11 +2620,21 @@ mod onboarding_tests {
         assert_eq!(cfg.provider, CognitionProvider::Openai);
         assert_eq!(cfg.model.as_deref(), Some("gpt-4o-mini"));
 
+        // A preset name resolves to `Named`, carried through to build time where
+        // the preset registry fills in the endpoint + server-side key.
+        std::env::set_var("THYMOS_DEFAULT_PROVIDER", " GroQ ");
+        assert_eq!(
+            resolve_default_cognition().provider,
+            CognitionProvider::Named("groq".into()),
+            "a preset name is preserved (case-insensitive) for build-time resolution"
+        );
+
+        // An unrecognized name is also `Named`; it warns and falls back to mock
+        // only when cognition is actually built, not here.
         std::env::set_var("THYMOS_DEFAULT_PROVIDER", "definitely-not-a-provider");
         assert_eq!(
             resolve_default_cognition().provider,
-            CognitionProvider::Mock,
-            "unknown provider falls back to mock"
+            CognitionProvider::Named("definitely-not-a-provider".into()),
         );
 
         // Restore prior env so we don't perturb other tests.

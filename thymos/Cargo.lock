@@ -2710,6 +2710,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "similar",
+ "thymos-cognition",
  "thymos-marketplace",
  "thymos-server",
  "tokio",

@@ -284,6 +284,28 @@ The Postgres HTTP runtime path is active only when the server is built with
 `--features postgres` *and* `THYMOS_POSTGRES_URL` is set; otherwise it falls
 back to SQLite. Confirm the live backend in `/health` via `"ledger":"postgres"`.
 
+### Use (almost) any model
+
+Cognition is a swappable proposer — it only emits intents; the runtime governs
+every effect no matter the model. Native **Anthropic** and **OpenAI** adapters,
+plus one-name presets for every major OpenAI-compatible provider and local
+runtime. `thymos providers` lists them all.
+
+```bash
+# Hosted: name the provider, set its key, start.
+THYMOS_DEFAULT_PROVIDER=groq GROQ_API_KEY=… cargo run -p thymos-server
+# Local (no key): just have the runtime running.
+THYMOS_DEFAULT_PROVIDER=ollama THYMOS_DEFAULT_MODEL=llama3.2 cargo run -p thymos-server
+# Per run — a preset, or any OpenAI-compatible URL directly:
+thymos run "…" --provider openrouter --model openai/gpt-4o-mini
+thymos run "…" --provider openai --base-url https://your-host/v1 --model your-model
+```
+
+Presets: `openai` · `groq` · `openrouter` · `together` · `deepseek` · `mistral` ·
+`xai` · `fireworks` · `nvidia` · `cerebras` · `gemini` · `perplexity` ·
+`huggingface` · `ollama` · `lmstudio` · `vllm` · `llamacpp` · `localai`. Keys are
+read **server-side** — only a provider *name* crosses the wire, never a key.
+
 ## Repository
 
 | Path | Purpose |

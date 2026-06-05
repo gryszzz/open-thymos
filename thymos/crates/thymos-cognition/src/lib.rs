@@ -19,6 +19,7 @@ pub mod anthropic;
 pub mod context;
 pub mod mock;
 pub mod openai;
+pub mod presets;
 
 use serde::{Deserialize, Serialize};
 use thymos_core::{
@@ -200,8 +201,13 @@ impl<C: Cognition + Send> StreamingCognition for NonStreamingAdapter<C> {
 // ── Multi-model selector ─────────────────────────────────────────────────────
 
 /// Provider identifier for multi-model cognition.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
+///
+/// On the wire this is just a string, so **any** provider name works — the
+/// native adapters (`anthropic`, `openai`, `mock`) plus every entry in the
+/// [`presets`] registry (`groq`, `openrouter`, `ollama`, …) and any future name.
+/// Unknown names resolve through the preset registry at build time. This is what
+/// makes "use any model" a one-liner without per-provider wire changes.
+#[derive(Clone, Debug, PartialEq)]
 pub enum CognitionProvider {
     Anthropic,
     Openai,
@@ -212,6 +218,52 @@ pub enum CognitionProvider {
     /// Hugging Face Router (serverless inference, OpenAI-compatible).
     Huggingface,
     Mock,
+    /// Any other provider name, resolved against the [`presets`] registry when
+    /// cognition is built (e.g. `groq`, `openrouter`, `gemini`, `deepseek`).
+    Named(String),
+}
+
+impl CognitionProvider {
+    /// The canonical wire/label string for this provider.
+    pub fn as_str(&self) -> &str {
+        match self {
+            CognitionProvider::Anthropic => "anthropic",
+            CognitionProvider::Openai => "openai",
+            CognitionProvider::Local => "local",
+            CognitionProvider::Lmstudio => "lmstudio",
+            CognitionProvider::Huggingface => "huggingface",
+            CognitionProvider::Mock => "mock",
+            CognitionProvider::Named(s) => s,
+        }
+    }
+
+    /// Parse a provider name (case-insensitive). Native names map to their
+    /// dedicated adapters; everything else becomes [`CognitionProvider::Named`]
+    /// and is resolved against the preset registry at build time.
+    pub fn from_name(name: &str) -> Self {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "anthropic" => CognitionProvider::Anthropic,
+            "openai" => CognitionProvider::Openai,
+            "local" => CognitionProvider::Local,
+            "lmstudio" => CognitionProvider::Lmstudio,
+            "huggingface" => CognitionProvider::Huggingface,
+            "mock" => CognitionProvider::Mock,
+            other => CognitionProvider::Named(other.to_string()),
+        }
+    }
+}
+
+impl Serialize for CognitionProvider {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for CognitionProvider {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(CognitionProvider::from_name(&s))
+    }
 }
 
 /// Configuration for selecting a cognition provider at run creation time.
@@ -261,7 +313,7 @@ impl Default for CognitionConfig {
 ///
 /// Falls back to mock if the requested provider's API key is not set.
 pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
-    match config.provider {
+    match &config.provider {
         CognitionProvider::Anthropic => match anthropic::AnthropicCognition::from_env() {
             Ok(mut c) => {
                 if let Some(m) = &config.model {
@@ -393,9 +445,80 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
                 )),
             }
         }
+        CognitionProvider::Named(name) => build_from_preset(name.as_str(), config),
         CognitionProvider::Mock => Box::new(mock::MockCognition::new(
             vec![],
             Some("mock cognition".into()),
         )),
+    }
+}
+
+/// Build an OpenAI-compatible adapter from a named [`presets`] entry. The API
+/// key is read **server-side** from the preset's environment variables (never
+/// from the wire); local presets need no key. Falls back to mock — with a clear
+/// reason — for an unknown provider name or a cloud preset missing its key.
+fn build_from_preset(name: &str, config: &CognitionConfig) -> Box<dyn Cognition> {
+    let Some(preset) = presets::resolve(name) else {
+        eprintln!(
+            "warn: unknown cognition provider '{name}', falling back to mock. \
+             Run `thymos providers` to list supported names."
+        );
+        return Box::new(mock::MockCognition::new(
+            vec![],
+            Some(format!("unknown provider '{name}'")),
+        ));
+    };
+
+    let base_url = config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| preset.base_url.to_string());
+    let model = config
+        .model
+        .clone()
+        .unwrap_or_else(|| preset.default_model.to_string());
+
+    // Resolve the key from the preset's env vars, then a generic OPENAI_API_KEY,
+    // then a keyless dummy for local runtimes.
+    let api_key = preset
+        .api_key_envs
+        .iter()
+        .find_map(|e| std::env::var(e).ok())
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+    let api_key = match api_key {
+        Some(k) if !k.trim().is_empty() => k,
+        _ if !preset.requires_key() => "local".to_string(),
+        _ => {
+            eprintln!(
+                "warn: {} requires an API key ({}); none set — falling back to mock",
+                preset.label,
+                preset.api_key_envs.join(" or ")
+            );
+            return Box::new(mock::MockCognition::new(
+                vec![],
+                Some(format!("{} API key not set", preset.label)),
+            ));
+        }
+    };
+
+    match openai::OpenAiCognition::new(api_key, base_url, model) {
+        Ok(mut c) => {
+            // Providers without reliable native function-calling are driven via
+            // the JSON-block tool protocol so they can still emit intents.
+            if !preset.native_tools {
+                c = c.with_tool_protocol(openai::ToolProtocol::JsonBlock);
+            }
+            if let Some(t) = config.max_tokens {
+                c = c.with_max_tokens(t);
+            }
+            Box::new(c)
+        }
+        Err(e) => {
+            eprintln!("warn: failed to initialize {}: {e}", preset.label);
+            Box::new(mock::MockCognition::new(
+                vec![],
+                Some(format!("{} init failed", preset.label)),
+            ))
+        }
     }
 }

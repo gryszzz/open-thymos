@@ -156,6 +156,37 @@ OPENAI_API_KEY=... cargo run -p thymos-server
 OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_API_KEY=local cargo run -p thymos-server
 ```
 
+### Any other model — presets
+
+Almost every model out there is served behind an OpenAI-compatible API. Name a
+**preset** and set its key; Thymos fills in the endpoint. Run `thymos providers`
+to list them all with their key env var and an example model.
+
+```bash
+# Hosted — set the provider + its key, then start:
+THYMOS_DEFAULT_PROVIDER=groq       GROQ_API_KEY=...       cargo run -p thymos-server
+THYMOS_DEFAULT_PROVIDER=openrouter OPENROUTER_API_KEY=... cargo run -p thymos-server
+THYMOS_DEFAULT_PROVIDER=deepseek   DEEPSEEK_API_KEY=...   cargo run -p thymos-server
+THYMOS_DEFAULT_PROVIDER=gemini     GEMINI_API_KEY=...     cargo run -p thymos-server
+
+# Local — no key, just have the runtime running:
+THYMOS_DEFAULT_PROVIDER=ollama THYMOS_DEFAULT_MODEL=llama3.2 cargo run -p thymos-server
+```
+
+Built-in presets: `openai`, `groq`, `openrouter`, `together`, `deepseek`,
+`mistral`, `xai` (grok), `fireworks`, `nvidia`, `cerebras`, `gemini`,
+`perplexity`, `huggingface` — plus local `ollama`, `lmstudio`, `vllm`,
+`llamacpp`, `localai`. Or point at **any** OpenAI-compatible URL directly:
+
+```bash
+thymos run "..." --provider groq --model llama-3.3-70b-versatile
+thymos run "..." --provider openai --base-url https://your-host/v1 --model your-model
+```
+
+Keys are read **server-side** — only the provider *name* travels over the wire,
+never a key. Cognition still just proposes intents; the runtime governs every
+effect regardless of which model you pick.
+
 Confirm which provider is active (no more guessing whether you're on mock):
 
 ```bash
@@ -165,8 +196,9 @@ curl http://localhost:3001/health
 
 Resolution order for the default provider:
 
-1. `THYMOS_DEFAULT_PROVIDER` (`anthropic` | `openai` | `local` | `lmstudio` |
-   `huggingface` | `mock`), with optional `THYMOS_DEFAULT_MODEL`.
+1. `THYMOS_DEFAULT_PROVIDER` — `anthropic`, `openai`, `mock`, or **any preset
+   name** (`groq`, `openrouter`, `gemini`, `ollama`, … — run `thymos providers`),
+   with optional `THYMOS_DEFAULT_MODEL`.
 2. Otherwise the first key found — `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`.
 3. Otherwise `mock`.
 
