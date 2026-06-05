@@ -312,10 +312,14 @@ fn is_connection_error(msg: &str) -> bool {
 }
 
 fn color_enabled() -> bool {
+    use std::io::IsTerminal;
     std::env::var_os("NO_COLOR").is_none()
         && std::env::var("TERM")
             .map(|term| term != "dumb")
             .unwrap_or(true)
+        // Don't emit SGR codes when output is piped/redirected (scripts, tests,
+        // `| grep`); only colorize a real terminal.
+        && std::io::stdout().is_terminal()
 }
 
 fn paint(code: &str, text: impl AsRef<str>) -> String {
@@ -364,11 +368,55 @@ fn brand_banner() {
     println!();
 }
 
+// ----- brand palette (truecolor SGR codes) -----
+const C_VIOLET: &str = "38;2;199;125;255";
+const C_VIOLET_B: &str = "38;2;199;125;255;1";
+const C_STAR: &str = "38;2;139;233;255";
+const C_OK: &str = "38;2;52;211;153;1";
+const C_WARN: &str = "38;2;251;191;36;1";
+const C_RED: &str = "38;2;255;111;111;1";
+const C_DIM: &str = "2";
+
+/// A glyph + violet/cyan badge for an execution phase, e.g. Intent → Proposal →
+/// Commit. Unknown phases fall back to a neutral dot.
+fn phase_badge(phase: &str) -> String {
+    let (glyph, code) = match phase.to_ascii_lowercase().as_str() {
+        "intent" => ('◆', C_STAR),
+        "proposal" | "propose" | "compile" => ('▸', C_VIOLET_B),
+        "commit" | "committed" => ('✓', C_OK),
+        "rejection" | "rejected" | "deny" => ('✕', C_RED),
+        "approval" | "pending_approval" | "suspended" => ('⏸', C_WARN),
+        "cognition" | "think" | "model" => ('✷', C_VIOLET),
+        "tool" | "execute" => ('⚙', C_VIOLET),
+        _ => ('·', C_DIM),
+    };
+    paint(code, format!("{glyph} {phase}"))
+}
+
+/// Color an execution-log level word.
+fn level_code(level: &str) -> &'static str {
+    match level.to_ascii_lowercase().as_str() {
+        "ok" | "success" | "commit" => C_OK,
+        "warn" | "warning" => C_WARN,
+        "error" | "fail" | "failed" => C_RED,
+        _ => C_DIM,
+    }
+}
+
+/// Status word colored by lifecycle state.
+fn status_code(status: &str) -> &'static str {
+    match status.to_ascii_lowercase().as_str() {
+        "completed" | "complete" | "ok" => C_OK,
+        "failed" | "cancelled" | "error" => C_RED,
+        _ => C_VIOLET_B,
+    }
+}
+
 fn status_line(label: &str, ok: bool, detail: impl AsRef<str>) {
     let marker = if ok {
-        paint("38;2;52;211;153;1", "OK ")
+        paint(C_OK, "OK ")
     } else {
-        paint("38;2;251;191;36;1", "CHK")
+        paint(C_WARN, "CHK")
     };
     println!("{marker}  {label:<24} {}", detail.as_ref());
 }
@@ -488,16 +536,21 @@ pub(crate) async fn cmd_run(
 ) -> Result<(), String> {
     let run_id = start_run(client, url, api_key, options.start).await?;
 
+    // `Run started: <id>` stays a stable, line-start-parseable contract.
     println!("Run started: {run_id}");
-    println!("  task: {}", options.start.task);
+    println!("  {} {}", paint(C_DIM, "task:"), options.start.task);
     if options.start.provider.eq_ignore_ascii_case("auto") {
-        println!("  provider: auto (server default)");
+        println!("  {} auto (server default)", paint(C_DIM, "provider:"));
     } else {
-        println!("  provider: {}", options.start.provider);
+        println!(
+            "  {} {}",
+            paint(C_DIM, "provider:"),
+            paint(C_VIOLET, options.start.provider)
+        );
     }
     println!();
     if options.follow {
-        println!("--- streaming ---");
+        println!("{}", paint(C_VIOLET, "── live ── Intent → Proposal → Commit"));
         cmd_stream(url, &run_id).await?;
         // Print final status once the stream closes.
         return cmd_status(client, url, api_key, &run_id).await;
@@ -578,10 +631,10 @@ pub(crate) async fn cmd_stream(url: &str, run_id: &str) -> Result<(), String> {
 
                         if status != last_status || operator_state != last_operator_state {
                             println!(
-                                "\n[{} | {}] {}",
-                                status.to_uppercase(),
-                                phase,
-                                operator_state
+                                "\n{}  {}  {}",
+                                paint(status_code(status), format!("● {}", status.to_uppercase())),
+                                phase_badge(phase),
+                                paint(C_DIM, operator_state)
                             );
                             last_status = status.to_string();
                             last_operator_state = operator_state.to_string();
@@ -600,7 +653,7 @@ pub(crate) async fn cmd_stream(url: &str, run_id: &str) -> Result<(), String> {
 
                         if matches!(status, "completed" | "failed" | "cancelled") {
                             if let Some(answer) = snapshot["final_answer"].as_str() {
-                                println!("\n--- Final Answer ---");
+                                println!("\n{}", paint(C_VIOLET_B, "── final answer ──"));
                                 println!("{answer}");
                             }
                         }
@@ -620,23 +673,24 @@ fn print_execution_entry(entry: &Value) {
     let detail = entry["detail"].as_str().unwrap_or("");
     let step = entry["step_index"]
         .as_u64()
-        .map(|n| format!(" step {}", n + 1))
+        .map(|n| format!("step {} ", n + 1))
         .unwrap_or_default();
-    let tool = entry["tool"]
-        .as_str()
-        .map(|tool| format!(" {tool}"))
-        .unwrap_or_default();
+    let tool = entry["tool"].as_str().unwrap_or("");
 
-    println!(
-        "[{}:{}{}{}] {}",
-        level.to_uppercase(),
-        phase,
-        step,
-        tool,
-        title
-    );
+    let mut head = format!("  {}  ", phase_badge(phase));
+    if !step.is_empty() {
+        head.push_str(&paint(C_DIM, &step));
+    }
+    if !tool.is_empty() {
+        head.push_str(&paint(C_VIOLET, format!("{tool} ")));
+    }
+    if !level.eq_ignore_ascii_case("info") {
+        head.push_str(&paint(level_code(level), format!("{} ", level.to_uppercase())));
+    }
+    head.push_str(title);
+    println!("{head}");
     if !detail.is_empty() {
-        println!("  {detail}");
+        println!("     {}", paint(C_DIM, detail));
     }
 }
 
@@ -690,11 +744,11 @@ pub(crate) async fn cmd_replay(
     let rejections = body["rejected_proposals"].as_u64().unwrap_or(0);
     let approvals = body["pending_approvals"].as_u64().unwrap_or(0);
 
-    println!("OpenThymos replay");
-    println!("run:              {run_id}");
-    println!("trajectory:       {trajectory}");
+    println!("{}", paint(C_VIOLET_B, "◆ OpenThymos replay"));
+    println!("  {}  {run_id}", paint(C_DIM, "run       "));
+    println!("  {}  {trajectory}", paint(C_DIM, "trajectory"));
     println!();
-    println!("[integrity] verified");
+    println!("{}", paint(C_OK, "✓ [integrity] verified"));
     println!("  entries seen:        {entries_seen}");
     println!("  commits replayed:   {commits}");
     println!("  rejected proposals: {rejections}");
@@ -702,9 +756,9 @@ pub(crate) async fn cmd_replay(
     println!("  head sequence:      {head_seq}");
     println!("  head commit:        {head_commit}");
     println!();
-    println!("[fold]");
+    println!("{}", paint(C_VIOLET_B, "[fold]"));
     println!("  resources:          {resources}");
-    println!("  final world hash:   {final_world_hash}");
+    println!("  final world hash:   {}", paint(C_STAR, final_world_hash));
 
     if let Some(versions) = body["compiler_versions_seen"].as_array() {
         let versions = versions
@@ -719,7 +773,7 @@ pub(crate) async fn cmd_replay(
     if let Some(tool_calls) = body["tool_calls"].as_array() {
         if !tool_calls.is_empty() {
             println!();
-            println!("[tool calls]");
+            println!("{}", paint(C_VIOLET_B, "[tool calls]"));
             for call in tool_calls {
                 let seq = call["seq"].as_u64().unwrap_or(0);
                 let tool = call["tool"].as_str().unwrap_or("?");
@@ -734,7 +788,7 @@ pub(crate) async fn cmd_replay(
     }
 
     println!();
-    println!("result: replay verified");
+    println!("{}", paint(C_OK, "result: replay verified ✓"));
     Ok(())
 }
 
@@ -804,16 +858,24 @@ pub(crate) async fn cmd_audit(
 
     let empty = vec![];
     let entries = entries_body["entries"].as_array().unwrap_or(&empty);
-    print!("{}", render_audit(run_id, entries, replay.as_ref()));
+    print!("{}", render_audit(run_id, entries, replay.as_ref(), color_enabled()));
     Ok(())
 }
 
 /// Pure renderer for `thymos audit`: turn the ledger entries (+ optional replay
 /// report) into the human-readable governance trail. Kept side-effect-free so it
 /// is unit-testable against synthetic entries covering every entry kind.
-pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Value>) -> String {
+pub(crate) fn render_audit(
+    run_id: &str,
+    entries: &[Value],
+    replay: Option<&Value>,
+    color: bool,
+) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
+    // Paint only when color is enabled; uncolored output stays byte-identical
+    // (the unit tests assert plain strings).
+    let c = |code: &str, s: &str| if color { paint(code, s) } else { s.to_string() };
 
     let trajectory = entries
         .first()
@@ -821,11 +883,11 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
         .or_else(|| replay.and_then(|r| r["trajectory_id"].as_str()))
         .unwrap_or("?");
 
-    let _ = writeln!(out, "OpenThymos audit");
+    let _ = writeln!(out, "{}", c(C_VIOLET_B, "OpenThymos audit"));
     let _ = writeln!(out, "run:              {run_id}");
     let _ = writeln!(out, "trajectory:       {trajectory}");
     let _ = writeln!(out);
-    let _ = writeln!(out, "ledger ({} entries)", entries.len());
+    let _ = writeln!(out, "{}", c(C_VIOLET_B, &format!("ledger ({} entries)", entries.len())));
 
     let mut commits = 0u64;
     let mut rejections = 0u64;
@@ -836,7 +898,7 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
         match p["type"].as_str().unwrap_or("?") {
             "root" => {
                 let note = p["note"].as_str().unwrap_or("");
-                let _ = writeln!(out, "{prefix} ROOT        trajectory bound  {note:?}");
+                let _ = writeln!(out, "{prefix} {}        trajectory bound  {note:?}", c(C_VIOLET, "ROOT"));
             }
             "commit" => {
                 commits += 1;
@@ -862,7 +924,7 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
                 } else {
                     ""
                 };
-                let _ = write!(out, "{prefix} COMMIT      {tool:<16} policy={decision}");
+                let _ = write!(out, "{prefix} {}      {tool:<16} policy={decision}", c(C_OK, "COMMIT"));
                 if !rules.is_empty() {
                     let _ = write!(out, " [{rules}]");
                 }
@@ -881,22 +943,22 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
             }
             "rejection" => {
                 rejections += 1;
-                let _ = writeln!(out, "{prefix} REJECTED    {}", tagged_reason(&p["reason"]));
+                let _ = writeln!(out, "{prefix} {}    {}", c(C_RED, "REJECTED"), tagged_reason(&p["reason"]));
             }
             "pending_approval" => {
                 let channel = p["channel"].as_str().unwrap_or("?");
                 let reason = p["reason"].as_str().unwrap_or("");
-                let _ = writeln!(out, "{prefix} SUSPENDED   channel={channel} reason={reason:?}");
+                let _ = writeln!(out, "{prefix} {}   channel={channel} reason={reason:?}", c(C_WARN, "SUSPENDED"));
             }
             "delegation" => {
                 let child = short_id(&p["child_trajectory_id"]);
                 let task = p["task"].as_str().unwrap_or("");
-                let _ = writeln!(out, "{prefix} DELEGATION  child={child} task={task:?}");
+                let _ = writeln!(out, "{prefix} {}  child={child} task={task:?}", c(C_VIOLET, "DELEGATION"));
             }
             "branch" => {
                 let src = short_id(&p["source_trajectory_id"]);
                 let commit = short_id(&p["source_commit_id"]);
-                let _ = writeln!(out, "{prefix} BRANCH      from {src}@{commit}");
+                let _ = writeln!(out, "{prefix} {}      from {src}@{commit}", c(C_VIOLET, "BRANCH"));
             }
             other => {
                 let _ = writeln!(out, "{prefix} {other}");
@@ -909,11 +971,15 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
         let verified = r["verified"].as_bool();
         let final_hash = r["final_world_hash"].as_str().unwrap_or("?");
         let head_seq = r["head_seq"].as_u64().unwrap_or(0);
-        let _ = writeln!(out, "replay");
+        let ok = verified != Some(false);
+        let _ = writeln!(out, "{}", c(C_VIOLET_B, "replay"));
         let _ = writeln!(
             out,
-            "  [integrity] {}",
-            if verified == Some(false) { "FAILED" } else { "verified" }
+            "  {}",
+            c(
+                if ok { C_OK } else { C_RED },
+                &format!("[integrity] {}", if ok { "verified" } else { "FAILED" })
+            )
         );
         let _ = writeln!(
             out,
@@ -935,7 +1001,11 @@ pub(crate) fn render_audit(run_id: &str, entries: &[Value], replay: Option<&Valu
         };
         let _ = writeln!(
             out,
-            "result: {commits} commits, {rejections} rejections — {verdict}"
+            "{}",
+            c(
+                if ok { C_OK } else { C_RED },
+                &format!("result: {commits} commits, {rejections} rejections — {verdict}")
+            )
         );
     } else {
         let _ = writeln!(
@@ -975,7 +1045,7 @@ mod audit_tests {
             }}}),
         ];
         let replay = json!({"verified":true,"commits_replayed":2,"rejected_proposals":1,"head_seq":5,"final_world_hash":"f4cfe88219"});
-        let out = render_audit("run-x", &entries, Some(&replay));
+        let out = render_audit("run-x", &entries, Some(&replay), false);
 
         assert!(out.contains("trajectory:       deadbeefcafe0000"));
         assert!(out.contains("ROOT        trajectory bound  \"demo\""));
@@ -1000,8 +1070,8 @@ mod audit_tests {
     fn failed_integrity_and_missing_replay() {
         let entries = vec![json!({"seq":0,"trajectory_id":"aa","payload":{"type":"root","note":"x"}})];
         let failed = json!({"verified":false,"final_world_hash":"z","head_seq":0});
-        assert!(render_audit("r", &entries, Some(&failed)).contains("replay verification FAILED"));
-        assert!(render_audit("r", &entries, None).contains("replay: unavailable"));
+        assert!(render_audit("r", &entries, Some(&failed), false).contains("replay verification FAILED"));
+        assert!(render_audit("r", &entries, None, false).contains("replay: unavailable"));
     }
 }
 
