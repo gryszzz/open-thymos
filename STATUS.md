@@ -66,6 +66,18 @@ never produces a false failure — and proves the real path when you supply it.
   server now logs a `WARNING` at startup in that case and `/health` reports
   `cognition_live: false`. Set a key to make it live; the provider is then
   auto-detected.
+- **Almost any model is selectable via one name.** Native Anthropic + OpenAI
+  adapters, plus a preset registry (`thymos_cognition::presets`) covering the
+  major OpenAI-compatible clouds (`groq`, `openrouter`, `together`, `deepseek`,
+  `mistral`, `xai`, `fireworks`, `nvidia`, `cerebras`, `gemini`, `perplexity`,
+  `huggingface`) and local runtimes (`ollama`, `lmstudio`, `vllm`, `llamacpp`,
+  `localai`). Pick one with `THYMOS_DEFAULT_PROVIDER`, `--provider`, or a
+  `cognition` block; `thymos providers` lists them. Keys are read server-side —
+  only the provider name crosses the wire, and cognition gains no authority
+  (still intents only). The preset registry (name → base URL / key env / model)
+  is unit-tested; the shared OpenAI-compatible request path is covered by the
+  CLI/runtime tests, while **proof against each live vendor is gated** behind its
+  own key (the same posture as `live_provider`).
 - **Postgres is now a selectable HTTP runtime backend (feature-gated).** The
   runtime/ledger trait refactor has landed end to end: `thymos-ledger` defines a
   `LedgerStore` trait; `thymos-runtime`'s `Runtime`/`Run` are generic over it

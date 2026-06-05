@@ -289,6 +289,7 @@ async fn dispatch(
                     max_steps: parsed.max_steps,
                     provider: &parsed.provider,
                     model: parsed.model.as_deref(),
+                    base_url: None,
                     scopes: parsed.scopes.as_deref(),
                 },
             )
@@ -318,6 +319,7 @@ async fn dispatch(
                     max_steps: parsed.max_steps,
                     provider: &parsed.provider,
                     model: parsed.model.as_deref(),
+                    base_url: None,
                     scopes: parsed.scopes.as_deref(),
                 },
             )

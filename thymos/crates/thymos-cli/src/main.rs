@@ -49,6 +49,10 @@ enum Commands {
         /// Model override.
         #[arg(long)]
         model: Option<String>,
+        /// Base URL override for any OpenAI-compatible endpoint (used with
+        /// `--provider openai` / a custom host). Presets set this for you.
+        #[arg(long = "base-url")]
+        base_url: Option<String>,
         /// Tool scopes (comma-separated).
         #[arg(long)]
         scopes: Option<String>,
@@ -102,6 +106,8 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// List supported cognition providers / models (presets + how to start).
+    Providers,
     /// Show API gateway usage stats.
     Usage,
     /// Health check.
@@ -178,6 +184,7 @@ async fn main() {
             max_steps,
             provider,
             model,
+            base_url,
             scopes,
             follow,
         } => {
@@ -191,6 +198,7 @@ async fn main() {
                         max_steps,
                         provider: &provider,
                         model: model.as_deref(),
+                        base_url: base_url.as_deref(),
                         scopes: scopes.as_deref(),
                     },
                     follow,
@@ -224,6 +232,7 @@ async fn main() {
         Commands::Audit { run_id, json } => {
             cmd_audit(&client, &cli.url, cli.api_key.as_deref(), &run_id, json).await
         }
+        Commands::Providers => cmd_providers(),
         Commands::Usage => cmd_usage(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Health => cmd_health(&client, &cli.url).await,
         Commands::Doctor => cmd_doctor(&client, &cli.url, cli.api_key.as_deref()).await,
@@ -401,6 +410,7 @@ pub(crate) struct StartRunOptions<'a> {
     pub(crate) max_steps: u32,
     pub(crate) provider: &'a str,
     pub(crate) model: Option<&'a str>,
+    pub(crate) base_url: Option<&'a str>,
     pub(crate) scopes: Option<&'a str>,
 }
 
@@ -422,6 +432,9 @@ pub(crate) async fn start_run(
         body["cognition"] = serde_json::json!({ "provider": options.provider });
         if let Some(m) = options.model {
             body["cognition"]["model"] = serde_json::json!(m);
+        }
+        if let Some(u) = options.base_url {
+            body["cognition"]["base_url"] = serde_json::json!(u);
         }
     }
     if let Some(s) = options.scopes {
@@ -997,6 +1010,54 @@ pub(crate) async fn cmd_health(client: &reqwest::Client, url: &str) -> Result<()
         .map_err(|e| e.to_string())?;
     let body = json_body_or_error(resp).await?;
     println!("{}", serde_json::to_string_pretty(&body).unwrap());
+    Ok(())
+}
+
+/// List the cognition providers you can drive — the native adapters plus every
+/// OpenAI-compatible preset — and how to start each. Runs fully offline; it
+/// reads the built-in registry, not the server.
+// Literal args are deliberate: this is a width-aligned table, so inlining them
+// into the format string would break the column layout.
+#[allow(clippy::print_literal)]
+pub(crate) fn cmd_providers() -> Result<(), String> {
+    use thymos_cognition::presets;
+
+    brand_banner();
+    println!("{}", paint("1", "Cognition providers — drive (almost) any model"));
+    println!("Cognition only ever proposes intents; the runtime still governs every");
+    println!("effect. API keys are read server-side — a provider name never carries one.");
+    println!();
+
+    println!("{}", paint("1", "Native adapters"));
+    println!("  {:<13} {:<34} {}", "anthropic", "ANTHROPIC_API_KEY", "Claude (native Messages API)");
+    println!("  {:<13} {:<34} {}", "openai", "OPENAI_API_KEY", "OpenAI (OPENAI_BASE_URL for any host)");
+    println!("  {:<13} {:<34} {}", "mock", "(no key)", "deterministic, offline — the default");
+    println!();
+
+    println!("{}", paint("1", "OpenAI-compatible presets — cloud (set the key, go)"));
+    for p in presets::all().iter().filter(|p| !p.local) {
+        println!(
+            "  {:<13} {:<34} e.g. {}",
+            p.id,
+            p.api_key_envs.join(" / "),
+            p.default_model
+        );
+    }
+    println!();
+
+    println!("{}", paint("1", "Local runtimes — no key, just a running server"));
+    for p in presets::all().iter().filter(|p| p.local) {
+        println!("  {:<13} {:<34} e.g. {}", p.id, p.base_url, p.default_model);
+    }
+    println!();
+
+    println!("{}", paint("1", "Start with any of them"));
+    println!("  Make it the server default (every run uses it):");
+    println!("    THYMOS_DEFAULT_PROVIDER=groq GROQ_API_KEY=… cargo run -p thymos-server");
+    println!("  Pick per run:");
+    println!("    thymos run \"…\" --provider openrouter --model openai/gpt-4o-mini");
+    println!("  Point at ANY OpenAI-compatible endpoint:");
+    println!("    thymos run \"…\" --provider openai --base-url https://host/v1 --model my-model");
     Ok(())
 }
 
