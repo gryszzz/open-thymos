@@ -492,8 +492,7 @@ mod tests {
         // succeed (parent.max_depth is 3, far below u32::MAX).
         let err = parent
             .mint_child(child_body, &agent)
-            .err()
-            .expect("u32::MAX child depth must reject");
+            .expect_err("u32::MAX child depth must reject");
         assert!(
             err.to_string().contains("delegation depth"),
             "expected delegation-depth rejection, got: {err}"

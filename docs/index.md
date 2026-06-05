@@ -7,6 +7,8 @@ permalink: /
 ---
 
 <section class="hero">
+  <div class="hero-canvas" id="hero-canvas" aria-hidden="true"></div>
+
   <div class="hero-eyebrow">
     <span class="dot"></span>
     OPENTHYMOS · GOVERNED EXECUTION RUNTIME

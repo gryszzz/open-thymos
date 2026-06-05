@@ -500,6 +500,9 @@ impl SqliteLedger {
 /// `verify_integrity`, and `anchor` use the trait defaults — identical to the
 /// inherent versions, which are themselves defined over `entries`/`head`.
 impl crate::LedgerStore for SqliteLedger {
+    fn backend(&self) -> &'static str {
+        "sqlite"
+    }
     fn append_root(&self, trajectory_id: TrajectoryId, note: &str) -> Result<Entry> {
         SqliteLedger::append_root(self, trajectory_id, note)
     }

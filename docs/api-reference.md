@@ -12,7 +12,26 @@ Base URL: `http://localhost:3001`
 
 ### GET /health
 
-Returns server liveness and runtime mode.
+Returns liveness plus the runtime facts an operator should not have to infer:
+
+```json
+{
+  "status": "ok",
+  "mode": "reference",
+  "default_provider": "mock",
+  "cognition_live": false,
+  "ledger": "sqlite",
+  "shutdown": false
+}
+```
+
+Use `cognition_live` to distinguish a real model from the deterministic mock,
+`mode` to distinguish the `reference` runtime from `production`, and `ledger`
+to confirm which durable backend is actually live (`"sqlite"` or `"postgres"`).
+Postgres is used only when the binary is built with `--features postgres` *and*
+`THYMOS_POSTGRES_URL` is set; otherwise the runtime falls back to SQLite. See
+[STATUS.md](https://github.com/gryszzz/open-thymos/blob/main/STATUS.md) for the
+gated `live_provider` / `postgres_integration` proofs.
 
 ## Runs
 

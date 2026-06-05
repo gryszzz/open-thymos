@@ -307,7 +307,9 @@ THYMOS_POSTGRES_URL=postgres://thymos:thymos@localhost:5432/thymos \
 ```
 
 The startup log prints `ledger: postgres (synchronous blocking facade) at …`
-when it connects. Notes:
+when it connects, and `GET /health` reports `"ledger":"postgres"` (it reads
+`"sqlite"` otherwise) — so you can confirm the durable backend that's *actually*
+live, not just configured. Notes:
 
 - Without the `postgres` feature, `THYMOS_POSTGRES_URL` is ignored — the server
   logs a note and stays on SQLite. The **default build compiles no Postgres

@@ -167,3 +167,20 @@ talk to a real model.
 
 The runtime, ledger, policy, and tool surface do not change. Only the
 proposer does.
+
+## Confirming which provider resolved
+
+A run can override the provider for that run via its own `cognition` block, so
+the configured default is not always the whole story. To see what the server
+actually resolved as its default, check `/health`:
+
+```bash
+curl http://localhost:3001/health
+# default_provider: "mock" | "anthropic" | "openai" | ...
+# cognition_live:   false when the default provider is mock
+# ledger:           "sqlite" | "postgres" — the durable backend actually live
+```
+
+`cognition_live` is the honest signal: when it is `false`, any run that omits
+its own `cognition` block is answered by the deterministic mock, not a real
+model.

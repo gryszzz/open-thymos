@@ -276,9 +276,13 @@ cargo test --workspace
 ```
 
 Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
-see **[Getting Started](docs/getting-started.md)**. The remaining gated proofs
-(live-model cognition and `postgres_integration` against a real database) run in
-CI when their secrets are present; see [STATUS.md](STATUS.md).
+see **[Getting Started](docs/getting-started.md)**. The remaining external-resource
+proofs (`live_provider` and `postgres_integration`) run when their secrets are
+present; see [STATUS.md](STATUS.md).
+
+The Postgres HTTP runtime path is active only when the server is built with
+`--features postgres` *and* `THYMOS_POSTGRES_URL` is set; otherwise it falls
+back to SQLite. Confirm the live backend in `/health` via `"ledger":"postgres"`.
 
 ### Use (almost) any model
 
