@@ -4,11 +4,11 @@
    ============================================================ */
 
 :root {
-  --bg:          #05070b;
-  --bg-2:        #0a0d13;
-  --bg-3:        #0f131b;
-  --surface:     #10141c;
-  --surface-2:   #151a24;
+  --bg:          #08040f;
+  --bg-2:        #0d0717;
+  --bg-3:        #120b20;
+  --surface:     #140e22;
+  --surface-2:   #1b1230;
   --border:      rgba(255, 255, 255, 0.08);
   --border-2:    rgba(255, 255, 255, 0.14);
   --text:        #e7ecf3;
@@ -16,12 +16,12 @@
   --text-soft:   #6d7789;
   --mute:        #4a5362;
 
-  --accent:      #ffb547;           /* amber */
-  --accent-2:    #ff9a2f;           /* darker amber */
-  --accent-3:    #ffe1a8;           /* soft amber */
+  --accent:      #a855f7;           /* violet — brand */
+  --accent-2:    #7c3aed;           /* deep violet */
+  --accent-3:    #d9bcff;           /* soft lavender */
   --violet:      #8b5cf6;
   --violet-soft: #b998ff;
-  --cyan:        #4de0c4;
+  --cyan:        #8be9ff;
   --red:         #ff6f6f;
 
   --radius:       8px;
@@ -30,7 +30,7 @@
 
   --shadow-sm:   0 1px 2px rgba(0,0,0,.35);
   --shadow-md:   0 8px 24px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.03) inset;
-  --shadow-glow: 0 0 0 1px rgba(255,181,71,.35), 0 12px 48px rgba(255,154,47,.15);
+  --shadow-glow: 0 0 0 1px rgba(168,85,247,.35), 0 12px 48px rgba(124,58,237,.15);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -55,7 +55,7 @@ html, body {
 
 body {
   background:
-    linear-gradient(180deg, rgba(18, 24, 33, 0.62), rgba(5, 7, 11, 0.98) 36%, var(--bg)),
+    linear-gradient(180deg, rgba(30, 17, 49, 0.66), rgba(8, 4, 15, 0.98) 36%, var(--bg)),
     var(--bg);
 }
 
@@ -76,8 +76,8 @@ code, pre, kbd { font-family: var(--font-mono); }
   background-image:
     linear-gradient(to right, rgba(255,255,255,0.026) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255,255,255,0.026) 1px, transparent 1px),
-    linear-gradient(to right, rgba(255,181,71,0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,181,71,0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(168,85,247,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168,85,247,0.05) 1px, transparent 1px);
   background-size: 56px 56px, 56px 56px, 224px 224px, 224px 224px;
   -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
   mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .42) 64%, transparent 100%);
@@ -112,7 +112,7 @@ main, header.nav, footer.footer { position: relative; z-index: 1; }
 
 .nav-mark {
   border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(255,181,71,.35), 0 0 18px rgba(255,181,71,.18);
+  box-shadow: 0 0 0 1px rgba(168,85,247,.35), 0 0 18px rgba(168,85,247,.18);
 }
 
 .nav-wordmark { color: var(--text); }
@@ -161,13 +161,13 @@ main, header.nav, footer.footer { position: relative; z-index: 1; }
 .btn:active { transform: translateY(1px); }
 
 .btn-primary {
-  color: #111418;
-  background: linear-gradient(180deg, #ffc568, #ff9a2f);
-  box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 8px 20px rgba(255,154,47,.28);
+  color: #fff;
+  background: linear-gradient(180deg, #c77dff, #7c3aed);
+  box-shadow: 0 1px 0 rgba(255,255,255,.25) inset, 0 8px 20px rgba(124,58,237,.28);
 }
 .btn-primary:hover {
-  box-shadow: 0 1px 0 rgba(255,255,255,.3) inset, 0 10px 26px rgba(255,154,47,.36);
-  color: #111418;
+  box-shadow: 0 1px 0 rgba(255,255,255,.3) inset, 0 10px 26px rgba(124,58,237,.36);
+  color: #fff;
 }
 .btn-ghost {
   color: var(--text);
@@ -258,7 +258,7 @@ main.page {
   margin: 22px 0;
   padding: 14px 18px;
   border-left: 2px solid var(--accent);
-  background: rgba(255,181,71,0.05);
+  background: rgba(168,85,247,0.05);
   border-radius: 0 10px 10px 0;
   color: var(--text);
 }
@@ -398,7 +398,7 @@ main.page {
 }
 .hero h1 em {
   font-style: normal;
-  background: linear-gradient(180deg, #ffe4b8 0%, #ffb547 70%, #ff8a1a 100%);
+  background: linear-gradient(180deg, #e7d2ff 0%, #a855f7 70%, #7b2fe0 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -454,8 +454,8 @@ main.page {
   content: "";
   position: absolute; inset: 0;
   background:
-    linear-gradient(rgba(255,181,71,.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,181,71,.055) 1px, transparent 1px);
+    linear-gradient(rgba(168,85,247,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168,85,247,.055) 1px, transparent 1px);
   background-size: 36px 36px;
   pointer-events: none;
   opacity: .7;
@@ -573,10 +573,10 @@ main.page {
   width: 34px; height: 34px;
   display: grid; place-items: center;
   border-radius: 8px;
-  background: rgba(255,181,71,.14);
+  background: rgba(168,85,247,.14);
   color: var(--accent);
   margin-bottom: 12px;
-  border: 1px solid rgba(255,181,71,.25);
+  border: 1px solid rgba(168,85,247,.25);
 }
 .fcard h3 {
   font-size: 16px; margin: 0 0 6px; color: var(--text); font-weight: 600;
@@ -622,8 +622,8 @@ main.page {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.00)),
-    linear-gradient(rgba(255,181,71,.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,181,71,.05) 1px, transparent 1px);
+    linear-gradient(rgba(168,85,247,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168,85,247,.05) 1px, transparent 1px);
   background-size: auto, 48px 48px, 48px 48px;
   border: 1px solid var(--border-2);
   text-align: center;
