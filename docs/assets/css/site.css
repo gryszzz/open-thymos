@@ -102,31 +102,39 @@ main, header.nav, footer.footer { position: relative; z-index: 1; }
 
 .nav-brand {
   display: flex; align-items: center;
-  gap: 10px;
+  gap: 13px;
   color: var(--text);
   font-weight: 600;
   letter-spacing: 0.14em;
-  font-size: 13px;
+  font-size: 14px;
 }
 .nav-brand:hover { color: var(--text); }
 
 .nav-mark {
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(168,85,247,.35), 0 0 18px rgba(168,85,247,.18);
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(168,85,247,.35), 0 0 22px rgba(168,85,247,.22);
 }
 
-.nav-wordmark { color: var(--text); }
+.nav-wordmark {
+  color: var(--text);
+  font-size: 15.5px;
+  letter-spacing: .2em;
+}
 
+/* "runtime" — a quiet label beside the wordmark, not a cramped box */
 .nav-pill {
   display: inline-flex; align-items: center;
-  height: 20px; padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-2);
-  background: rgba(255,255,255,0.02);
-  color: var(--text-dim);
-  font-size: 10.5px;
-  letter-spacing: .12em;
+  color: var(--text-soft);
+  font-size: 11px;
+  letter-spacing: .18em;
   text-transform: uppercase;
+}
+.nav-pill::before {
+  content: "";
+  width: 1px; height: 14px;
+  margin-right: 11px;
+  background: var(--border-2);
 }
 
 .nav-links {
@@ -759,25 +767,33 @@ main.page {
 
 @media (max-width: 900px) {
   .nav-links, .nav-cta { display: none; }
-  .nav-toggle { display: flex; }
-  .nav.is-open .nav-links {
-    display: flex;
-    position: absolute;
-    top: var(--nav-h);
-    left: 0; right: 0;
-    flex-direction: column;
-    gap: 0;
-    padding: 14px 18px 22px;
-    background: rgba(5,7,11,0.95);
-    border-bottom: 1px solid var(--border);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+  /* Bug fix: keep the toggle pinned to the right edge of the bar */
+  .nav-toggle { display: flex; order: 1; margin-left: auto; }
+
+  /* Open: the bar expands and links + CTAs stack full-width below the brand */
+  .nav.is-open {
+    height: auto;
+    flex-wrap: wrap;
+    padding-bottom: 14px;
+    background: rgba(5,7,11,0.96);
   }
+  .nav.is-open .nav-links,
+  .nav.is-open .nav-cta {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0;
+    gap: 0;
+  }
+  .nav.is-open .nav-links { order: 2; margin-top: 8px; }
   .nav.is-open .nav-links a {
-    padding: 10px 0;
+    padding: 11px 2px;
     border-bottom: 1px solid var(--border);
     font-size: 15px;
   }
+  /* Bug fix: CTAs (GitHub / Start local) were unreachable on mobile */
+  .nav.is-open .nav-cta { order: 3; gap: 10px; margin-top: 12px; }
+  .nav.is-open .nav-cta .btn { width: 100%; justify-content: center; height: 42px; }
   .triad, .cards, .providers, .footer {
     grid-template-columns: 1fr;
   }
