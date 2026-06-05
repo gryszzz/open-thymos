@@ -178,6 +178,7 @@ actually resolved as its default, check `/health`:
 curl http://localhost:3001/health
 # default_provider: "mock" | "anthropic" | "openai" | ...
 # cognition_live:   false when the default provider is mock
+# ledger:           "sqlite" | "postgres" — the durable backend actually live
 ```
 
 `cognition_live` is the honest signal: when it is `false`, any run that omits
