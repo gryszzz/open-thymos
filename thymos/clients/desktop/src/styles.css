@@ -27,10 +27,17 @@ body {
 .topbar {
   display: flex; align-items: center; gap: 16px;
   padding: 10px 16px;
-  background: var(--panel);
+  background: linear-gradient(180deg, #181232 0%, var(--panel) 100%);
   border-bottom: 1px solid var(--line);
 }
-.brand { font-weight: 700; letter-spacing: 1px; color: var(--violet); }
+.brandwrap { display: flex; align-items: center; gap: 11px; }
+.brandlogo {
+  width: 34px; height: 34px; border-radius: 8px;
+  box-shadow: 0 0 14px rgba(124, 92, 255, .45);
+}
+.brandtext { display: flex; flex-direction: column; line-height: 1.15; }
+.brand { font-weight: 800; letter-spacing: 1.5px; color: var(--violet); font-size: 15px; }
+.tagline { font-size: 10.5px; color: var(--muted); letter-spacing: .2px; }
 .status { display: flex; align-items: center; gap: 10px; color: var(--muted); }
 .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
@@ -70,6 +77,12 @@ h2 { margin: 4px 0 12px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 12px; min-height: 360px; max-height: 58vh; overflow: auto;
   font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+}
+.welcome { padding: 18px 6px; }
+.spine {
+  color: var(--cyan); font-weight: 700; letter-spacing: .5px;
+  padding: 10px 12px; margin-bottom: 12px; border-radius: 8px;
+  background: rgba(69, 224, 255, .06); border: 1px solid var(--line);
 }
 .hint, .note { color: var(--muted); }
 .note { font-size: 12.5px; margin-top: 10px; }

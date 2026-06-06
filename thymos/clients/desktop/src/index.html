@@ -9,7 +9,13 @@
   <body>
     <!-- Top bar: identity + the governance "is it live" truth from /health -->
     <header class="topbar">
-      <div class="brand">◆ OPEN&nbsp;THYMOS</div>
+      <div class="brandwrap">
+        <img class="brandlogo" src="logo.png" alt="OpenThymos" />
+        <div class="brandtext">
+          <div class="brand">OPEN&nbsp;THYMOS</div>
+          <div class="tagline">cognition proposes · the runtime governs · the ledger records</div>
+        </div>
+      </div>
       <div class="status" id="status">
         <span id="dot" class="dot dot-off"></span>
         <span id="statusText">runtime: stopped</span>
@@ -35,10 +41,14 @@
       <!-- CHAT: a message starts a governed run; the reply IS the verdict feed -->
       <section class="panel active" id="tab-chat">
         <div class="feed" id="chatFeed">
-          <div class="hint">
-            Start the runtime, then send a task. Each message becomes a governed
-            run — you'll watch every <b>intent</b>, <b>verdict</b>, and
-            <b>commit</b>. Risky steps suspend for your approval.
+          <div class="welcome">
+            <div class="spine">◆ Intent&nbsp;&nbsp;▸ Proposal&nbsp;&nbsp;✓ Commit&nbsp;&nbsp;✕ Rejected&nbsp;&nbsp;⏸ Suspended</div>
+            <p class="hint">
+              Press <b>Start runtime</b>, then send a task. Each message becomes a
+              <b>governed run</b> — you watch every intent, the runtime's verdict, and
+              each commit, with replay proof. A model can propose anything; only an
+              authorized proposal ever executes. Risky steps suspend for your approval.
+            </p>
           </div>
         </div>
         <form class="composer" id="composer">
