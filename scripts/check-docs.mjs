@@ -140,11 +140,18 @@ for (const filePath of markdownFiles) {
     }
 
     if (resolved.anchor) {
-      const anchors = collectAnchors(resolved.resolvedPath);
-      if (!anchors.has(resolved.anchor)) {
-        errors.push(
-          `${relativePath}: missing anchor #${resolved.anchor} in ${path.relative(repoRoot, resolved.resolvedPath)}`,
-        );
+      // Heading anchors only exist in prose. For source files, `#L99` /
+      // `#L99-L120` are GitHub line anchors (valid on the web, no heading to
+      // match), so accept those without trying to resolve a heading.
+      const isProseTarget = /\.(md|html)$/i.test(resolved.resolvedPath);
+      const isLineAnchor = /^L\d+(-L\d+)?$/.test(resolved.anchor);
+      if (isProseTarget && !isLineAnchor) {
+        const anchors = collectAnchors(resolved.resolvedPath);
+        if (!anchors.has(resolved.anchor)) {
+          errors.push(
+            `${relativePath}: missing anchor #${resolved.anchor} in ${path.relative(repoRoot, resolved.resolvedPath)}`,
+          );
+        }
       }
     }
   }
