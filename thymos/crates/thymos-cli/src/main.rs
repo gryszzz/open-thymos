@@ -108,6 +108,8 @@ enum Commands {
     },
     /// List supported cognition providers / models (presets + how to start).
     Providers,
+    /// List the real-world actions (tools) the agent can take, by effect class.
+    Tools,
     /// Show API gateway usage stats.
     Usage,
     /// Health check.
@@ -245,6 +247,7 @@ async fn main() {
             cmd_audit(&client, &cli.url, cli.api_key.as_deref(), &run_id, json).await
         }
         Commands::Providers => cmd_providers(),
+        Commands::Tools => cmd_tools(),
         Commands::Usage => cmd_usage(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Health => cmd_health(&client, &cli.url).await,
         Commands::Doctor => cmd_doctor(&client, &cli.url, cli.api_key.as_deref()).await,
@@ -493,6 +496,7 @@ fn cmd_home(url: &str) {
 
     home_section("MORE");
     home_row("thymos providers", "list models / presets (anthropic, openai, local…)");
+    home_row("thymos tools", "real-world actions: shell, http, fs, mcp… + effect class");
     home_row("thymos health", "server liveness · live-vs-mock · ledger backend");
     home_row("thymos shell", "interactive session (type `health`, `run \"…\"`)");
 
@@ -608,6 +612,82 @@ fn cmd_setup(init: bool) -> Result<(), String> {
         );
     }
     println!();
+    Ok(())
+}
+
+/// `thymos tools` — the catalog of real-world actions the agent can take,
+/// grouped by effect class. Pure print; mirrors the built-in tool registry.
+fn cmd_tools() -> Result<(), String> {
+    brand_banner();
+    println!("  {}", paint(C_VIOLET_B, "Real-world actions the agent can take"));
+    println!(
+        "  {}",
+        paint(C_DIM, "Every tool call is checked against the run's writ effect ceiling")
+    );
+    println!(
+        "  {}",
+        paint(C_DIM, "(Read ≤ Write ≤ External ≤ Irreversible) BEFORE it executes.")
+    );
+
+    let group = |title: &str, sub: &str, rows: &[(&str, &str)]| {
+        println!();
+        println!("  {}  {}", paint(C_VIOLET_B, title), paint(C_DIM, sub));
+        for (name, desc) in rows {
+            println!(
+                "    {}{}",
+                paint(C_VIOLET, format!("{name:<14}")),
+                paint(C_DIM, desc)
+            );
+        }
+    };
+
+    group(
+        "READ",
+        "no side effects",
+        &[
+            ("fs_read", "read a file"),
+            ("list_files", "list a directory"),
+            ("repo_map", "structural map of a repo"),
+            ("grep", "search file contents"),
+            ("kv_get", "read run state"),
+            ("memory_recall", "recall agent memory"),
+        ],
+    );
+    group(
+        "WRITE",
+        "local state / files",
+        &[
+            ("fs_patch", "edit a file (diff-applied)"),
+            ("kv_set", "set run state"),
+            ("memory_store", "persist agent memory"),
+            ("delegate", "spawn a sub-agent (writ ⊆ parent)"),
+        ],
+    );
+    group(
+        "EXTERNAL",
+        "network / processes — the real world",
+        &[
+            ("http", "call any HTTP API / URL"),
+            ("shell", "run a shell command"),
+            ("test_run", "run the project's tests"),
+            ("mcp_*", "bridge ANY MCP server (DBs, browsers, SaaS…)"),
+        ],
+    );
+
+    println!();
+    println!("  {}", paint(C_VIOLET_B, "Grant + extend"));
+    println!(
+        "    {}",
+        paint(C_DIM, "Grant per run:  thymos run \"…\" --scopes fs_read,fs_patch,shell")
+    );
+    println!(
+        "    {}",
+        paint(C_DIM, "Add your own:   manifest tools + MCP servers via the marketplace")
+    );
+    println!(
+        "    {}",
+        paint(C_DIM, "Irreversible-class tools suspend for human approval before running.")
+    );
     Ok(())
 }
 
