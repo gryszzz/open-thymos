@@ -265,7 +265,11 @@ thymos replay <run-id>          # verify the ledger folds to its world
 
 <div align="center">
 
-[![Download the latest release](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20Download%20OpenThymos&color=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+[![Download OpenThymos](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20DOWNLOAD%20OPENTHYMOS&color=7c5cff&labelColor=1c1738)](https://github.com/gryszzz/open-thymos/releases/latest)
+
+[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+&nbsp;[![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+&nbsp;[![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
 
 </div>
 
