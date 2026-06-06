@@ -218,68 +218,60 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 
 ## Quick Start
 
-**Fastest path — one command.** Builds the server, drives one governed run end to
-end (Intent → Proposal → Commit), prints the world projection, and shuts down.
-[`scripts/quickstart.sh`](scripts/quickstart.sh) is the real onboarding:
+Five steps. The default model is an offline **mock**, so steps 1–2 need no keys.
+
+**1 · Install the `thymos` command**
 
 ```bash
-# A) Local proof, no secrets (deterministic mock provider)
-./scripts/quickstart.sh
-# Expected: provider=mock, one run completes, final world projection prints.
-
-# B) Live cognition proof (real model)
-ANTHROPIC_API_KEY=sk-ant-... ./scripts/quickstart.sh "Map the repo and summarize the runtime"
-# Expected: /health shows the live provider; a committed run exists; the world reflects it.
+cargo install --path thymos/crates/thymos-cli
+thymos          # ← the home screen: what it does, every command, example tasks
 ```
 
-**What this proves:** an intent enters through `/runs`; the runtime governs
-(writ / effect / budget / policy) *before* any commit; the ledger records the
-run; `/health` reports whether cognition is live or mock.
-
-**Manual path.** Start the runtime once, then attach from any client (CLI, web
-console, VS Code, terminal) — they all observe the same run state:
+**2 · Start the runtime** (in its own terminal)
 
 ```bash
 cd thymos
-cargo run -p thymos-server          # http://localhost:3001 — mock cognition by default
+cargo run -p thymos-server      # http://localhost:3001 · mock model by default, no key needed
 ```
+
+**3 · Connect a real model** *(optional — mock works offline)*
 
 ```bash
-# In another terminal: drive a run and follow it live. --provider defaults to
-# `auto`, which uses whatever the server resolved (mock until you set a key).
-cd thymos
-cargo run -p thymos-cli -- run "Map the repo and summarize the runtime" --follow
-
-# The whole governance trail for a run: commits, rejections, the policy
-# decision per action, and a replay-verification verdict.
-cargo run -p thymos-cli -- audit <run_id>
-
-# Fold a run's ledger to its world; check which provider is actually live.
-cargo run -p thymos-cli -- replay <run_id> --verify
-cargo run -p thymos-cli -- doctor
+thymos setup                    # shows every option: API keys + local LLMs
+thymos use openai               # or anthropic · groq · ollama · gemini · … then add the key it names
+# restart the server so it picks the model up
 ```
 
-Install the `thymos` shorthand with `cargo install --path thymos/crates/thymos-cli`.
+**4 · Give it a task and watch it work**
 
-**Multi-agent delegation is demonstrable** — a parent mints a child writ ⊆ its own
-authority, the child runs on its own trajectory, the ledger shows the lineage, and
-replay reconstructs both:
+```bash
+thymos run "Map this repo and summarize how the runtime boundary works" --follow --scopes fs_read,grep
+```
+
+You'll watch **Intent → Proposal → Commit** stream live, then a summary. `thymos tools`
+lists every real-world action the agent can take (shell, http, fs, mcp…).
+
+**5 · See the governance**
+
+```bash
+thymos audit  <run-id>          # the full trail: each action, its policy verdict, + replay proof
+thymos replay <run-id>          # verify the ledger folds to its world
+```
+
+> **In a hurry?** `./scripts/quickstart.sh` runs one governed end-to-end proof with the
+> offline mock — no install, no keys. Pass a task + `ANTHROPIC_API_KEY=…` to prove it on a real model.
+
+**Multi-agent delegation** — a parent mints a child writ ⊆ its own authority, the
+child runs on its own trajectory, the ledger shows the lineage, replay reconstructs both:
 
 ```bash
 cargo run --example delegation_lineage -p thymos-runtime   # see docs/demos/delegation-lineage.md
 ```
 
-**Verify everything** (default: mock cognition, SQLite, governance enforced):
-
-```bash
-cd thymos
-cargo test --workspace
-```
-
-Run it on a real model, on a **Postgres** ledger, or in production-shaped mode —
-see **[Getting Started](docs/getting-started.md)**. The remaining external-resource
-proofs (`live_provider` and `postgres_integration`) run when their secrets are
-present; see [STATUS.md](STATUS.md).
+**Verify everything** (mock cognition, SQLite, governance enforced): `cd thymos && cargo test --workspace`.
+Run it on a real model, a **Postgres** ledger, or production-shaped mode — see
+**[Getting Started](docs/getting-started.md)**. Gated proofs (`live_provider`,
+`postgres_integration`) run when their secrets are present; see [STATUS.md](STATUS.md).
 
 The Postgres HTTP runtime path is active only when the server is built with
 `--features postgres` *and* `THYMOS_POSTGRES_URL` is set; otherwise it falls
