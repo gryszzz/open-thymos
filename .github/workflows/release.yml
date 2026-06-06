@@ -130,3 +130,122 @@ jobs:
 
             Binaries attached for linux/x86_64, darwin/arm64, darwin/x86_64, windows/x86_64.
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for setup.
+
+  # ---------------------------------------------------------------------------
+  # Desktop installers (.dmg / .msi / .AppImage) for OpenThymos Desktop.
+  # UNTESTED in CI to date — the Tauri app is a scaffold (docs/rfcs/desktop-app.md).
+  # Safe by construction: continue-on-error + APPENDS bundles to the existing
+  # release, so a desktop build failure can never break the binary/container
+  # release above. Bundles are currently UNSIGNED (Gatekeeper/SmartScreen will
+  # warn); add Apple Developer ID + Windows certs as secrets to notarize/sign.
+  # ---------------------------------------------------------------------------
+  desktop:
+    name: Desktop installer (${{ matrix.os }})
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Linux webview deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install app deps + icons
+        working-directory: thymos/clients/desktop
+        run: |
+          npm install
+          npm run icon
+      - name: Build bundles
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: thymos/clients/desktop
+      - name: Append installers to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.dmg
+            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.msi
+            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.AppImage
+
+  # ---------------------------------------------------------------------------
+  # Homebrew tap update: `brew install <owner>/tap/thymos`.
+  # GUARDED — cleanly skips (a green no-op) until you create an
+  # `<owner>/homebrew-tap` repo and add a HOMEBREW_TAP_TOKEN secret (a PAT with
+  # write access to that tap repo). Then this regenerates the formula from the
+  # published release tarballs on every tag.
+  # ---------------------------------------------------------------------------
+  homebrew:
+    name: Update Homebrew tap
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on tap token
+        id: gate
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::HOMEBREW_TAP_TOKEN not set — skipping Homebrew tap update (expected until the tap is configured)."
+          fi
+      - name: Render formula and push to tap
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          VER: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/$OWNER/open-thymos/releases/download/$VER"
+          sha() { curl -fsSL "$base/$1" | sha256sum | cut -d' ' -f1; }
+          ARM=$(sha "thymos-$VER-aarch64-apple-darwin.tar.gz")
+          INTEL=$(sha "thymos-$VER-x86_64-apple-darwin.tar.gz")
+          LINUX=$(sha "thymos-$VER-x86_64-unknown-linux-gnu.tar.gz")
+          git clone "https://x-access-token:$TAP_TOKEN@github.com/$OWNER/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cat > tap/Formula/thymos.rb <<RB
+          class Thymos < Formula
+            desc "Governed-cognition runtime — Intent → Proposal → Commit"
+            homepage "https://github.com/$OWNER/open-thymos"
+            version "${VER#v}"
+            on_macos do
+              on_arm do
+                url "$base/thymos-$VER-aarch64-apple-darwin.tar.gz"
+                sha256 "$ARM"
+              end
+              on_intel do
+                url "$base/thymos-$VER-x86_64-apple-darwin.tar.gz"
+                sha256 "$INTEL"
+              end
+            end
+            on_linux do
+              url "$base/thymos-$VER-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "$LINUX"
+            end
+            def install
+              bin.install "thymos", "thymos-server"
+            end
+            test do
+              system "#{bin}/thymos", "--help"
+            end
+          end
+          RB
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/thymos.rb
+          git commit -m "thymos $VER" || { echo "no change"; exit 0; }
+          git push

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenThymos</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Top bar: identity + the governance "is it live" truth from /health -->
+    <header class="topbar">
+      <div class="brand">◆ OPEN&nbsp;THYMOS</div>
+      <div class="status" id="status">
+        <span id="dot" class="dot dot-off"></span>
+        <span id="statusText">runtime: stopped</span>
+        <span id="provider" class="pill">provider: —</span>
+        <span id="ledger" class="pill">ledger: —</span>
+      </div>
+      <div class="controls">
+        <button id="startBtn">Start runtime</button>
+        <button id="stopBtn" class="ghost">Stop</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="chat">◆ Chat</button>
+      <button class="tab" data-tab="runs">▸ Runs</button>
+      <button class="tab" data-tab="providers">⚙ Providers</button>
+      <button class="tab" data-tab="tools">🧰 Tools</button>
+      <button class="tab" data-tab="audit">📜 Audit</button>
+      <button class="tab" data-tab="backups">💾 Backups</button>
+    </nav>
+
+    <main>
+      <!-- CHAT: a message starts a governed run; the reply IS the verdict feed -->
+      <section class="panel active" id="tab-chat">
+        <div class="feed" id="chatFeed">
+          <div class="hint">
+            Start the runtime, then send a task. Each message becomes a governed
+            run — you'll watch every <b>intent</b>, <b>verdict</b>, and
+            <b>commit</b>. Risky steps suspend for your approval.
+          </div>
+        </div>
+        <form class="composer" id="composer">
+          <input id="taskInput" autocomplete="off"
+            placeholder="e.g. summarize the repo and open a PR" />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+
+      <!-- RUNS: history from GET /runs -->
+      <section class="panel" id="tab-runs">
+        <div class="panel-head">
+          <h2>Runs</h2>
+          <button class="ghost" id="refreshRuns">Refresh</button>
+        </div>
+        <div id="runsList" class="list"></div>
+      </section>
+
+      <!-- PROVIDERS: /health truth + how to set a key -->
+      <section class="panel" id="tab-providers">
+        <div class="panel-head"><h2>Providers</h2>
+          <button class="ghost" id="refreshHealth">Refresh</button></div>
+        <div id="providerCard" class="card"></div>
+        <p class="note">
+          Keys are read <b>server-side</b> — only the provider name crosses the
+          wire, and cognition gains no execution authority. Set
+          <code>ANTHROPIC_API_KEY</code> (or another provider's key) in the
+          environment the runtime starts in. With no key the runtime answers with
+          the deterministic <b>mock</b> — real governance, no real model.
+        </p>
+      </section>
+
+      <!-- TOOLS: marketplace catalog (read-only v1) -->
+      <section class="panel" id="tab-tools">
+        <div class="panel-head"><h2>Tools</h2>
+          <button class="ghost" id="refreshTools">Refresh</button></div>
+        <div id="toolsList" class="list"></div>
+        <p class="note">
+          Every tool call is checked against the writ's effect ceiling
+          (Read ≤ Write ≤ External ≤ Irreversible) <b>before</b> it runs.
+        </p>
+      </section>
+
+      <!-- AUDIT: ledger entries + replay verdict for a run -->
+      <section class="panel" id="tab-audit">
+        <div class="panel-head"><h2>Audit</h2></div>
+        <form id="auditForm" class="inline-form">
+          <input id="auditRunId" placeholder="run id" />
+          <button type="submit">Load trail</button>
+        </form>
+        <div id="replayBadge"></div>
+        <div id="auditTrail" class="list"></div>
+      </section>
+
+      <!-- BACKUPS: thin — explained honestly, no fake one-click yet -->
+      <section class="panel" id="tab-backups">
+        <div class="panel-head"><h2>Backups</h2></div>
+        <div class="card">
+          <p>
+            The ledger is a single content-addressed, hash-chained SQLite file.
+            A backup is a copy of that file; integrity is re-verifiable with
+            <code>thymos replay &lt;run&gt; --verify</code> or the runtime's
+            <code>verify_integrity</code>.
+          </p>
+          <p class="note">
+            One-click backup/restore + a chain-head integrity report is a v1
+            task wired to the runtime's file path — tracked in
+            <code>docs/rfcs/desktop-app.md §3</code>. Until then this tab tells
+            you the truth instead of pretending.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>

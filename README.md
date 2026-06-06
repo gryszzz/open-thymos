@@ -2,7 +2,7 @@
 
 <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 
-[![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
+[![Download](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20Download&color=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
 # open-thymos
 
@@ -260,6 +260,54 @@ thymos replay <run-id>          # verify the ledger folds to its world
 
 > **In a hurry?** `./scripts/quickstart.sh` runs one governed end-to-end proof with the
 > offline mock — no install, no keys. Pass a task + `ANTHROPIC_API_KEY=…` to prove it on a real model.
+
+### Download — prebuilt binaries (no toolchain)
+
+<div align="center">
+
+[![Download the latest release](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20Download%20OpenThymos&color=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+
+</div>
+
+Prebuilt `thymos` (CLI) + `thymos-server` (runtime) for macOS, Linux, and
+Windows ship on every tagged [release](https://github.com/gryszzz/open-thymos/releases/latest).
+No Rust, no clone, no compile.
+
+**One line (macOS / Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | sh
+# installs to ~/.local/bin · pin a version with THYMOS_VERSION=v0.5.0
+# privacy: fetches only from github.com — no telemetry, no phone-home
+```
+
+**Or grab a binary directly** from the
+[latest release](https://github.com/gryszzz/open-thymos/releases/latest):
+macOS (Apple Silicon / Intel), Linux (x86_64), Windows (x86_64). Unpack and run
+`thymos-server`, then `thymos shell`.
+
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install gryszzz/tap/thymos
+```
+
+**Docker:**
+
+```bash
+docker run --rm -p 3001:3001 ghcr.io/gryszzz/openthymos-runtime:latest
+```
+
+### Desktop app — in progress
+
+A double-click **OpenThymos Desktop** (one install: provider setup, chat
+sessions, tools, logs, audit, backups) is being built as a Tauri app that
+supervises the runtime locally — *your keys never leave your machine, no
+phone-home*. It's a **client** of the same governed API as every other surface,
+so it can't bypass the `Intent → Proposal → Commit` boundary. Scope and honest
+feature-by-feature status: **[docs/rfcs/desktop-app.md](docs/rfcs/desktop-app.md)**.
+The Download button above is the terminal runtime today; the desktop GUI installer
+(`.dmg` / `.msi` / `.AppImage`) lands here once it's signed and released.
 
 **Multi-agent delegation** — a parent mints a child writ ⊆ its own authority, the
 child runs on its own trajectory, the ledger shows the lineage, replay reconstructs both:
