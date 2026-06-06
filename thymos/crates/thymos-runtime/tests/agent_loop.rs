@@ -72,6 +72,58 @@ fn mk_intent(target: &str, args: serde_json::Value, nonce: u8) -> CoreIntent {
 }
 
 #[test]
+fn concurrent_runs_same_task_distinct_writs_no_collision() {
+    // Load/race harden: fire many runs of the SAME task concurrently against a
+    // shared runtime (ledger is Mutex<Connection>). Each mints its own writ, so
+    // all must succeed with distinct trajectories — no (trajectory_id, seq)
+    // collision and no torn appends under contention.
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::thread;
+
+    let runtime = Arc::new(build_runtime());
+    let task = "concurrent identical task";
+    let n: u8 = 16;
+
+    let handles: Vec<_> = (0..n)
+        .map(|i| {
+            let rt = Arc::clone(&runtime);
+            thread::spawn(move || {
+                let mut nonce = [0u8; 16];
+                nonce[0] = i + 1; // distinct per thread
+                let writ = root_writ_with_nonce(nonce);
+                let set = mk_intent(
+                    "kv_set",
+                    serde_json::json!({"key": format!("k{i}"), "value": "v"}),
+                    1,
+                );
+                let mut cognition = MockCognition::new(vec![vec![set]], Some("done".into()));
+                run_agent(
+                    &rt,
+                    &mut cognition,
+                    task,
+                    &writ,
+                    AgentRunOptions { max_steps: 4 },
+                    None,
+                )
+                .map(|s| (s.trajectory_id, s.commits))
+            })
+        })
+        .collect();
+
+    let mut trajectories = HashSet::new();
+    for h in handles {
+        let (traj, commits) = h
+            .join()
+            .expect("thread panicked")
+            .expect("each concurrent run must succeed");
+        assert_eq!(commits, 1, "each run commits its kv_set");
+        assert!(trajectories.insert(traj), "trajectories must be unique");
+    }
+    assert_eq!(trajectories.len(), n as usize);
+}
+
+#[test]
 fn same_task_text_distinct_writs_do_not_collide() {
     // Regression: the trajectory must be seeded from the writ (unique per run
     // via its nonce), NOT the task text. Two runs of the *same task string*

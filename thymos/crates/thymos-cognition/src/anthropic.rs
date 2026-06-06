@@ -72,6 +72,10 @@ pub struct ThinkingConfig {
 pub struct AnthropicCognition {
     client: reqwest::blocking::Client,
     api_key: String,
+    /// Messages endpoint. Defaults to the public API; override for Azure /
+    /// a proxy / gateway via `ANTHROPIC_BASE_URL` or `with_base_url` (also
+    /// what makes the adapter stub-testable without a key).
+    base_url: String,
     model: String,
     max_tokens: u32,
     thinking: Option<ThinkingConfig>,
@@ -116,6 +120,7 @@ impl AnthropicCognition {
         Ok(AnthropicCognition {
             client,
             api_key,
+            base_url: std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| API_URL.into()),
             model: DEFAULT_MODEL.into(),
             max_tokens: 4096,
             thinking: None,
@@ -135,6 +140,12 @@ impl AnthropicCognition {
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = resolve_model_alias(model.into());
+        self
+    }
+
+    /// Override the messages endpoint (Azure / proxy / gateway / test stub).
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
         self
     }
 
@@ -416,7 +427,7 @@ impl AnthropicCognition {
         loop {
             let resp = self
                 .client
-                .post(API_URL)
+                .post(&self.base_url)
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", ANTHROPIC_VERSION)
                 .header("content-type", "application/json")
