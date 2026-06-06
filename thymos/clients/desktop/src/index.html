@@ -30,11 +30,12 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="chat">◆ Chat</button>
+      <button class="tab" data-tab="mind">◇ Mind</button>
       <button class="tab" data-tab="runs">▸ Runs</button>
-      <button class="tab" data-tab="providers">⚙ Providers</button>
-      <button class="tab" data-tab="tools">🧰 Tools</button>
-      <button class="tab" data-tab="audit">📜 Audit</button>
-      <button class="tab" data-tab="backups">💾 Backups</button>
+      <button class="tab" data-tab="providers">◈ Providers</button>
+      <button class="tab" data-tab="tools">▣ Tools</button>
+      <button class="tab" data-tab="audit">≡ Audit</button>
+      <button class="tab" data-tab="backups">↧ Backups</button>
     </nav>
 
     <main>
@@ -44,18 +45,39 @@
           <div class="welcome">
             <div class="spine">◆ Intent&nbsp;&nbsp;▸ Proposal&nbsp;&nbsp;✓ Commit&nbsp;&nbsp;✕ Rejected&nbsp;&nbsp;⏸ Suspended</div>
             <p class="hint">
-              Press <b>Start runtime</b>, then send a task. Each message becomes a
-              <b>governed run</b> — you watch every intent, the runtime's verdict, and
-              each commit, with replay proof. A model can propose anything; only an
-              authorized proposal ever executes. Risky steps suspend for your approval.
+              Press <b>Start runtime</b>, then describe a task in plain language —
+              research, calling an API, moving data, drafting a change, anything.
+              Each message becomes a <b>governed run</b>: you see every intent, the
+              runtime's verdict, and each commit, with replay proof. The model can
+              propose anything; only an authorized proposal ever runs, and risky
+              steps pause for your approval.
             </p>
           </div>
         </div>
         <form class="composer" id="composer">
           <input id="taskInput" autocomplete="off"
-            placeholder="e.g. summarize the repo and open a PR" />
+            placeholder="Describe a task in plain language…" />
           <button type="submit">Send</button>
         </form>
+      </section>
+
+      <!-- MIND: immersive 3D view of the run's reasoning/ledger DAG -->
+      <section class="panel" id="tab-mind">
+        <div class="panel-head">
+          <h2>Mind — reasoning in 3D</h2>
+          <div class="mind-controls">
+            <input id="mindRunId" placeholder="run id (blank = latest)" />
+            <button id="mindLoad" class="ghost">Visualize</button>
+          </div>
+        </div>
+        <div id="mindCanvas" class="mind-canvas"></div>
+        <div class="mind-legend">
+          <span class="lg cyan">◆ intent</span>
+          <span class="lg violet">▸ proposal</span>
+          <span class="lg green">✓ commit</span>
+          <span class="lg red">✕ rejected</span>
+          <span class="lg amber">⏸ suspended</span>
+        </div>
       </section>
 
       <!-- RUNS: history from GET /runs -->
@@ -124,5 +146,6 @@
     </main>
 
     <script src="main.js"></script>
+    <script type="module" src="viz.js"></script>
   </body>
 </html>

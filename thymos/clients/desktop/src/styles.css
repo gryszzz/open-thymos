@@ -121,3 +121,25 @@ code {
 .badge.ok { background: rgba(70,211,154,.15); color: var(--green); border: 1px solid var(--green); }
 .badge.bad { background: rgba(255,107,138,.15); color: var(--red); border: 1px solid var(--red); }
 .glyph { width: 1.4em; display: inline-block; text-align: center; }
+
+/* Mind — 3D reasoning view */
+.mind-controls { display: flex; gap: 8px; }
+.mind-controls input {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 7px 10px; min-width: 220px;
+}
+.mind-canvas {
+  position: relative; width: 100%; height: 60vh; min-height: 380px;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: radial-gradient(ellipse at center, #170f37 0%, #0b0818 72%);
+  cursor: grab;
+}
+.mind-canvas:active { cursor: grabbing; }
+.mind-canvas canvas { display: block; width: 100%; height: 100%; }
+.mind-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 12.5px; }
+.lg { font-weight: 600; color: var(--muted); }
+.lg.cyan { color: var(--cyan); }
+.lg.violet { color: var(--violet); }
+.lg.green { color: var(--green); }
+.lg.red { color: var(--red); }
+.lg.amber { color: var(--amber); }

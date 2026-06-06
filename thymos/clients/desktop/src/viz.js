@@ -1,0 +1,195 @@
+// Mind — an immersive 3D view of a run's reasoning: the OpenThymos logo
+// suspended in a rotating wireframe cage, with the governed ledger DAG (commits,
+// rejections, suspensions) as glowing nodes orbiting it. Pure client: reads
+// `/audit/entries` from the local runtime; three.js is vendored (no egress).
+import * as THREE from "./vendor/three.module.js";
+
+const invoke = window.__TAURI__?.core?.invoke;
+let BASE = "http://127.0.0.1:3001";
+(async () => { try { if (invoke) BASE = await invoke("runtime_addr"); } catch (_) {} })();
+
+const VIOLET = 0x7c5cff, CYAN = 0x45e0ff, GREEN = 0x46d39a, RED = 0xff6b8a, AMBER = 0xffc24b;
+function colorFor(kind) {
+  const k = (kind || "").toLowerCase();
+  if (k.includes("commit")) return GREEN;
+  if (k.includes("reject")) return RED;
+  if (k.includes("approval") || k.includes("suspend")) return AMBER;
+  if (k.includes("delegation")) return VIOLET;
+  if (k.includes("root")) return CYAN;
+  return VIOLET;
+}
+
+let renderer, scene, camera, world, cage, nodesGroup, glowTex;
+let inited = false, running = false, raf = 0, loadedOnce = false;
+let targetRotY = 0, targetRotX = 0.25, curRotY = 0, curRotX = 0.25;
+let drag = null;
+
+function radialTexture(inner) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, inner);
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+function init() {
+  const container = document.getElementById("mindCanvas");
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  container.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
+  camera.position.set(0, 0, 13);
+  glowTex = radialTexture("rgba(124,92,255,0.9)");
+
+  // Starfield.
+  const N = 1100, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N * 3; i++) pos[i] = (Math.random() - 0.5) * 130;
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(starGeo,
+    new THREE.PointsMaterial({ color: 0x6a5fd0, size: 0.13, transparent: true, opacity: 0.75 })));
+
+  // World group (orbited by drag + slow auto-rotation): cage + nodes.
+  world = new THREE.Group();
+  scene.add(world);
+
+  cage = new THREE.Group();
+  world.add(cage);
+  cage.add(new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(3.0, 0)),
+    new THREE.LineBasicMaterial({ color: VIOLET, transparent: true, opacity: 0.6 })));
+  cage.add(new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.DodecahedronGeometry(4.2, 0)),
+    new THREE.LineBasicMaterial({ color: CYAN, transparent: true, opacity: 0.28 })));
+
+  nodesGroup = new THREE.Group();
+  world.add(nodesGroup);
+
+  // Logo suspended in the cage — a sprite so it always faces the camera.
+  const tex = new THREE.TextureLoader().load("logo.png");
+  if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
+  const logo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  logo.scale.set(2.6, 2.6, 1);
+  scene.add(logo);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial(
+    { map: glowTex, color: VIOLET, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.85 }));
+  glow.scale.set(8, 8, 1);
+  scene.add(glow);
+
+  // Interaction: drag to orbit, wheel to zoom.
+  const el = renderer.domElement;
+  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; });
+  window.addEventListener("pointerup", () => { drag = null; });
+  window.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    targetRotY += (e.clientX - drag.x) * 0.006;
+    targetRotX += (e.clientY - drag.y) * 0.006;
+    targetRotX = Math.max(-1.2, Math.min(1.2, targetRotX));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  el.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    camera.position.z = Math.max(7, Math.min(26, camera.position.z + e.deltaY * 0.01));
+  }, { passive: false });
+
+  new ResizeObserver(resize).observe(container);
+  inited = true;
+}
+
+function resize() {
+  if (!renderer) return;
+  const c = document.getElementById("mindCanvas");
+  const w = c.clientWidth || 800, h = c.clientHeight || 500;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+function clearNodes() {
+  while (nodesGroup.children.length) {
+    const o = nodesGroup.children.pop();
+    o.geometry?.dispose?.();
+    o.material?.dispose?.();
+  }
+}
+
+function placeNodes(entries) {
+  clearNodes();
+  const n = entries.length || 1;
+  const R = 5.4, step = 0.6;
+  const pts = [];
+  entries.forEach((e, i) => {
+    const a = i * 0.7;
+    const y = (i - (n - 1) / 2) * step;
+    const p = new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R);
+    pts.push(p);
+    const col = colorFor(e.kind);
+    const node = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 16, 16),
+      new THREE.MeshBasicMaterial({ color: col }));
+    node.position.copy(p);
+    nodesGroup.add(node);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial(
+      { map: glowTex, color: col, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.8 }));
+    halo.scale.set(1.1, 1.1, 1);
+    halo.position.copy(p);
+    nodesGroup.add(halo);
+  });
+  if (pts.length > 1) {
+    nodesGroup.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0x8a7fe0, transparent: true, opacity: 0.5 })));
+  }
+}
+
+async function loadRun(idRaw) {
+  let id = (idRaw || "").trim();
+  try {
+    if (!id) {
+      const runs = await (await fetch(`${BASE}/runs`)).json();
+      const list = Array.isArray(runs) ? runs : runs.runs || [];
+      id = list[0]?.run_id || list[0]?.trajectory_id || "";
+    }
+    if (!id) return;
+    const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
+    const entries = Array.isArray(data) ? data : data.entries || [];
+    placeNodes(entries);
+    const el = document.getElementById("mindRunId");
+    if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${entries.length} entries`;
+  } catch (_) { /* runtime not up yet — the cage still renders */ }
+}
+
+function frame() {
+  raf = requestAnimationFrame(frame);
+  targetRotY += 0.0016;
+  curRotY += (targetRotY - curRotY) * 0.08;
+  curRotX += (targetRotX - curRotX) * 0.08;
+  world.rotation.y = curRotY;
+  world.rotation.x = curRotX;
+  cage.rotation.y -= 0.0011;
+  cage.rotation.z += 0.0007;
+  renderer.render(scene, camera);
+}
+function start() { if (!running) { running = true; frame(); } }
+function stop() { running = false; cancelAnimationFrame(raf); }
+
+// Wire the Mind tab: lazy-init + render only while visible (saves CPU).
+window.addEventListener("DOMContentLoaded", () => {
+  const mindTab = document.querySelector('.tab[data-tab="mind"]');
+  if (!mindTab) return;
+  mindTab.addEventListener("click", () => {
+    if (!inited) init();
+    requestAnimationFrame(() => { resize(); start(); });
+    if (!loadedOnce) { loadedOnce = true; loadRun(""); }
+  });
+  document.querySelectorAll('.tab:not([data-tab="mind"])').forEach((t) =>
+    t.addEventListener("click", stop));
+  document.getElementById("mindLoad")?.addEventListener("click", () =>
+    loadRun(document.getElementById("mindRunId")?.value));
+});

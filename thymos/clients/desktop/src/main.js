@@ -230,7 +230,7 @@ async function loadTools() {
       const div = document.createElement("div");
       div.className = "item";
       div.innerHTML =
-        `<span class="glyph permit">🧰</span><b>${escapeHtml(p.name || "")}</b>` +
+        `<span class="glyph permit">▣</span><b>${escapeHtml(p.name || "")}</b>` +
         `<span class="meta">${escapeHtml(p.description || p.version || "")}</span>`;
       el.appendChild(div);
     });
