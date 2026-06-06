@@ -1,0 +1,110 @@
+:root {
+  --bg: #0e0b1a;
+  --panel: #15112a;
+  --panel-2: #1c1738;
+  --line: #2b2350;
+  --violet: #7c5cff;
+  --violet-dim: #6a4ef0;
+  --cyan: #45e0ff;
+  --text: #e8e6f5;
+  --muted: #9b95c4;
+  --green: #46d39a;
+  --red: #ff6b8a;
+  --amber: #ffc24b;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; letter-spacing: 1px; color: var(--violet); }
+.status { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot-on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot-off { background: #4a4466; }
+.pill {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 10px; font-size: 12px;
+}
+.controls { margin-left: auto; display: flex; gap: 8px; }
+
+button {
+  background: var(--violet); color: white; border: 0;
+  border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600;
+}
+button:hover { background: var(--violet-dim); }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+button.ghost:hover { background: var(--panel-2); }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--panel); }
+.tab {
+  background: transparent; color: var(--muted); border: 0;
+  border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  padding: 8px 14px; font-weight: 600;
+}
+.tab:hover { background: var(--panel-2); color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--cyan); }
+
+main { flex: 1; overflow: auto; padding: 16px; }
+.panel { display: none; max-width: 980px; margin: 0 auto; }
+.panel.active { display: block; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; }
+h2 { margin: 4px 0 12px; }
+
+/* Chat */
+.feed {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px; min-height: 360px; max-height: 58vh; overflow: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+}
+.hint, .note { color: var(--muted); }
+.note { font-size: 12.5px; margin-top: 10px; }
+.line { padding: 2px 4px; white-space: pre-wrap; }
+.line .g { font-weight: 700; }
+.you { color: var(--cyan); }
+.intent { color: var(--text); }
+.permit { color: var(--green); }
+.commit { color: var(--green); font-weight: 600; }
+.deny { color: var(--red); }
+.suspend { color: var(--amber); }
+.sys { color: var(--muted); font-style: italic; }
+.approval-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.approval-row .q { color: var(--amber); }
+
+.composer { display: flex; gap: 8px; margin-top: 12px; }
+.composer input, .inline-form input, #taskInput {
+  flex: 1; background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 14px;
+}
+.inline-form { display: flex; gap: 8px; margin-bottom: 12px; }
+
+/* Lists / cards */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.card, .item {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px;
+}
+.item { display: flex; align-items: center; gap: 10px; }
+.item .meta { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+code {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 5px; padding: 1px 5px; font-size: 12.5px;
+}
+.badge { border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.badge.ok { background: rgba(70,211,154,.15); color: var(--green); border: 1px solid var(--green); }
+.badge.bad { background: rgba(255,107,138,.15); color: var(--red); border: 1px solid var(--red); }
+.glyph { width: 1.4em; display: inline-block; text-align: center; }
