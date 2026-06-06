@@ -48,7 +48,7 @@ fn runtime_addr() -> String {
 }
 
 #[tauri::command]
-fn start_runtime(state: State<Supervisor>) -> Result<String, String> {
+fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<String, String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(child) = guard.as_mut() {
         // Already supervising — unless it has exited, report running.
@@ -58,12 +58,37 @@ fn start_runtime(state: State<Supervisor>) -> Result<String, String> {
             Err(e) => return Err(format!("status check failed: {e}")),
         }
     }
+
+    // Pin a durable, per-user ledger so runs, audit trails, and backups persist
+    // across restarts — this is what makes the app a real client of a real,
+    // permanent Thymos ledger rather than an ephemeral session. The hash-chained
+    // SQLite file lives in the OS app-data dir (the file the Backups tab copies).
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data dir: {e}"))?;
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("create app data dir {}: {e}", data_dir.display()))?;
+    let ledger_path = data_dir.join("ledger.db");
+
     let bin = server_binary();
     let child = Command::new(&bin)
+        .env("THYMOS_LEDGER_PATH", &ledger_path)
         .spawn()
         .map_err(|e| format!("failed to start {}: {e}", bin.display()))?;
     *guard = Some(child);
     Ok("started".into())
+}
+
+/// Absolute path to the durable ledger the supervised runtime writes to. The
+/// Backups tab uses this to copy/verify the real on-disk chain.
+#[tauri::command]
+fn ledger_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data dir: {e}"))?;
+    Ok(dir.join("ledger.db").to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -95,7 +120,8 @@ pub fn run() {
             runtime_addr,
             start_runtime,
             stop_runtime,
-            runtime_running
+            runtime_running,
+            ledger_path
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.
