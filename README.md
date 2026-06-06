@@ -261,57 +261,59 @@ thymos replay <run-id>          # verify the ledger folds to its world
 > **In a hurry?** `./scripts/quickstart.sh` runs one governed end-to-end proof with the
 > offline mock — no install, no keys. Pass a task + `ANTHROPIC_API_KEY=…` to prove it on a real model.
 
-### Download — prebuilt binaries (no toolchain)
+### Get OpenThymos
 
 <div align="center">
+<table>
+<tr>
+<td width="50%" valign="top" align="center">
 
-[![Download OpenThymos](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20DOWNLOAD%20OPENTHYMOS&color=7c5cff&labelColor=1c1738)](https://github.com/gryszzz/open-thymos/releases/latest)
+#### ◇ Desktop app
 
-[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
-&nbsp;[![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
-&nbsp;[![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+<img src="thymos/Thymos-logo.PNG" width="78" />
 
+Immersive, **local-first** GUI — chat, live runs, the 3D **Mind** reasoning view,
+audit + replay. Your keys never leave your machine; no phone-home.
+
+[![Get the Desktop app](https://img.shields.io/badge/▶_Get_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](docs/rfcs/desktop-app.md)
+
+Run it now (dev build):<br/>
+`cd thymos/clients/desktop && npm install && npm run dev`
+
+<sub>One-click `.dmg` / `.msi` / `.AppImage` ships with the next signed release.</sub>
+
+</td>
+<td width="50%" valign="top" align="center">
+
+#### ▣ CLI + runtime
+
+<img src="thymos/thymosG.PNG" width="118" />
+
+Terminal, scriptable, server. No Rust, no clone, no compile.
+
+[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+
+`curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | sh`
+
+</td>
+</tr>
+</table>
 </div>
 
-Prebuilt `thymos` (CLI) + `thymos-server` (runtime) for macOS, Linux, and
-Windows ship on every tagged [release](https://github.com/gryszzz/open-thymos/releases/latest).
-No Rust, no clone, no compile.
-
-**One line (macOS / Linux):**
+**Install options (CLI + runtime)** — prebuilt for macOS / Linux / Windows, no toolchain:
 
 ```bash
+# one line (macOS / Linux) — installs to ~/.local/bin, github-only, no telemetry
 curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | sh
-# installs to ~/.local/bin · pin a version with THYMOS_VERSION=v0.5.0
-# privacy: fetches only from github.com — no telemetry, no phone-home
+brew install gryszzz/tap/thymos                                   # Homebrew
+docker run --rm -p 3001:3001 ghcr.io/gryszzz/openthymos-runtime:latest   # Docker
 ```
 
-**Or grab a binary directly** from the
-[latest release](https://github.com/gryszzz/open-thymos/releases/latest):
-macOS (Apple Silicon / Intel), Linux (x86_64), Windows (x86_64). Unpack and run
-`thymos-server`, then `thymos shell`.
-
-**Homebrew (macOS / Linux):**
-
-```bash
-brew install gryszzz/tap/thymos
-```
-
-**Docker:**
-
-```bash
-docker run --rm -p 3001:3001 ghcr.io/gryszzz/openthymos-runtime:latest
-```
-
-### Desktop app — in progress
-
-A double-click **OpenThymos Desktop** (one install: provider setup, chat
-sessions, tools, logs, audit, backups) is being built as a Tauri app that
-supervises the runtime locally — *your keys never leave your machine, no
-phone-home*. It's a **client** of the same governed API as every other surface,
-so it can't bypass the `Intent → Proposal → Commit` boundary. Scope and honest
-feature-by-feature status: **[docs/rfcs/desktop-app.md](docs/rfcs/desktop-app.md)**.
-The Download button above is the terminal runtime today; the desktop GUI installer
-(`.dmg` / `.msi` / `.AppImage`) lands here once it's signed and released.
+Or grab a binary directly from the
+[latest release](https://github.com/gryszzz/open-thymos/releases/latest), unpack,
+and run `thymos-server` then `thymos shell`. The desktop app is a **client** of
+this same governed runtime — it can't bypass the `Intent → Proposal → Commit`
+boundary. Scope + honest status: [docs/rfcs/desktop-app.md](docs/rfcs/desktop-app.md).
 
 ### Run a dev build & track changes
 
