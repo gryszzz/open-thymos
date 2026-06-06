@@ -1836,11 +1836,21 @@ async fn get_execution_stream(
     match (initial, rx) {
         (Some(initial_session), Some(mut rx)) => {
             let stream = async_stream::stream! {
+                let initial_terminal = initial_session.status.is_terminal();
                 let initial_data = serde_json::to_string(&initial_session).unwrap_or_default();
                 yield Ok::<_, std::convert::Infallible>(Event::default().event("snapshot").data(initial_data));
-                while let Ok(session) = rx.recv().await {
-                    let data = serde_json::to_string(&session).unwrap_or_default();
-                    yield Ok::<_, std::convert::Infallible>(Event::default().event("snapshot").data(data));
+                // Already finished when the client connected (e.g. reconnect): close.
+                if !initial_terminal {
+                    while let Ok(session) = rx.recv().await {
+                        let terminal = session.status.is_terminal();
+                        let data = serde_json::to_string(&session).unwrap_or_default();
+                        yield Ok::<_, std::convert::Infallible>(Event::default().event("snapshot").data(data));
+                        // End the stream once the run reaches a terminal state so
+                        // `--follow` (and any SSE client) doesn't hang open forever.
+                        if terminal {
+                            break;
+                        }
+                    }
                 }
             };
             Sse::new(stream).into_response()
