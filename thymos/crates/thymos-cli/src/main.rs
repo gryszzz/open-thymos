@@ -124,6 +124,17 @@ enum Commands {
         #[arg(long)]
         init: bool,
     },
+    /// Make a provider the server default (writes ./.env). e.g. `thymos use openai`.
+    Use {
+        /// Provider id: anthropic, openai, mock, or a preset (`thymos providers`).
+        provider: String,
+        /// Default model for this provider (optional).
+        #[arg(long)]
+        model: Option<String>,
+        /// Also save the API key to .env (otherwise you're told which env to set).
+        #[arg(long)]
+        key: Option<String>,
+    },
     /// Approve or deny a pending proposal.
     Approve {
         /// Run ID.
@@ -253,6 +264,11 @@ async fn main() {
         Commands::Doctor => cmd_doctor(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Config => cmd_config(&cli.url, cli.api_key.as_deref()),
         Commands::Setup { init } => cmd_setup(init),
+        Commands::Use {
+            provider,
+            model,
+            key,
+        } => cmd_use(&provider, model.as_deref(), key.as_deref()),
         Commands::Approve {
             run_id,
             channel,
@@ -475,6 +491,7 @@ fn cmd_home(url: &str) {
 
     home_section("START HERE");
     home_row("thymos setup", "connect a model (API key or local LLM) — do this first");
+    home_row("thymos use <provider>", "set the default model, e.g. `thymos use openai`");
     home_row("thymos run \"<task>\" --follow", "run a task; watch Intent → Proposal → Commit live");
     home_row("thymos doctor", "check what's connected and ready");
 
@@ -687,6 +704,103 @@ fn cmd_tools() -> Result<(), String> {
     println!(
         "    {}",
         paint(C_DIM, "Irreversible-class tools suspend for human approval before running.")
+    );
+    Ok(())
+}
+
+/// Insert or replace a `KEY=value` line in .env content (also replaces a
+/// commented `# KEY=` line); appends if absent.
+fn upsert_env(content: &str, key: &str, value: &str) -> String {
+    let newline = format!("{key}={value}");
+    let active = format!("{key}=");
+    let commented = format!("# {key}=");
+    let mut found = false;
+    let mut lines: Vec<String> = content
+        .lines()
+        .map(|l| {
+            let t = l.trim_start();
+            if t.starts_with(&active) || t.starts_with(&commented) {
+                found = true;
+                newline.clone()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        lines.push(newline);
+    }
+    let mut s = lines.join("\n");
+    s.push('\n');
+    s
+}
+
+/// `thymos use <provider>` — make a provider the server default by writing
+/// THYMOS_DEFAULT_PROVIDER (+ model, + key) to ./.env. Pure local.
+fn cmd_use(provider: &str, model: Option<&str>, key: Option<&str>) -> Result<(), String> {
+    use thymos_cognition::presets;
+    let p = provider.to_lowercase();
+    let native = matches!(p.as_str(), "anthropic" | "openai" | "mock");
+    let preset = presets::resolve(&p);
+    if !native && preset.is_none() {
+        return Err(format!(
+            "unknown provider '{provider}'. Try: anthropic, openai, mock, or a preset \
+             (run `thymos providers` to list all)."
+        ));
+    }
+
+    let key_env: Option<String> = match p.as_str() {
+        "anthropic" => Some("ANTHROPIC_API_KEY".into()),
+        "openai" => Some("OPENAI_API_KEY".into()),
+        _ => preset.and_then(|pr| pr.api_key_envs.first().map(|s| s.to_string())),
+    };
+    let is_local = p == "mock" || preset.map(|pr| pr.local).unwrap_or(false);
+    let default_model = model
+        .map(|m| m.to_string())
+        .or_else(|| preset.map(|pr| pr.default_model.to_string()));
+
+    let mut env = std::fs::read_to_string(".env").unwrap_or_default();
+    env = upsert_env(&env, "THYMOS_DEFAULT_PROVIDER", &p);
+    if let Some(m) = &default_model {
+        env = upsert_env(&env, "THYMOS_DEFAULT_MODEL", m);
+    }
+    if let (Some(k), Some(ke)) = (key, key_env.as_deref()) {
+        env = upsert_env(&env, ke, k);
+    }
+    std::fs::write(".env", env).map_err(|e| format!("writing .env: {e}"))?;
+
+    brand_banner();
+    println!(
+        "  {} {}",
+        paint(C_OK, "✓ default provider →"),
+        paint(C_VIOLET_B, &p)
+    );
+    if let Some(m) = &default_model {
+        println!("    {} {}", paint(C_DIM, "model "), paint(C_VIOLET, m));
+    }
+    println!("    {}", paint(C_DIM, "saved to ./.env"));
+    println!();
+    if is_local {
+        println!(
+            "  {}",
+            paint(C_DIM, "local/offline provider — make sure its server is running.")
+        );
+    } else if key.is_some() {
+        println!("  {}", paint(C_OK, "key saved to .env."));
+    } else if let Some(ke) = &key_env {
+        println!(
+            "  {} {}",
+            paint(C_WARN, "still needs a key:"),
+            paint(C_DIM, format!("add {ke}=… to .env  (or `thymos use {p} --key sk-…`)"))
+        );
+    }
+    println!();
+    println!("  {}", paint(C_VIOLET_B, "Activate"));
+    println!("    {}", paint(C_DIM, "restart the server, then every run uses it:"));
+    println!("    {}", paint(C_DIM, "cargo run -p thymos-server"));
+    println!(
+        "    {}",
+        paint(C_DIM, format!("verify:  thymos health   → default_provider: {p}"))
     );
     Ok(())
 }
