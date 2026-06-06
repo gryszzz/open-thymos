@@ -15,6 +15,17 @@ pub enum ExecutionStatus {
     Cancelled,
 }
 
+impl ExecutionStatus {
+    /// A run that has reached an end state — no further snapshots will follow,
+    /// so SSE subscribers can close the stream instead of hanging open.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            ExecutionStatus::Completed | ExecutionStatus::Failed | ExecutionStatus::Cancelled
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionPhase {
