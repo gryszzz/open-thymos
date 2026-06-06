@@ -16,8 +16,12 @@ use std::process::Command as ProcessCommand;
 
 mod shell;
 
+/// `<pkg-version> (<git-sha>)`, e.g. `0.5.0 (a1b2c3d)`. Lets any binary report
+/// the exact build it came from — `thymos --version`.
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("THYMOS_GIT_SHA"), ")");
+
 #[derive(Parser)]
-#[command(name = "thymos", about = "Thymos governed-cognition CLI")]
+#[command(name = "thymos", version = VERSION, about = "Thymos governed-cognition CLI")]
 struct Cli {
     /// Server URL (default: http://localhost:3001).
     #[arg(long, env = "THYMOS_URL", default_value = "http://localhost:3001")]
