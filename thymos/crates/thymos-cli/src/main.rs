@@ -116,6 +116,12 @@ enum Commands {
     Doctor,
     /// Show terminal configuration, env vars, and next commands.
     Config,
+    /// Connect a model: copy-paste instructions for API keys and local LLMs.
+    Setup {
+        /// Write a starter `.env` you can fill in (won't overwrite an existing one).
+        #[arg(long)]
+        init: bool,
+    },
     /// Approve or deny a pending proposal.
     Approve {
         /// Run ID.
@@ -243,6 +249,7 @@ async fn main() {
         Commands::Health => cmd_health(&client, &cli.url).await,
         Commands::Doctor => cmd_doctor(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Config => cmd_config(&cli.url, cli.api_key.as_deref()),
+        Commands::Setup { init } => cmd_setup(init),
         Commands::Approve {
             run_id,
             channel,
@@ -337,17 +344,21 @@ fn paint(code: &str, text: impl AsRef<str>) -> String {
 }
 
 pub(crate) fn brand_banner() {
-    // Wordmark art, painted top→bottom in the brand violet gradient
-    // (#c77dff → #7c3aed) so it reads as a glowing logo lockup.
-    const ART: [&str; 8] = [
-        r"  _______ _                              ",
-        r" |__   __| |                             ",
-        r"    | |  | |__  _   _ _ __ ___   ___  ___ ",
-        r"    | |  | '_ \| | | | '_ ` _ \ / _ \/ __|",
-        r"    | |  | | | | |_| | | | | | | (_) \__ \",
-        r"    |_|  |_| |_|\__, |_| |_| |_|\___/|___/",
-        r"                 __/ |                    ",
-        r"                |___/                     ",
+    // "OPEN THYMOS" in ANSI Shadow, painted top→bottom in the brand violet
+    // gradient (#c77dff → #7c3aed) so it reads as a glowing logo lockup.
+    const ART: [&str; 12] = [
+        r" ██████╗ ██████╗ ███████╗███╗   ██╗",
+        r"██╔═══██╗██╔══██╗██╔════╝████╗  ██║",
+        r"██║   ██║██████╔╝█████╗  ██╔██╗ ██║",
+        r"██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║",
+        r"╚██████╔╝██║     ███████╗██║ ╚████║",
+        r" ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝",
+        r"████████╗██╗  ██╗██╗   ██╗███╗   ███╗ ██████╗ ███████╗",
+        r"╚══██╔══╝██║  ██║╚██╗ ██╔╝████╗ ████║██╔═══██╗██╔════╝",
+        r"   ██║   ███████║ ╚████╔╝ ██╔████╔██║██║   ██║███████╗",
+        r"   ██║   ██╔══██║  ╚██╔╝  ██║╚██╔╝██║██║   ██║╚════██║",
+        r"   ██║   ██║  ██║   ██║   ██║ ╚═╝ ██║╚██████╔╝███████║",
+        r"   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝ ╚═════╝ ╚══════╝",
     ];
     let (top, bot) = ((199.0_f32, 125.0, 255.0), (124.0_f32, 58.0, 237.0));
     let span = (ART.len() - 1).max(1) as f32;
@@ -360,12 +371,11 @@ pub(crate) fn brand_banner() {
         println!("{}", paint(&format!("38;2;{r};{g};{b};1"), line));
     }
     println!(
-        "    {}   {}",
-        paint("38;2;199;125;255;1", "◆ OPEN-THYMOS"),
-        paint("38;2;139;233;255", "governed execution runtime"),
+        "  {}",
+        paint("38;2;139;233;255;1", "governed execution runtime"),
     );
     println!(
-        "       {}",
+        "  {}",
         paint(
             "38;2;109;119;137",
             "cognition proposes · the runtime governs · the ledger records",
@@ -431,7 +441,7 @@ fn status_line(label: &str, ok: bool, detail: impl AsRef<str>) {
 fn home_row(cmd: &str, desc: &str) {
     println!(
         "    {}{}",
-        paint(C_VIOLET, format!("{cmd:<30}")),
+        paint(C_VIOLET, format!("{cmd:<34}")),
         paint(C_DIM, desc)
     );
 }
@@ -441,35 +451,50 @@ fn home_section(title: &str) {
     println!("  {}", paint(C_VIOLET_B, title));
 }
 
-/// `thymos` with no subcommand: the branded home — banner, what it is, and the
-/// command map. Pure print; no network.
+/// One example task, shown as a copy-pasteable command.
+fn home_example(task: &str) {
+    println!(
+        "      {} {}",
+        paint(C_STAR, "›"),
+        paint(C_DIM, format!("thymos run \"{task}\""))
+    );
+}
+
+/// `thymos` with no subcommand: the branded home — banner, what it is, how to
+/// start, what a task is, and the command map. Pure print; no network.
 fn cmd_home(url: &str) {
     brand_banner();
-    println!(
-        "  {}",
-        paint(C_DIM, "A governed execution runtime — cognition proposes, the runtime")
-    );
-    println!(
-        "  {}",
-        paint(C_DIM, "governs every effect, the ledger records and replays.")
-    );
 
-    home_section("RUN");
-    home_row("run \"<task>\" --follow", "start a governed run; stream Intent → Proposal → Commit");
-    home_row("status <run-id>", "run status + summary");
-    home_row("stream <run-id>", "live execution feed");
+    home_section("WHAT IT DOES");
+    println!("    {}", paint(C_DIM, "Give it a task in plain English. A model proposes actions; the"));
+    println!("    {}", paint(C_DIM, "runtime checks each against a signed capability writ + policy"));
+    println!("    {}", paint(C_DIM, "BEFORE anything runs, and records every step in a replayable ledger."));
+
+    home_section("START HERE");
+    home_row("thymos setup", "connect a model (API key or local LLM) — do this first");
+    home_row("thymos run \"<task>\" --follow", "run a task; watch Intent → Proposal → Commit live");
+    home_row("thymos doctor", "check what's connected and ready");
+
+    home_section("WHAT'S A TASK?");
+    println!("    {}", paint(C_DIM, "Plain-English work for the agent — for example:"));
+    home_example("Map this repo and summarize how the runtime boundary works");
+    home_example("Read config.json, bump the version, and write it back");
+    home_example("Find every TODO in src/ and list them with file:line");
+    println!(
+        "    {}",
+        paint(C_DIM, "Grant tools with --scopes (e.g. --scopes kv_set,kv_get or fs_read).")
+    );
 
     home_section("GOVERNANCE");
-    home_row("audit <run-id>", "the full governance trail + replay verdict");
-    home_row("replay <run-id>", "verify the ledger folds to its world");
-    home_row("world <run-id>", "current projected world state");
-    home_row("approve <run-id> <channel>", "clear a human-in-the-loop gate");
+    home_row("thymos audit <run-id>", "the full governance trail + replay verdict");
+    home_row("thymos replay <run-id>", "verify the ledger folds to its world");
+    home_row("thymos world <run-id>", "current projected world state");
+    home_row("thymos approve <run-id> <ch>", "clear a human-in-the-loop gate");
 
-    home_section("SETUP");
-    home_row("doctor", "branded readiness dashboard");
-    home_row("providers", "list cognition providers / presets");
-    home_row("health", "server liveness · live-vs-mock · ledger backend");
-    home_row("shell", "interactive Thymos terminal");
+    home_section("MORE");
+    home_row("thymos providers", "list models / presets (anthropic, openai, local…)");
+    home_row("thymos health", "server liveness · live-vs-mock · ledger backend");
+    home_row("thymos shell", "interactive session (type `health`, `run \"…\"`)");
 
     println!();
     println!("  {} {}", paint(C_DIM, "server"), paint(C_STAR, url));
@@ -481,8 +506,109 @@ fn cmd_home(url: &str) {
     println!();
     println!(
         "  {}",
-        paint(C_DIM, "`thymos <command> --help` for details · `thymos shell` for a session")
+        paint(C_DIM, "new here?  run `thymos setup`, then `thymos run \"…\" --follow`")
     );
+}
+
+/// `thymos setup` — copy-paste instructions to connect a real model or a local
+/// LLM, with `--init` to drop a starter `.env`. Pure local; no network.
+fn cmd_setup(init: bool) -> Result<(), String> {
+    brand_banner();
+    println!("  {}", paint(C_VIOLET_B, "Connect a model"));
+    println!(
+        "  {}",
+        paint(C_DIM, "Default is a deterministic MOCK (no key needed). Pick one below,")
+    );
+    println!(
+        "  {}",
+        paint(C_DIM, "set it in your shell or a .env file, then restart the server.")
+    );
+
+    let block = |title: &str, lines: &[&str]| {
+        println!();
+        println!("  {}", paint(C_VIOLET_B, title));
+        for l in lines {
+            println!("    {}", paint(C_DIM, l));
+        }
+    };
+
+    block(
+        "Anthropic — Claude (best tool use)",
+        &[
+            "export ANTHROPIC_API_KEY=sk-ant-...",
+            "key → https://console.anthropic.com/settings/keys",
+        ],
+    );
+    block(
+        "OpenAI — and any OpenAI-compatible host",
+        &[
+            "export OPENAI_API_KEY=sk-...",
+            "key → https://platform.openai.com/api-keys",
+        ],
+    );
+    block(
+        "Local LLM — no key, runs on your machine",
+        &[
+            "LM Studio: load a model, start its server (:1234), then:",
+            "    thymos run \"…\" --provider lmstudio",
+            "Ollama:    `ollama serve`, then start the server with:",
+            "    THYMOS_DEFAULT_PROVIDER=ollama THYMOS_DEFAULT_MODEL=llama3.2 \\",
+            "      cargo run -p thymos-server",
+        ],
+    );
+    block(
+        "Hugging Face Router — hosted free tier",
+        &[
+            "export HF_TOKEN=hf_...",
+            "thymos run \"…\" --provider huggingface",
+        ],
+    );
+
+    println!();
+    println!("  {}", paint(C_VIOLET_B, "Where keys live"));
+    println!(
+        "    {}",
+        paint(C_DIM, "The CLI & server auto-load a .env from the current or any parent dir.")
+    );
+    println!(
+        "    {}",
+        paint(C_DIM, "`thymos providers` lists every preset · `thymos doctor` verifies the wiring.")
+    );
+
+    if init {
+        let path = std::path::Path::new(".env");
+        if path.exists() {
+            println!();
+            println!("  {}", paint(C_WARN, ".env already exists — left untouched."));
+        } else {
+            let template = "# OpenThymos — uncomment ONE provider, fill it in, then restart the server.\n\
+                # ANTHROPIC_API_KEY=sk-ant-...\n\
+                # OPENAI_API_KEY=sk-...\n\
+                # HF_TOKEN=hf_...\n\
+                # Local LLM (no key):\n\
+                # THYMOS_DEFAULT_PROVIDER=ollama\n\
+                # THYMOS_DEFAULT_MODEL=llama3.2\n";
+            std::fs::write(path, template).map_err(|e| format!("writing .env: {e}"))?;
+            println!();
+            println!(
+                "  {} {}",
+                paint(C_OK, "wrote .env template →"),
+                paint(C_STAR, "./.env")
+            );
+            println!(
+                "    {}",
+                paint(C_DIM, "edit it, uncomment a provider, then restart the server.")
+            );
+        }
+    } else {
+        println!();
+        println!(
+            "  {}",
+            paint(C_DIM, "tip: `thymos setup --init` drops a starter .env you can fill in.")
+        );
+    }
+    println!();
+    Ok(())
 }
 
 fn mask_secret(value: Option<&str>) -> String {
