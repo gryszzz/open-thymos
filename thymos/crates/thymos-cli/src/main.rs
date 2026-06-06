@@ -822,11 +822,52 @@ pub(crate) async fn cmd_run(
     if options.follow {
         println!("{}", paint(C_VIOLET, "── live ── Intent → Proposal → Commit"));
         cmd_stream(url, &run_id).await?;
-        // Print final status once the stream closes.
-        return cmd_status(client, url, api_key, &run_id).await;
+        // A branded outcome summary once the stream closes (not raw JSON).
+        return cmd_run_summary(client, url, api_key, &run_id).await;
     }
     println!("Poll status:  thymos status {run_id}");
     println!("Stream live:  thymos stream {run_id}");
+    Ok(())
+}
+
+/// Compact, branded outcome for a finished run (used after `run --follow`):
+/// the verdict counters and final answer, plus the next governance commands.
+async fn cmd_run_summary(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    run_id: &str,
+) -> Result<(), String> {
+    let mut req = client.get(format!("{url}/runs/{run_id}"));
+    for (k, v) in auth_headers(api_key) {
+        req = req.header(&k, &v);
+    }
+    let body = json_body_or_error(req.send().await.map_err(|e| e.to_string())?).await?;
+    let status = body["status"].as_str().unwrap_or("?");
+    let s = &body["summary"];
+    let steps = s["steps_executed"].as_u64().unwrap_or(0);
+    let commits = s["commits"].as_u64().unwrap_or(0);
+    let rejections = s["rejections"].as_u64().unwrap_or(0);
+
+    println!();
+    println!("{}", paint(status_code(status), format!("● run {status}")));
+    println!(
+        "  {}   {}   {}",
+        paint(C_DIM, format!("steps {steps}")),
+        paint(C_OK, format!("✓ commits {commits}")),
+        paint(
+            if rejections > 0 { C_WARN } else { C_DIM },
+            format!("✕ rejections {rejections}")
+        ),
+    );
+    if let Some(answer) = s["final_answer"].as_str() {
+        if !answer.is_empty() {
+            println!("  {} {}", paint(C_DIM, "answer"), answer);
+        }
+    }
+    println!();
+    println!("  {}", paint(C_DIM, format!("audit the trail:  thymos audit {run_id}")));
+    println!("  {}", paint(C_DIM, format!("inspect world:    thymos world {run_id}")));
     Ok(())
 }
 
