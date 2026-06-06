@@ -11,6 +11,7 @@
 ---
 
 **Cognition proposes. The runtime governs. The ledger records.**
+<img width="1264" height="1054" alt="E898D7D3-78F4-4E88-AF0B-76DEF0616E42_1_206_a" src="https://github.com/user-attachments/assets/aacc08aa-c8b1-418c-8b0d-5b80c1078be7" />
 
 A model cannot call a tool, mutate state, spend budget, delegate authority, or erase history  not by convention, by runtime semantics. Every effect passes through a typed proposal, a signed capability writ, a policy trace, and an append-only execution ledger.
 
