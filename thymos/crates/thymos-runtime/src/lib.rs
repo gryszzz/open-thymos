@@ -346,6 +346,7 @@ impl<L: LedgerStore> Runtime<L> {
         Ok(Run {
             runtime: self,
             trajectory_id,
+            last_commit: std::sync::Mutex::new(None),
         })
     }
 
@@ -362,6 +363,7 @@ impl<L: LedgerStore> Runtime<L> {
         Ok(Run {
             runtime: self,
             trajectory_id,
+            last_commit: std::sync::Mutex::new(None),
         })
     }
 }
@@ -369,6 +371,11 @@ impl<L: LedgerStore> Runtime<L> {
 pub struct Run<'a, L: LedgerStore = Ledger> {
     runtime: &'a Runtime<L>,
     trajectory_id: TrajectoryId,
+    /// Memoizes the observation from the most recent commit this `Run` executed,
+    /// so callers don't re-read and re-scan the whole trajectory ledger just to
+    /// fetch what `submit` already produced. Pure optimization: a miss falls
+    /// back to the ledger (still the source of truth), so behavior is identical.
+    last_commit: std::sync::Mutex<Option<(CommitId, thymos_core::commit::Observation)>>,
 }
 
 /// The result of submitting one Intent to the runtime.
@@ -403,6 +410,21 @@ impl<'a, L: LedgerStore> Run<'a, L> {
     /// trajectory up to the current head. For branched trajectories, first
     /// folds the ancestor chain up to the branch point, then this trajectory's
     /// own commits on top.
+    /// The observation from the most recent commit this `Run` executed, if it
+    /// matches `commit_id`. Lets the agent loop avoid a full-ledger re-scan for
+    /// the commit `submit` just produced; returns `None` on a miss so callers
+    /// fall back to the ledger (the source of truth).
+    pub fn cached_commit_observation(
+        &self,
+        commit_id: CommitId,
+    ) -> Option<thymos_core::commit::Observation> {
+        let guard = self.last_commit.lock().unwrap();
+        match &*guard {
+            Some((id, obs)) if *id == commit_id => Some(obs.clone()),
+            _ => None,
+        }
+    }
+
     pub fn project_world(&self) -> Result<World> {
         let entries = self.runtime.ledger.entries(self.trajectory_id)?;
         self.project_world_from(&entries)
@@ -449,6 +471,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
         Ok(Run {
             runtime: self.runtime,
             trajectory_id: new_traj,
+            last_commit: std::sync::Mutex::new(None),
         })
     }
 
@@ -752,6 +775,9 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                 let _commit_span =
                     tracing::info_span!("triad.commit", seq = parent_seq + 1).entered();
 
+                // Keep a copy of the observation to memoize on the Run after the
+                // commit lands, so the agent loop need not re-scan the ledger.
+                let observation_for_cache = outcome.observation.clone();
                 let commit_body = CommitBody {
                     parent: vec![CommitId(parent_hash)],
                     trajectory_id: self.trajectory_id,
@@ -773,6 +799,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                 let committed_id = CommitId(commit.id.0);
 
                 self.runtime.ledger.append_commit(commit)?;
+                *self.last_commit.lock().unwrap() = Some((committed_id, observation_for_cache));
 
                 crate::agent::emit_event(
                     trace,

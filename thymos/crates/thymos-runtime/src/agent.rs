@@ -365,12 +365,17 @@ pub fn run_agent<L: LedgerStore>(
     })
 }
 
-/// Fetch the Observation from the commit that just landed. The ledger is the
-/// source of truth — we don't trust cached values.
+/// Fetch the Observation from the commit that just landed. Fast path: `submit`
+/// memoizes the observation it just produced on the `Run`, so we avoid a
+/// full-trajectory ledger re-scan for the common case. On a miss we fall back to
+/// the ledger, which remains the source of truth.
 fn last_observation<L: LedgerStore>(
     run: &Run<'_, L>,
     commit_id: thymos_core::CommitId,
 ) -> Result<Observation> {
+    if let Some(obs) = run.cached_commit_observation(commit_id) {
+        return Ok(obs);
+    }
     let entries: Vec<Entry> = run.runtime().ledger.entries(run.trajectory_id())?;
     for e in entries.into_iter().rev() {
         if let EntryPayload::Commit(c) = &e.payload {
