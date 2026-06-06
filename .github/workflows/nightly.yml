@@ -1,0 +1,93 @@
+# Nightly dev builds: fresh prebuilt binaries from `main`, published to a single
+# rolling `nightly` prerelease so people can download the latest unreleased code
+# without a toolchain. UNTESTED until first run (scheduled/dispatch only).
+# Install:  curl -fsSL .../scripts/get.sh | THYMOS_VERSION=nightly sh
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  binaries:
+    name: Nightly binaries (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            ext: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: ".exe"
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: thymos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: thymos
+          key: nightly-${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p thymos-server -p thymos-cli
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/thymos-server${{ matrix.ext }} dist/
+          cp target/${{ matrix.target }}/release/thymos${{ matrix.ext }}        dist/
+          cd dist
+          tar czf ../../thymos-nightly-${{ matrix.target }}.tar.gz thymos-server${{ matrix.ext }} thymos${{ matrix.ext }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.target }}
+          path: thymos-nightly-*.tar.gz
+
+  publish:
+    name: Publish nightly prerelease
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: nightly-*
+          merge-multiple: true
+      - name: Move the nightly tag to current main
+        run: |
+          git tag -f nightly
+          git push -f origin nightly
+      - name: Publish / refresh the nightly prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse --short HEAD)"
+          notes="Automated build from \`main\` (${sha}) on $(date -u +%FT%TZ). Unsigned and unstable — for tracking unreleased changes. Install: \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/scripts/get.sh | THYMOS_VERSION=nightly sh\`"
+          if ! gh release view nightly >/dev/null 2>&1; then
+            gh release create nightly --prerelease --title "OpenThymos nightly" --notes "$notes"
+          else
+            gh release edit nightly --prerelease --notes "$notes"
+          fi
+          gh release upload nightly artifacts/thymos-nightly-*.tar.gz --clobber

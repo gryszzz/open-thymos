@@ -313,6 +313,33 @@ feature-by-feature status: **[docs/rfcs/desktop-app.md](docs/rfcs/desktop-app.md
 The Download button above is the terminal runtime today; the desktop GUI installer
 (`.dmg` / `.msi` / `.AppImage`) lands here once it's signed and released.
 
+### Run a dev build & track changes
+
+Want the latest unreleased code (e.g. the freshest CLI/UI) instead of a tagged
+release? Build from source — every binary reports its exact build:
+
+```bash
+git clone https://github.com/gryszzz/open-thymos && cd open-thymos/thymos
+cargo run -p thymos-server                       # dev runtime
+cargo run -p thymos-cli -- shell                 # dev CLI
+cargo install --path crates/thymos-cli           # put the dev `thymos` on PATH
+
+thymos --version                                 # e.g. "thymos 0.5.0 (a1b2c3d)"
+git log --oneline -10                            # the changes that build contains
+```
+
+`thymos --version` prints `<version> (<git-sha>)`, so you can always tell which
+build you're on and map it to a commit. Desktop dev mode:
+`cd clients/desktop && npm install && npm run dev` (hot-reloads the UI).
+
+**Nightly builds** (no toolchain): once the Nightly workflow has run, the
+[`nightly`](https://github.com/gryszzz/open-thymos/releases/tag/nightly)
+prerelease carries fresh binaries rebuilt from `main` each day:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | THYMOS_VERSION=nightly sh
+```
+
 **Multi-agent delegation** — a parent mints a child writ ⊆ its own authority, the
 child runs on its own trajectory, the ledger shows the lineage, replay reconstructs both:
 
