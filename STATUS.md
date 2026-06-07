@@ -97,6 +97,20 @@ never produces a false failure — and proves the real path when you supply it.
   boundary for sandboxed tool execution; the substance lives in
   `thymos_tools::worker_entrypoint` (kept in the library so it is unit-tested and
   can also run in-process). Thinness is the design, not a stub.
+- **Desktop in-app provider setup (connect any model).** The desktop Providers
+  tab now writes a per-user `provider.json` and injects it (`THYMOS_DEFAULT_*`,
+  `OPENAI_API_KEY`/`OPENAI_BASE_URL`, `ANTHROPIC_*`) into the supervised runtime
+  child at spawn — covering Claude, OpenAI, Ollama/LM Studio, and any
+  OpenAI-compatible preset or custom base-URL adapter, mirroring the CLI's
+  `thymos use`. The key is never returned to the webview. **Not compiled in CI
+  here:** the desktop is a separate Tauri workspace needing GTK/WebKit system
+  libs, built only by the release pipeline's desktop job on real OS runners; the
+  JS is syntax-checked and the host code follows the existing command patterns.
+- **Skills are designed, not implemented.** `docs/rfcs/skills.md` (Draft)
+  specifies a content-addressed, *authority-narrowing* skill abstraction (prompt
+  + tool allow-list + effect ceiling/writ template + tunable params) plus the
+  CLI/desktop surfaces to edit it. No runtime code yet — it lands after the RFC is
+  accepted, per the RFC-first rule.
 
 ## Release status
 
