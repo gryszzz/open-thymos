@@ -60,9 +60,21 @@ enum Commands {
         /// Tool scopes (comma-separated).
         #[arg(long)]
         scopes: Option<String>,
+        /// Bind a skill (name or content-id). It narrows the run's authority
+        /// (tools ∩, ceiling AND, budget min) and prepends its instructions.
+        #[arg(long)]
+        skill: Option<String>,
+        /// Skill param override `key=value` (repeatable).
+        #[arg(long = "skill-param", value_parser = parse_kv)]
+        skill_param: Vec<(String, String)>,
         /// After starting the run, stream cognition events until it completes.
         #[arg(long, short = 'f')]
         follow: bool,
+    },
+    /// Author and inspect skills (reusable, authority-narrowing templates).
+    Skill {
+        #[command(subcommand)]
+        action: SkillAction,
     },
     /// Get run status and summary.
     Status {
@@ -192,6 +204,54 @@ enum RunsAction {
     },
 }
 
+#[derive(clap::Subcommand)]
+enum SkillAction {
+    /// List authored skills.
+    List,
+    /// Show a skill's full definition (by name or content-id).
+    Show {
+        /// Skill name or content-id.
+        name: String,
+    },
+    /// Create a new skill.
+    New {
+        /// Skill name (the human handle).
+        name: String,
+        /// Instructions prepended to the task (use `{param}` placeholders).
+        #[arg(long)]
+        instructions: String,
+        /// One-line title.
+        #[arg(long)]
+        title: Option<String>,
+        /// Allowed tools (comma-separated globs, e.g. `kv_*,fs.read`). Empty =
+        /// no extra tool restriction (the writ still gates).
+        #[arg(long)]
+        tools: Option<String>,
+        /// Effect-ceiling cap (comma list from read,write,external,irreversible).
+        /// Default: `read,write`. The run's ceiling is AND-ed with this.
+        #[arg(long)]
+        ceiling: Option<String>,
+    },
+    /// Tune an existing skill (bumps its version, minting a new content-id).
+    Tune {
+        /// Skill name to edit.
+        name: String,
+        #[arg(long)]
+        instructions: Option<String>,
+        #[arg(long)]
+        tools: Option<String>,
+        #[arg(long)]
+        ceiling: Option<String>,
+    },
+}
+
+/// Parse a `key=value` CLI argument.
+fn parse_kv(s: &str) -> Result<(String, String), String> {
+    s.split_once('=')
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .ok_or_else(|| format!("expected key=value, got '{s}'"))
+}
+
 #[tokio::main]
 async fn main() {
     // Load .env from CWD or any parent dir so THYMOS_URL / THYMOS_API_KEY
@@ -215,6 +275,8 @@ async fn main() {
             model,
             base_url,
             scopes,
+            skill,
+            skill_param,
             follow,
         } => {
             cmd_run(
@@ -229,11 +291,16 @@ async fn main() {
                         model: model.as_deref(),
                         base_url: base_url.as_deref(),
                         scopes: scopes.as_deref(),
+                        skill: skill.as_deref(),
+                        skill_params: &skill_param,
                     },
                     follow,
                 },
             )
             .await
+        }
+        Commands::Skill { action } => {
+            cmd_skill(&client, &cli.url, cli.api_key.as_deref(), action).await
         }
         Commands::Status { run_id } => {
             cmd_status(&client, &cli.url, cli.api_key.as_deref(), &run_id).await
@@ -867,6 +934,11 @@ pub(crate) struct StartRunOptions<'a> {
     pub(crate) model: Option<&'a str>,
     pub(crate) base_url: Option<&'a str>,
     pub(crate) scopes: Option<&'a str>,
+    /// Optional skill (name or content-id) to bind — narrows authority + adds
+    /// instructions. The server enforces it.
+    pub(crate) skill: Option<&'a str>,
+    /// Param overrides for the bound skill (`key`, `value`).
+    pub(crate) skill_params: &'a [(String, String)],
 }
 
 pub(crate) async fn start_run(
@@ -895,6 +967,12 @@ pub(crate) async fn start_run(
     if let Some(s) = options.scopes {
         let scope_list: Vec<&str> = s.split(',').collect();
         body["tool_scopes"] = serde_json::json!(scope_list);
+    }
+    if let Some(sk) = options.skill {
+        body["skill"] = serde_json::json!(sk);
+        if !options.skill_params.is_empty() {
+            body["skill_params"] = serde_json::json!(options.skill_params);
+        }
     }
 
     let mut req = client.post(format!("{url}/runs")).json(&body);
@@ -946,6 +1024,151 @@ pub(crate) async fn cmd_run(
     println!("Poll status:  thymos status {run_id}");
     println!("Stream live:  thymos stream {run_id}");
     Ok(())
+}
+
+/// Parse an effect-ceiling spec (comma list) into the runtime's bool fields.
+/// Default `read,write` matches `EffectCeiling::read_write_local()`.
+fn parse_ceiling(csv: Option<&str>) -> serde_json::Value {
+    let spec = csv.unwrap_or("read,write");
+    let has = |k: &str| spec.split(',').any(|t| t.trim().eq_ignore_ascii_case(k));
+    serde_json::json!({
+        "read": has("read"),
+        "write": has("write"),
+        "external": has("external"),
+        "irreversible": has("irreversible"),
+    })
+}
+
+/// Parse a comma-separated tool allow-list into `[{ "tool": … }]`.
+fn parse_tools(csv: Option<&str>) -> serde_json::Value {
+    match csv {
+        None => serde_json::json!([]),
+        Some(s) => serde_json::json!(s
+            .split(',')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| serde_json::json!({ "tool": t }))
+            .collect::<Vec<_>>()),
+    }
+}
+
+async fn skills_get(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    path: &str,
+) -> Result<Value, String> {
+    let mut req = client.get(format!("{url}{path}"));
+    for (k, v) in auth_headers(api_key) {
+        req = req.header(&k, &v);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    json_body_or_error(resp).await
+}
+
+async fn skills_post(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    body: Value,
+) -> Result<Value, String> {
+    let mut req = client.post(format!("{url}/skills")).json(&body);
+    for (k, v) in auth_headers(api_key) {
+        req = req.header(&k, &v);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    json_body_or_error(resp).await
+}
+
+pub(crate) async fn cmd_skill(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: Option<&str>,
+    action: SkillAction,
+) -> Result<(), String> {
+    match action {
+        SkillAction::List => {
+            let resp = skills_get(client, url, api_key, "/skills").await?;
+            let skills = resp["skills"].as_array().cloned().unwrap_or_default();
+            if skills.is_empty() {
+                println!(
+                    "{}",
+                    paint(C_DIM, "no skills yet — thymos skill new <name> --instructions \"…\"")
+                );
+                return Ok(());
+            }
+            for s in &skills {
+                println!(
+                    "{}  {}  {}",
+                    paint(C_VIOLET, s["name"].as_str().unwrap_or("")),
+                    paint(C_DIM, format!("v{}", s["version"])),
+                    s["title"].as_str().unwrap_or("")
+                );
+                println!("  {} {}", paint(C_DIM, "id:"), s["id"].as_str().unwrap_or(""));
+            }
+            Ok(())
+        }
+        SkillAction::Show { name } => {
+            let resp = skills_get(client, url, api_key, &format!("/skills/{name}")).await?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&resp["skill"]).unwrap_or_default()
+            );
+            Ok(())
+        }
+        SkillAction::New {
+            name,
+            instructions,
+            title,
+            tools,
+            ceiling,
+        } => {
+            let def = serde_json::json!({
+                "name": name,
+                "version": 1,
+                "title": title.unwrap_or_default(),
+                "instructions": instructions,
+                "tools": parse_tools(tools.as_deref()),
+                "ceiling": parse_ceiling(ceiling.as_deref()),
+            });
+            let resp = skills_post(client, url, api_key, def).await?;
+            println!(
+                "created {} {}",
+                paint(C_VIOLET, &name),
+                paint(C_DIM, resp["id"].as_str().unwrap_or(""))
+            );
+            Ok(())
+        }
+        SkillAction::Tune {
+            name,
+            instructions,
+            tools,
+            ceiling,
+        } => {
+            let existing = skills_get(client, url, api_key, &format!("/skills/{name}")).await?;
+            let mut def = existing["skill"].clone();
+            if def.is_null() {
+                return Err(format!("unknown skill '{name}'"));
+            }
+            if let Some(i) = instructions {
+                def["instructions"] = serde_json::json!(i);
+            }
+            if let Some(t) = tools {
+                def["tools"] = parse_tools(Some(&t));
+            }
+            if let Some(c) = ceiling {
+                def["ceiling"] = parse_ceiling(Some(&c));
+            }
+            let resp = skills_post(client, url, api_key, def).await?;
+            println!(
+                "tuned {} → v{} {}",
+                paint(C_VIOLET, &name),
+                resp["skill"]["version"],
+                paint(C_DIM, resp["id"].as_str().unwrap_or(""))
+            );
+            Ok(())
+        }
+    }
 }
 
 /// Compact, branded outcome for a finished run (used after `run --follow`):
