@@ -33,6 +33,7 @@
       <button class="tab" data-tab="mind">◇ Mind</button>
       <button class="tab" data-tab="runs">▸ Runs</button>
       <button class="tab" data-tab="providers">◈ Providers</button>
+      <button class="tab" data-tab="skills">✦ Skills</button>
       <button class="tab" data-tab="tools">▣ Tools</button>
       <button class="tab" data-tab="audit">≡ Audit</button>
       <button class="tab" data-tab="backups">↧ Backups</button>
@@ -55,6 +56,9 @@
           </div>
         </div>
         <form class="composer" id="composer">
+          <select id="composerSkill" title="Bind a skill (narrows authority + adds instructions)">
+            <option value="">no skill</option>
+          </select>
           <input id="taskInput" autocomplete="off"
             placeholder="Describe a task in plain language…" />
           <button type="submit">Send</button>
@@ -154,6 +158,44 @@
           real model). The CLI mirrors this: <code>thymos providers</code> lists
           every preset, <code>thymos use &lt;name&gt;</code> sets one,
           <code>thymos doctor</code> verifies the wiring.
+        </p>
+      </section>
+
+      <!-- SKILLS: author + tune reusable, authority-narrowing templates -->
+      <section class="panel" id="tab-skills">
+        <div class="panel-head"><h2>Skills</h2>
+          <button class="ghost" id="refreshSkills">Refresh</button></div>
+        <div id="skillsList" class="list"></div>
+
+        <form id="skillForm" class="card provider-form">
+          <h3>Create / tune a skill</h3>
+          <label>Name <input id="skName" autocomplete="off" placeholder="diff-review" /></label>
+          <label>Title <span class="dim">(optional)</span>
+            <input id="skTitle" autocomplete="off" placeholder="Review a code diff" /></label>
+          <label>Instructions <span class="dim">(prepended to the task; use {param} placeholders)</span>
+            <textarea id="skInstr" rows="3" placeholder="You review diffs for correctness…"></textarea></label>
+          <label>Tools <span class="dim">(comma globs, e.g. fs.read,git_* — blank = no extra limit)</span>
+            <input id="skTools" autocomplete="off" placeholder="fs.read, git_*" /></label>
+          <label>Effect ceiling
+            <span class="ceiling-row">
+              <label class="ck"><input type="checkbox" id="skRead" checked /> read</label>
+              <label class="ck"><input type="checkbox" id="skWrite" checked /> write</label>
+              <label class="ck"><input type="checkbox" id="skExternal" /> external</label>
+              <label class="ck"><input type="checkbox" id="skIrrev" /> irreversible</label>
+            </span>
+          </label>
+          <div class="provider-actions">
+            <button type="submit">Save skill</button>
+            <button type="button" id="skClear" class="ghost">Clear</button>
+            <span id="skStatus" class="dim"></span>
+          </div>
+        </form>
+        <p class="note">
+          A skill never grants authority — it <b>narrows</b> a run: effective
+          tools = requested ∩ allow-list, ceiling = AND, budget = min. Editing a
+          skill bumps its version, minting a fresh content-addressed id; each run
+          records the bound skill so replay can verify it. Bind one from the
+          <b>Chat</b> composer's dropdown. Mirrors the CLI's <code>thymos skill</code>.
         </p>
       </section>
 

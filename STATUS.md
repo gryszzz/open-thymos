@@ -106,11 +106,20 @@ never produces a false failure — and proves the real path when you supply it.
   here:** the desktop is a separate Tauri workspace needing GTK/WebKit system
   libs, built only by the release pipeline's desktop job on real OS runners; the
   JS is syntax-checked and the host code follows the existing command patterns.
-- **Skills are designed, not implemented.** `docs/rfcs/skills.md` (Draft)
-  specifies a content-addressed, *authority-narrowing* skill abstraction (prompt
-  + tool allow-list + effect ceiling/writ template + tunable params) plus the
-  CLI/desktop surfaces to edit it. No runtime code yet — it lands after the RFC is
-  accepted, per the RFC-first rule.
+- **Skills are implemented (content-addressed, authority-narrowing).** Per
+  `docs/rfcs/skills.md` (Accepted): `thymos-core::skill::SkillDef` (instructions +
+  tool allow-list + effect-ceiling cap + optional budget cap + tunable params),
+  content-addressed via `blake3(canonical_json)`. Binding a skill to a run
+  **narrows** the writ before signing (tools = requested ∩ allow-list, ceiling =
+  AND, budget = min — proven `⊆` by unit tests) and prepends rendered
+  instructions to the task; it can never widen authority. The ledger gains a
+  `skill_bound` entry inlining the full definition, which replay re-hashes and
+  verifies (tamper-tested). Authoring surfaces: `/skills` API, `thymos skill
+  list/show/new/tune` + `thymos run --skill`, and a desktop **Skills** tab +
+  composer picker. CI-proven across `thymos-core`/`thymos-ledger`/`thymos-server`
+  (incl. an e2e binding test); the desktop UI ships unbuilt here (same Tauri
+  caveat as above). Deferred (unresolved RFC questions, non-blocking): ledger-
+  backed registry, richer param typing, marketplace distribution of skills.
 
 ## Release status
 

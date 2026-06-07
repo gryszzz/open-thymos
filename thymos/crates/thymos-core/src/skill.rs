@@ -230,13 +230,13 @@ mod tests {
         let s = skill(); // skill forbids external + irreversible
         // Writ allows everything; skill must strip external + irreversible.
         let eff = s.cap_ceiling(&ceiling(true, true, true, true));
-        assert_eq!(eff.read, true);
-        assert_eq!(eff.write, true);
-        assert_eq!(eff.external, false);
-        assert_eq!(eff.irreversible, false);
+        assert!(eff.read);
+        assert!(eff.write);
+        assert!(!eff.external);
+        assert!(!eff.irreversible);
         // Skill cannot add an effect the writ forbids: writ has no write.
         let eff2 = s.cap_ceiling(&ceiling(true, false, false, false));
-        assert_eq!(eff2.write, false, "AND can never add write the writ lacks");
+        assert!(!eff2.write, "AND can never add write the writ lacks");
     }
 
     #[test]
