@@ -89,17 +89,71 @@
         <div id="runsList" class="list"></div>
       </section>
 
-      <!-- PROVIDERS: /health truth + how to set a key -->
+      <!-- PROVIDERS: /health truth + connect ANY model (LLM, Ollama, adapter) -->
       <section class="panel" id="tab-providers">
         <div class="panel-head"><h2>Providers</h2>
           <button class="ghost" id="refreshHealth">Refresh</button></div>
         <div id="providerCard" class="card"></div>
+
+        <form id="providerForm" class="card provider-form">
+          <h3>Connect a model</h3>
+          <label>Provider
+            <input id="pfProvider" list="providerList" autocomplete="off"
+              placeholder="anthropic" />
+            <datalist id="providerList">
+              <option value="anthropic">Claude — native Messages API</option>
+              <option value="openai">OpenAI (or any OpenAI-compatible endpoint)</option>
+              <option value="ollama">Ollama — local</option>
+              <option value="lmstudio">LM Studio — local</option>
+              <option value="groq">Groq</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="together">Together</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="mistral">Mistral</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="huggingface">Hugging Face Router</option>
+              <option value="perplexity">Perplexity</option>
+              <option value="xai">xAI Grok</option>
+              <option value="fireworks">Fireworks</option>
+              <option value="nvidia">NVIDIA NIM</option>
+              <option value="cerebras">Cerebras</option>
+              <option value="mock">Mock — offline, deterministic</option>
+            </datalist>
+          </label>
+          <label>Model <span class="dim">(blank = provider default)</span>
+            <input id="pfModel" autocomplete="off" placeholder="e.g. claude-sonnet-4-6 · llama3.2 · gpt-4o" /></label>
+          <label>Base URL <span class="dim">(OpenAI-compatible / self-hosted — optional)</span>
+            <input id="pfBaseUrl" autocomplete="off" placeholder="e.g. http://localhost:11434/v1" /></label>
+          <label>API key <span class="dim">(stored locally on this machine; local models need none)</span>
+            <input id="pfKey" type="password" autocomplete="off" placeholder="leave blank to keep current key" /></label>
+          <div class="provider-actions">
+            <button type="submit">Save &amp; restart runtime</button>
+            <span id="pfStatus" class="dim"></span>
+          </div>
+        </form>
+
         <p class="note">
-          Keys are read <b>server-side</b> — only the provider name crosses the
-          wire, and cognition gains no execution authority. Set
-          <code>ANTHROPIC_API_KEY</code> (or another provider's key) in the
-          environment the runtime starts in. With no key the runtime answers with
-          the deterministic <b>mock</b> — real governance, no real model.
+          <b>Hook up any LLM.</b> Pick a name above (or type any preset id) and
+          Save — the runtime restarts using it. Three shapes:
+        </p>
+        <ul class="note">
+          <li><b>Claude</b>: provider <code>anthropic</code> + your key.</li>
+          <li><b>Hosted (OpenAI, Groq, OpenRouter, DeepSeek, Gemini, …)</b>:
+            pick the preset + paste its key. The model field is optional.</li>
+          <li><b>Local / self-hosted (Ollama, LM Studio, vLLM, a gateway)</b>:
+            provider <code>ollama</code> (or <code>openai</code> for a custom
+            endpoint), set <b>Base URL</b> (Ollama defaults to
+            <code>http://localhost:11434/v1</code>), model = the local model name,
+            key optional.</li>
+        </ul>
+        <p class="note">
+          Keys are read <b>server-side</b> only — they're injected into the local
+          runtime at startup, never sent to the model and never leave your
+          machine. Cognition gains no execution authority. With no working key the
+          runtime answers with the deterministic <b>mock</b> (real governance, no
+          real model). The CLI mirrors this: <code>thymos providers</code> lists
+          every preset, <code>thymos use &lt;name&gt;</code> sets one,
+          <code>thymos doctor</code> verifies the wiring.
         </p>
       </section>
 

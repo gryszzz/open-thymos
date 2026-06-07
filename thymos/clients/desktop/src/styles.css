@@ -105,6 +105,18 @@ h2 { margin: 4px 0 12px; }
 }
 .inline-form { display: flex; gap: 8px; margin-bottom: 12px; }
 
+/* Provider settings form: connect any model */
+.provider-form { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.provider-form h3 { margin: 0; color: var(--cyan); font-weight: 700; letter-spacing: .4px; font-size: 14px; }
+.provider-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.provider-form input {
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 14px;
+}
+.provider-form input:focus { outline: none; border-color: var(--violet); }
+.provider-actions { display: flex; align-items: center; gap: 12px; margin-top: 2px; }
+.dim { color: var(--muted); font-weight: 400; }
+
 /* Lists / cards */
 .list { display: flex; flex-direction: column; gap: 8px; }
 .card, .item {

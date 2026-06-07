@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 /// Address the supervised runtime listens on. The webview's CSP only allows
@@ -47,6 +48,118 @@ fn runtime_addr() -> String {
     RUNTIME_ADDR.to_string()
 }
 
+/// User-chosen cognition provider, persisted in the app-data dir as plain JSON
+/// (`provider.json`). Same trust model as the CLI's `.env`: the key lives on the
+/// user's machine, is injected only into the **local** runtime child at spawn,
+/// and is never returned to the webview — `get_provider_config` reports only
+/// whether a key is stored.
+#[derive(Default, Serialize, Deserialize)]
+struct ProviderConfig {
+    /// `anthropic`, `openai`, `mock`, or any preset id (`ollama`, `groq`,
+    /// `openrouter`, `lmstudio`, `huggingface`, …) — or a custom OpenAI-
+    /// compatible adapter via provider `openai` + a `base_url`.
+    #[serde(default)]
+    provider: String,
+    #[serde(default)]
+    model: String,
+    /// Base URL for OpenAI-compatible / self-hosted adapters (e.g. Ollama,
+    /// LM Studio, vLLM, a corporate gateway). Empty = use the provider default.
+    #[serde(default)]
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+}
+
+fn provider_config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create app data dir: {e}"))?;
+    Ok(dir.join("provider.json"))
+}
+
+fn load_provider_config(app: &tauri::AppHandle) -> ProviderConfig {
+    provider_config_path(app)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Inject the stored provider as env vars on the runtime child. Anthropic uses
+/// its dedicated key/base-URL vars; everything else (native `openai` plus every
+/// OpenAI-compatible preset) resolves the generic `OPENAI_API_KEY` /
+/// `OPENAI_BASE_URL` fallback in `resolve_default_cognition` + the preset
+/// registry — so a single code path covers any adapter.
+fn apply_provider_env(cmd: &mut Command, cfg: &ProviderConfig) {
+    let anthropic = cfg.provider.eq_ignore_ascii_case("anthropic");
+    if !cfg.provider.is_empty() {
+        cmd.env("THYMOS_DEFAULT_PROVIDER", &cfg.provider);
+    }
+    if !cfg.model.is_empty() {
+        cmd.env("THYMOS_DEFAULT_MODEL", &cfg.model);
+    }
+    if !cfg.api_key.is_empty() {
+        cmd.env(
+            if anthropic {
+                "ANTHROPIC_API_KEY"
+            } else {
+                "OPENAI_API_KEY"
+            },
+            &cfg.api_key,
+        );
+    }
+    if !cfg.base_url.is_empty() {
+        cmd.env(
+            if anthropic {
+                "ANTHROPIC_BASE_URL"
+            } else {
+                "OPENAI_BASE_URL"
+            },
+            &cfg.base_url,
+        );
+    }
+}
+
+/// Current provider config for the Settings UI. Never returns the key itself —
+/// only whether one is stored — so the secret never round-trips to the webview.
+#[tauri::command]
+fn get_provider_config(app: tauri::AppHandle) -> serde_json::Value {
+    let cfg = load_provider_config(&app);
+    serde_json::json!({
+        "provider": cfg.provider,
+        "model": cfg.model,
+        "base_url": cfg.base_url,
+        "key_set": !cfg.api_key.is_empty(),
+    })
+}
+
+/// Persist the chosen provider/model/base-URL/key. An empty `api_key` leaves any
+/// stored key untouched (so editing the model doesn't wipe the secret); pass
+/// whitespace to clear it. The caller restarts the runtime to apply.
+#[tauri::command]
+fn set_provider_config(
+    app: tauri::AppHandle,
+    provider: String,
+    model: String,
+    base_url: String,
+    api_key: String,
+) -> Result<(), String> {
+    let mut cfg = load_provider_config(&app);
+    cfg.provider = provider.trim().to_string();
+    cfg.model = model.trim().to_string();
+    cfg.base_url = base_url.trim().to_string();
+    if !api_key.is_empty() {
+        // Real key stored trimmed; pure whitespace clears it.
+        cfg.api_key = api_key.trim().to_string();
+    }
+    let path = provider_config_path(&app)?;
+    let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &json).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<String, String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
@@ -72,8 +185,10 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     let ledger_path = data_dir.join("ledger.db");
 
     let bin = server_binary();
-    let child = Command::new(&bin)
-        .env("THYMOS_LEDGER_PATH", &ledger_path)
+    let mut cmd = Command::new(&bin);
+    cmd.env("THYMOS_LEDGER_PATH", &ledger_path);
+    apply_provider_env(&mut cmd, &load_provider_config(&app));
+    let child = cmd
         .spawn()
         .map_err(|e| format!("failed to start {}: {e}", bin.display()))?;
     *guard = Some(child);
@@ -121,7 +236,9 @@ pub fn run() {
             start_runtime,
             stop_runtime,
             runtime_running,
-            ledger_path
+            ledger_path,
+            get_provider_config,
+            set_provider_config
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.

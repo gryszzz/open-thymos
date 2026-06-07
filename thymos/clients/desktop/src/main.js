@@ -200,7 +200,7 @@ async function loadRuns() {
 }
 $("refreshRuns").addEventListener("click", loadRuns);
 
-/* ---------- providers ---------- */
+/* ---------- providers: live truth + connect any model ---------- */
 async function loadHealth() {
   const el = $("providerCard");
   try {
@@ -214,8 +214,66 @@ async function loadHealth() {
   } catch (e) {
     el.innerHTML = `<div class='hint'>runtime not reachable — start it from the top bar (${e})</div>`;
   }
+  await loadProviderForm();
 }
 $("refreshHealth").addEventListener("click", loadHealth);
+
+// Populate the connect-a-model form from the host's stored config. The key is
+// never returned — we only learn whether one is set, and reflect that in the
+// placeholder.
+async function loadProviderForm() {
+  if (!invoke) {
+    $("pfStatus").textContent = "provider editing needs the desktop app";
+    $("providerForm")
+      .querySelectorAll("input,button")
+      .forEach((n) => (n.disabled = true));
+    return;
+  }
+  try {
+    const cfg = await invoke("get_provider_config");
+    $("pfProvider").value = cfg.provider || "";
+    $("pfModel").value = cfg.model || "";
+    $("pfBaseUrl").value = cfg.base_url || "";
+    $("pfKey").value = "";
+    $("pfKey").placeholder = cfg.key_set
+      ? "•••••••• stored — blank keeps it"
+      : "leave blank to keep current key";
+  } catch (_) {}
+}
+
+$("providerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!invoke) return;
+  const status = $("pfStatus");
+  const provider = $("pfProvider").value.trim();
+  if (!provider) {
+    status.textContent = "pick a provider first";
+    return;
+  }
+  status.textContent = "saving…";
+  try {
+    await invoke("set_provider_config", {
+      provider,
+      model: $("pfModel").value,
+      baseUrl: $("pfBaseUrl").value,
+      apiKey: $("pfKey").value,
+    });
+    // Apply by restarting the supervised runtime (env is read at spawn).
+    const wasRunning = await invoke("runtime_running").catch(() => false);
+    if (wasRunning) await invoke("stop_runtime").catch(() => {});
+    await invoke("start_runtime").catch(() => {});
+    status.textContent = "saved — runtime restarting…";
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      await refreshStatus();
+      if ($("dot").classList.contains("dot-on")) break;
+    }
+    await loadHealth();
+    status.textContent = `now using ${provider}`;
+  } catch (err) {
+    status.textContent = "save failed: " + err;
+  }
+});
 
 /* ---------- tools (marketplace catalog, read-only) ---------- */
 async function loadTools() {

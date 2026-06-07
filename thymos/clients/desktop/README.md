@@ -16,19 +16,29 @@ shows every proposal, verdict, commit, and replay-verification result.
 - **`src-tauri/`** — the Tauri (Rust) host. It supervises a `thymos-server`
   child process (a bundled sidecar in release builds, or `thymos-server` on
   `PATH` in dev) and exposes `start_runtime` / `stop_runtime` / `runtime_running`
-  / `runtime_addr` commands. It does no governance itself.
+  / `runtime_addr` / `ledger_path` / `get_provider_config` / `set_provider_config`
+  commands. It does no governance itself. Provider config is persisted as
+  `provider.json` in the app-data dir and injected as env vars (`THYMOS_DEFAULT_*`,
+  `OPENAI_API_KEY`/`OPENAI_BASE_URL`, `ANTHROPIC_*`) into the runtime child at
+  spawn — the API key is never returned to the webview.
 - **`src/`** — the webview UI (plain HTML/CSS/JS, no build step, so it's
   inspectable). Tabs: **Chat** (a message = a governed run, streamed),
-  **Runs**, **Providers**, **Tools**, **Audit** (+ replay badge), **Backups**.
-  Every tab is a thin client of an endpoint that already exists.
+  **Runs**, **Providers** (connect any model — Claude, OpenAI, Ollama/LM Studio,
+  or any OpenAI-compatible preset/adapter), **Tools**, **Audit** (+ replay
+  badge), **Backups**. Every tab is a thin client of an endpoint that already
+  exists.
 
 ## Status (honest)
 
 - **v1 surfaces wired to real endpoints:** chat/runs, provider/health, tools
-  catalog, audit + replay, thin backups, local provider setup.
+  catalog, audit + replay, thin backups, and **in-app provider setup** — the
+  Providers tab connects any model (Claude / OpenAI / Ollama / LM Studio / any
+  OpenAI-compatible preset or custom base-URL adapter), persisting the choice and
+  restarting the runtime to apply it.
 - **Deferred (no backend yet, shown as labeled placeholders, never fake
-  buttons):** scheduling, inbound message gateways, memory, skills. See the RFC
-  §4.
+  buttons):** scheduling, inbound message gateways, memory, skills (designed in
+  [`docs/rfcs/skills.md`](../../../docs/rfcs/skills.md), not yet implemented). See
+  also the desktop RFC §4.
 - **Not yet built/verified here:** this is a scaffold. It has **not** been
   `cargo build`/`tauri build`-compiled in this environment (the Tauri toolchain
   + crates were not fetched), and there is **no signed installer / download link
