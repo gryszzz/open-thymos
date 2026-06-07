@@ -17,6 +17,7 @@ pub mod ids;
 pub mod intent;
 pub mod proposal;
 pub mod redact;
+pub mod skill;
 pub mod world;
 pub mod writ;
 
@@ -31,6 +32,7 @@ pub use proposal::{
     ExecutionPlan, FallbackHint, PolicyDecision, PolicyTrace, Proposal, ProposalBody,
     ProposalStatus, RejectionReason, RoutingEvidence,
 };
+pub use skill::{ModelHint, SkillDef, SkillId, SkillParam};
 pub use world::{ResourceKey, World};
 pub use writ::{Budget, EffectCeiling, ToolPattern, Writ, WritBody};
 

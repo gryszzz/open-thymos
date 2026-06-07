@@ -178,7 +178,7 @@ impl WritBody {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolPattern {
     /// Literal name or simple glob (`*` suffix, e.g. `order_*`).
     pub tool: String,
@@ -211,7 +211,7 @@ impl ToolPattern {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Budget {
     pub tokens: u64,
     pub tool_calls: u64,
@@ -268,7 +268,7 @@ impl Budget {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectCeiling {
     pub read: bool,
     pub write: bool,
