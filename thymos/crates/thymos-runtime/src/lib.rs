@@ -1284,6 +1284,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                 thymos_ledger::EntryKind::PendingApproval => pending_approvals += 1,
                 thymos_ledger::EntryKind::Delegation => {}
                 thymos_ledger::EntryKind::Branch => {}
+                thymos_ledger::EntryKind::SkillBound => {}
             }
         }
         self.runtime.ledger.verify_integrity(self.trajectory_id)?;

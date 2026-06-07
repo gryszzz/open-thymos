@@ -34,6 +34,7 @@ fn test_state() -> Arc<AppState> {
         active_runs: AtomicU32::new(0),
         marketplace: Arc::new(thymos_marketplace::MarketplaceService::in_memory()),
         default_cognition: thymos_server::CognitionConfig::default(),
+        skills: std::sync::Arc::new(thymos_server::skills::SkillRegistry::new(None)),
     })
 }
 
@@ -75,6 +76,68 @@ async fn create_run_returns_accepted() {
     assert_eq!(body["status"], "running");
     assert!(body["run_id"].is_string());
     assert_eq!(body["task"], "say hello");
+}
+
+#[tokio::test]
+async fn skills_crud_and_run_binding() {
+    let state = test_state();
+    let server = test_server(state.clone());
+
+    // Create a skill.
+    let resp = server
+        .post("/skills")
+        .json(&json!({
+            "name": "triage",
+            "version": 1,
+            "instructions": "Be careful and {strictness}.",
+            "tools": [{ "tool": "kv_*" }],
+            "ceiling": { "read": true, "write": true, "external": false, "irreversible": false },
+            "params": [{ "key": "strictness", "default": "thorough", "values": ["thorough", "fast"] }]
+        }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::CREATED);
+    let id = resp.json::<Value>()["id"].as_str().unwrap().to_string();
+    assert!(id.starts_with("skill:"));
+
+    // It shows up in the list and is fetchable by name.
+    let list = server.get("/skills").await.json::<Value>();
+    assert_eq!(list["skills"][0]["name"], "triage");
+    let by_name = server.get("/skills/triage").await;
+    by_name.assert_status_ok();
+    assert_eq!(by_name.json::<Value>()["skill"]["version"], 1);
+
+    // An invalid enum param is rejected.
+    let bad = server
+        .post("/runs")
+        .json(&json!({ "task": "t", "skill": "triage", "skill_params": [["strictness", "nope"]] }))
+        .await;
+    bad.assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // An unknown skill is rejected.
+    let unknown = server
+        .post("/runs")
+        .json(&json!({ "task": "t", "skill": "does-not-exist" }))
+        .await;
+    unknown.assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // A run bound to the skill records a skill_bound provenance entry.
+    let resp = server
+        .post("/runs")
+        .json(&json!({ "task": "store a greeting", "max_steps": 2, "skill": "triage" }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::ACCEPTED);
+    let run_id = resp.json::<Value>()["run_id"].as_str().unwrap().to_string();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let audit = server
+        .get(&format!("/audit/entries?run_id={run_id}"))
+        .await
+        .json::<Value>();
+    let entries = audit["entries"].as_array().or(audit.as_array()).unwrap();
+    assert!(
+        entries.iter().any(|e| e["kind"] == "skill_bound"),
+        "expected a skill_bound entry, got: {audit}"
+    );
 }
 
 #[tokio::test]
@@ -450,6 +513,7 @@ fn jwt_test_state() -> Arc<AppState> {
         active_runs: AtomicU32::new(0),
         marketplace: Arc::new(thymos_marketplace::MarketplaceService::in_memory()),
         default_cognition: thymos_server::CognitionConfig::default(),
+        skills: std::sync::Arc::new(thymos_server::skills::SkillRegistry::new(None)),
     })
 }
 
@@ -483,6 +547,7 @@ fn gateway_test_state() -> Arc<AppState> {
         active_runs: AtomicU32::new(0),
         marketplace: Arc::new(thymos_marketplace::MarketplaceService::in_memory()),
         default_cognition: thymos_server::CognitionConfig::default(),
+        skills: std::sync::Arc::new(thymos_server::skills::SkillRegistry::new(None)),
     })
 }
 

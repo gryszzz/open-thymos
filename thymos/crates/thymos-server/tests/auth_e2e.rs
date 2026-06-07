@@ -50,6 +50,7 @@ fn test_state_with_jwt(jwt: Option<Arc<auth::JwtConfig>>) -> Arc<AppState> {
         active_runs: AtomicU32::new(0),
         marketplace: Arc::new(thymos_marketplace::MarketplaceService::in_memory()),
         default_cognition: thymos_server::CognitionConfig::default(),
+        skills: std::sync::Arc::new(thymos_server::skills::SkillRegistry::new(None)),
     })
 }
 

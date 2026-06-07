@@ -226,6 +226,11 @@ async fn main() {
         active_runs: AtomicU32::new(0),
         marketplace,
         default_cognition: config.default_cognition.clone(),
+        skills: Arc::new(thymos_server::skills::SkillRegistry::new(Some(
+            std::path::PathBuf::from(
+                std::env::var("THYMOS_SKILLS_DIR").unwrap_or_else(|_| "thymos-skills".into()),
+            ),
+        ))),
     });
 
     eprintln!(

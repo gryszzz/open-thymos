@@ -21,6 +21,7 @@ pub mod execution;
 pub mod marketplace_api;
 pub mod middleware;
 pub mod run_store;
+pub mod skills;
 pub mod telemetry;
 
 use axum::{
@@ -421,6 +422,8 @@ pub struct AppState {
     /// Provider used for runs that omit their own `cognition` block. Resolved
     /// from env at startup (see [`resolve_default_cognition`]).
     pub default_cognition: CognitionConfig,
+    /// Skill registry behind `/skills` (+ the CLI/desktop edit surfaces).
+    pub skills: Arc<skills::SkillRegistry>,
 }
 
 #[derive(Deserialize)]
@@ -433,6 +436,14 @@ pub struct CreateRunRequest {
     /// Cognition provider config. Defaults to mock if omitted.
     #[serde(default)]
     pub cognition: Option<CognitionConfig>,
+    /// Optional skill (by `name` or content-id) to bind. It prepends its
+    /// instructions to the task and NARROWS the writ (tools ∩, ceiling AND,
+    /// budget min); it can never widen authority.
+    #[serde(default)]
+    pub skill: Option<String>,
+    /// Param overrides for the bound skill (`[[key, value], …]`).
+    #[serde(default)]
+    pub skill_params: Vec<(String, String)>,
 }
 
 fn default_max_steps() -> u32 {
@@ -554,7 +565,9 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/runs/{id}/branch", post(post_branch))
         .route("/usage", get(get_usage))
         .route("/audit/entries", get(audit::get_audit_entries))
-        .route("/audit/entries/count", get(audit::count_audit_entries));
+        .route("/audit/entries/count", get(audit::count_audit_entries))
+        .route("/skills", get(list_skills).post(create_skill))
+        .route("/skills/{id}", get(get_skill));
 
     // Combine main + marketplace routes BEFORE the auth layers, so the auth
     // middleware gates the marketplace mutating endpoints (publish/unpublish)
@@ -1319,6 +1332,62 @@ async fn resume_run(
 }
 
 /// POST /runs ��� start a new agent run with async streaming cognition.
+/// GET /skills — list authored skills (id + metadata).
+async fn list_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let skills: Vec<serde_json::Value> = state
+        .skills
+        .list()
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "id": s.id().to_string(),
+                "name": s.name,
+                "version": s.version,
+                "title": s.title,
+                "tools": s.tools.iter().map(|t| t.tool.clone()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Json(serde_json::json!({ "skills": skills })).into_response()
+}
+
+/// GET /skills/{id} — full definition by name or content-id.
+async fn get_skill(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match state.skills.resolve(&id) {
+        Some(s) => {
+            Json(serde_json::json!({ "id": s.id().to_string(), "skill": s })).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("unknown skill '{id}'") })),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /skills — create or tune a skill (body = a `SkillDef`). Editing an
+/// existing name bumps its version, minting a fresh content-addressed id.
+async fn create_skill(
+    State(state): State<Arc<AppState>>,
+    Json(def): Json<thymos_core::skill::SkillDef>,
+) -> impl IntoResponse {
+    match state.skills.save(def) {
+        Ok(s) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": s.id().to_string(), "skill": s })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}
+
 async fn create_run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1376,8 +1445,47 @@ async fn create_run(
         }
     }
 
+    // Resolve an optional bound skill. It NARROWS authority (never widens) and
+    // prepends its instructions to the task.
+    let bound_skill = match req.skill.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => None,
+        Some(name_or_id) => match state.skills.resolve(name_or_id) {
+            Some(s) => Some(s),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("unknown skill '{name_or_id}'") })),
+                )
+                    .into_response()
+            }
+        },
+    };
+    // Validate enum params against the skill's declared choices.
+    if let Some(s) = &bound_skill {
+        for (k, v) in &req.skill_params {
+            if let Some(p) = s.params.iter().find(|p| &p.key == k) {
+                if !p.accepts(v) {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": format!("invalid value '{v}' for skill param '{k}'")
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+
     let run_id = uuid::Uuid::new_v4().to_string();
-    let task = req.task.clone();
+    let task = match &bound_skill {
+        Some(s) => format!(
+            "{}\n\n---\nTask: {}",
+            s.render_instructions(&req.skill_params),
+            req.task
+        ),
+        None => req.task.clone(),
+    };
 
     let user_id = if let Some(axum::Extension(claims)) = &jwt_claims {
         claims.sub.clone()
@@ -1398,13 +1506,41 @@ async fn create_run(
     // Mint a server-side writ.
     let root_key = generate_signing_key();
     let agent_key = generate_signing_key();
-    let scopes: Vec<ToolPattern> = if req.tool_scopes.is_empty() {
+    let base_scopes: Vec<ToolPattern> = if req.tool_scopes.is_empty() {
         vec![ToolPattern::exact("*")]
     } else {
         req.tool_scopes
             .iter()
             .map(|s| ToolPattern::exact(s.as_str()))
             .collect()
+    };
+    let base_budget = Budget {
+        tokens: 100_000,
+        tool_calls: 64,
+        wall_clock_ms: 300_000,
+        usd_millicents: 0,
+    };
+    let base_ceiling = EffectCeiling::read_write_local();
+    // Apply skill narrowing — strictly an intersection, so authority can only
+    // shrink: tools = (requested ∩ skill allow-list), ceiling = AND, budget = min.
+    let (scopes, budget, effect_ceiling) = match &bound_skill {
+        None => (base_scopes, base_budget, base_ceiling),
+        Some(s) => {
+            let scopes = if s.tools.is_empty() {
+                base_scopes
+            } else {
+                s.tools
+                    .iter()
+                    .filter(|st| base_scopes.iter().any(|rs| rs.covers(st)))
+                    .cloned()
+                    .collect()
+            };
+            (
+                scopes,
+                s.cap_budget(&base_budget),
+                s.cap_ceiling(&base_ceiling),
+            )
+        }
     };
 
     let writ = match Writ::sign(
@@ -1417,13 +1553,8 @@ async fn create_run(
             parent: None,
             tenant_id: tenant_id.clone(),
             tool_scopes: scopes,
-            budget: Budget {
-                tokens: 100_000,
-                tool_calls: 64,
-                wall_clock_ms: 300_000,
-                usd_millicents: 0,
-            },
-            effect_ceiling: EffectCeiling::read_write_local(),
+            budget,
+            effect_ceiling,
             time_window: TimeWindow {
                 not_before: 0,
                 expires_at: u64::MAX,
@@ -1499,6 +1630,8 @@ async fn create_run(
     let state2 = state.clone();
     let run_id2 = run_id.clone();
     let task2 = task.clone();
+    let bound_skill2 = bound_skill.clone();
+    let skill_params2 = req.skill_params.clone();
 
     tokio::spawn(async move {
         // Build cognition from per-run config, or the server's configured
@@ -1579,6 +1712,16 @@ async fn create_run(
         match result {
             Ok(summary) => {
                 let traj_id = summary.trajectory_id.0.to_string();
+
+                // Record the skill binding as a replay-verified provenance entry
+                // (the narrowing itself already happened via the signed writ).
+                if let Some(s) = &bound_skill2 {
+                    let _ = runtime.ledger.append_skill_bound(
+                        summary.trajectory_id,
+                        s.clone(),
+                        skill_params2.clone(),
+                    );
+                }
 
                 if let Ok(entries) = runtime.ledger.entries(summary.trajectory_id) {
                     for e in &entries {
@@ -2178,6 +2321,7 @@ async fn get_replay(
                 EntryPayload::Delegation { .. } => delegations += 1,
                 EntryPayload::Branch { .. } => branches += 1,
                 EntryPayload::Root { .. } => {}
+                EntryPayload::SkillBound { .. } => {}
             }
         }
 
@@ -2585,6 +2729,19 @@ fn entry_to_dto(e: &thymos_ledger::Entry) -> EntryDto {
                 "source_trajectory_id": source_trajectory_id.to_string(),
                 "source_commit_id": source_commit_id.to_string(),
                 "note": note,
+            }),
+        ),
+        EntryPayload::SkillBound {
+            skill_id,
+            skill,
+            params,
+        } => (
+            "skill_bound".into(),
+            serde_json::json!({
+                "skill_id": skill_id.to_string(),
+                "name": skill.name,
+                "version": skill.version,
+                "params": params,
             }),
         ),
     };
