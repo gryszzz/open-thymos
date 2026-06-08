@@ -23,6 +23,11 @@ let renderer, scene, camera, world, cage, nodesGroup, glowTex;
 let inited = false, running = false, raf = 0, loadedOnce = false;
 let targetRotY = 0, targetRotX = 0.25, curRotY = 0, curRotX = 0.25;
 let drag = null;
+// Neural animation state: per-node halos to pulse, the chain as a curve, a
+// signal that travels it, and a live-refresh timer so the graph grows as a run
+// streams.
+let pulses = [], chainCurve = null, signal = null, clock = 0;
+let currentRunId = "", refreshTimer = 0, lastCount = -1;
 
 function radialTexture(inner) {
   const c = document.createElement("canvas");
@@ -121,6 +126,9 @@ function clearNodes() {
 
 function placeNodes(entries) {
   clearNodes();
+  pulses = [];
+  chainCurve = null;
+  signal = null;
   const n = entries.length || 1;
   const R = 5.4, step = 0.6;
   const pts = [];
@@ -140,11 +148,20 @@ function placeNodes(entries) {
     halo.scale.set(1.1, 1.1, 1);
     halo.position.copy(p);
     nodesGroup.add(halo);
+    // Each node fires on its own phase, so the graph pulses like a network.
+    pulses.push({ halo, phase: i * 0.6 });
   });
   if (pts.length > 1) {
+    // Synapse lines between consecutive entries (the governed chain).
     nodesGroup.add(new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color: 0x8a7fe0, transparent: true, opacity: 0.5 })));
+    // A signal that propagates along the chain — intent → proposal → commit.
+    chainCurve = new THREE.CatmullRomCurve3(pts);
+    signal = new THREE.Sprite(new THREE.SpriteMaterial(
+      { map: glowTex, color: CYAN, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.95 }));
+    signal.scale.set(0.9, 0.9, 1);
+    nodesGroup.add(signal);
   }
 }
 
@@ -157,9 +174,16 @@ async function loadRun(idRaw) {
       id = list[0]?.run_id || list[0]?.trajectory_id || "";
     }
     if (!id) return;
+    const changedRun = id !== currentRunId;
+    currentRunId = id;
     const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
     const entries = Array.isArray(data) ? data : data.entries || [];
-    placeNodes(entries);
+    // Rebuild when the run changed or its entry count grew, so live polling
+    // doesn't restart the animation every tick — new entries just grow the graph.
+    if (changedRun || entries.length !== lastCount) {
+      lastCount = entries.length;
+      placeNodes(entries);
+    }
     const el = document.getElementById("mindRunId");
     if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${entries.length} entries`;
   } catch (_) { /* runtime not up yet — the cage still renders */ }
@@ -167,6 +191,7 @@ async function loadRun(idRaw) {
 
 function frame() {
   raf = requestAnimationFrame(frame);
+  clock += 0.016;
   targetRotY += 0.0016;
   curRotY += (targetRotY - curRotY) * 0.08;
   curRotX += (targetRotX - curRotX) * 0.08;
@@ -174,10 +199,36 @@ function frame() {
   world.rotation.x = curRotX;
   cage.rotation.y -= 0.0011;
   cage.rotation.z += 0.0007;
+
+  // Pulse each node halo on its own phase (neural firing).
+  for (const p of pulses) {
+    const s = 1.1 + 0.45 * (0.5 + 0.5 * Math.sin(clock * 2.4 + p.phase));
+    p.halo.scale.set(s, s, 1);
+  }
+  // Propagate a signal along the chain.
+  if (chainCurve && signal) {
+    const t = (clock * 0.07) % 1;
+    chainCurve.getPointAt(t, signal.position);
+    const s = 0.7 + 0.5 * Math.sin(clock * 6);
+    signal.scale.set(s, s, 1);
+  }
   renderer.render(scene, camera);
 }
-function start() { if (!running) { running = true; frame(); } }
-function stop() { running = false; cancelAnimationFrame(raf); }
+function start() {
+  if (!running) { running = true; frame(); }
+  // Live growth: while visible, re-poll the current run so streamed entries
+  // appear in the graph. Cleared on stop to avoid background work.
+  if (!refreshTimer) {
+    refreshTimer = setInterval(() => {
+      if (currentRunId) loadRun(currentRunId);
+    }, 1500);
+  }
+}
+function stop() {
+  running = false;
+  cancelAnimationFrame(raf);
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = 0; }
+}
 
 // Wire the Mind tab: lazy-init + render only while visible (saves CPU).
 window.addEventListener("DOMContentLoaded", () => {

@@ -244,6 +244,48 @@ async function loadProviderForm() {
   } catch (_) {}
 }
 
+// Preset registry mirror (thymos_cognition::presets) so picking a provider
+// auto-fills its endpoint, default model, and which key it needs. Keep in sync
+// with crates/thymos-cognition/src/presets.rs.
+const PRESETS = {
+  anthropic:   { url: "", model: "claude-sonnet-4-6", key: "ANTHROPIC_API_KEY" },
+  openai:      { url: "https://api.openai.com/v1", model: "gpt-4o-mini", key: "OPENAI_API_KEY" },
+  groq:        { url: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", key: "GROQ_API_KEY" },
+  openrouter:  { url: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini", key: "OPENROUTER_API_KEY" },
+  together:    { url: "https://api.together.xyz/v1", model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", key: "TOGETHER_API_KEY" },
+  deepseek:    { url: "https://api.deepseek.com/v1", model: "deepseek-chat", key: "DEEPSEEK_API_KEY" },
+  mistral:     { url: "https://api.mistral.ai/v1", model: "mistral-large-latest", key: "MISTRAL_API_KEY" },
+  xai:         { url: "https://api.x.ai/v1", model: "grok-2-latest", key: "XAI_API_KEY" },
+  fireworks:   { url: "https://api.fireworks.ai/inference/v1", model: "accounts/fireworks/models/llama-v3p3-70b-instruct", key: "FIREWORKS_API_KEY" },
+  nvidia:      { url: "https://integrate.api.nvidia.com/v1", model: "meta/llama-3.3-70b-instruct", key: "NVIDIA_API_KEY" },
+  cerebras:    { url: "https://api.cerebras.ai/v1", model: "llama-3.3-70b", key: "CEREBRAS_API_KEY" },
+  gemini:      { url: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.0-flash", key: "GEMINI_API_KEY" },
+  perplexity:  { url: "https://api.perplexity.ai", model: "sonar", key: "PERPLEXITY_API_KEY" },
+  huggingface: { url: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.3-70B-Instruct", key: "HF_TOKEN" },
+  ollama:      { url: "http://localhost:11434/v1", model: "llama3.2", key: "" },
+  lmstudio:    { url: "http://localhost:1234/v1", model: "local-model", key: "" },
+  vllm:        { url: "http://localhost:8000/v1", model: "default", key: "" },
+  llamacpp:    { url: "http://localhost:8080/v1", model: "default", key: "" },
+  localai:     { url: "http://localhost:8080/v1", model: "gpt-4", key: "" },
+  mock:        { url: "", model: "", key: "" },
+};
+
+// When a provider is picked, prefill its endpoint/model/key hint so each one is
+// one-click. Only fills empty fields, so a typed override is never clobbered.
+$("pfProvider")?.addEventListener("input", () => {
+  const p = PRESETS[$("pfProvider").value.trim().toLowerCase()];
+  if (!p) return;
+  $("pfModel").placeholder = p.model || "provider default";
+  if (p.url) {
+    $("pfBaseUrl").placeholder = p.url;
+    if (!$("pfBaseUrl").value) $("pfBaseUrl").value = p.url;
+  }
+  const local = p.url.startsWith("http://localhost");
+  $("pfStatus").textContent = p.key
+    ? `needs ${p.key} (read server-side)`
+    : local ? "local — no key needed" : "no key needed";
+});
+
 $("providerForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!invoke) return;
