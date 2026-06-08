@@ -1280,6 +1280,8 @@ async fn resume_run(
             cognition_tx,
             Some(approval_requester),
             Some(trace_tx),
+            None,
+            Vec::new(),
         )
         .await;
 
@@ -1690,6 +1692,8 @@ async fn create_run(
             cognition_tx,
             Some(approval_requester),
             Some(trace_tx),
+            bound_skill2.clone(),
+            skill_params2.clone(),
         );
 
         // Race the agent against a cancellation signal.
@@ -1712,16 +1716,6 @@ async fn create_run(
         match result {
             Ok(summary) => {
                 let traj_id = summary.trajectory_id.0.to_string();
-
-                // Record the skill binding as a replay-verified provenance entry
-                // (the narrowing itself already happened via the signed writ).
-                if let Some(s) = &bound_skill2 {
-                    let _ = runtime.ledger.append_skill_bound(
-                        summary.trajectory_id,
-                        s.clone(),
-                        skill_params2.clone(),
-                    );
-                }
 
                 if let Ok(entries) = runtime.ledger.entries(summary.trajectory_id) {
                     for e in &entries {

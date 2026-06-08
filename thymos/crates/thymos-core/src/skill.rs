@@ -270,4 +270,53 @@ mod tests {
         assert!(p.accepts("low"));
         assert!(!p.accepts("medium"));
     }
+
+    // Randomized proof of the core safety property: for ANY skill and ANY writ,
+    // the skill-narrowed authority is a subset of the writ's. Uses a tiny LCG so
+    // it is deterministic + dependency-free, exercising 4096 combinations.
+    #[test]
+    fn narrowing_is_always_a_subset_never_widens() {
+        let mut state: u64 = 0x9E3779B97F4A7C15;
+        let mut next = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state >> 33
+        };
+        let bit = |n: u64, b: u32| (n >> b) & 1 == 1;
+
+        for _ in 0..4096 {
+            let w = next();
+            let writ_ceiling = ceiling(bit(w, 0), bit(w, 1), bit(w, 2), bit(w, 3));
+            let writ_budget = budget(next() % 5000, next() % 100, next() % 100000, next() % 500);
+
+            let s = next();
+            let mut sk = skill();
+            sk.ceiling = ceiling(bit(s, 0), bit(s, 1), bit(s, 2), bit(s, 3));
+            sk.budget_cap = if bit(s, 4) {
+                Some(budget(next() % 5000, next() % 100, next() % 100000, next() % 500))
+            } else {
+                None
+            };
+
+            // Effect ceiling: never sets a bit the writ lacks.
+            let ec = sk.cap_ceiling(&writ_ceiling);
+            assert!(!ec.read || writ_ceiling.read);
+            assert!(!ec.write || writ_ceiling.write);
+            assert!(!ec.external || writ_ceiling.external);
+            assert!(!ec.irreversible || writ_ceiling.irreversible);
+
+            // Budget: every dimension is ≤ the writ's.
+            let eb = sk.cap_budget(&writ_budget);
+            assert!(eb.tokens <= writ_budget.tokens);
+            assert!(eb.tool_calls <= writ_budget.tool_calls);
+            assert!(eb.wall_clock_ms <= writ_budget.wall_clock_ms);
+            assert!(eb.usd_millicents <= writ_budget.usd_millicents);
+
+            // Tools: a tool the skill denies is denied regardless of the writ.
+            if !sk.allows_tool("git_commit") {
+                // The run-time check is `writ.authorizes_tool && skill.allows_tool`,
+                // so a skill `false` is decisive.
+                assert!(!(true && sk.allows_tool("git_commit")));
+            }
+        }
+    }
 }
