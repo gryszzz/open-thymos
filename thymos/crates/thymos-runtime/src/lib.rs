@@ -1350,6 +1350,7 @@ pub use thymos_core::{
     delta::{DeltaOp, StructuredDelta as Delta},
     intent::{Intent as CoreIntent, IntentBody, IntentKind},
     proposal::{PolicyDecision, RejectionReason as CoreRejectionReason},
+    skill::{SkillDef, SkillId, SkillParam},
     world::{ResourceKey, World as CoreWorld},
     writ::{Budget, DelegationBounds, EffectCeiling, TimeWindow, ToolPattern, Writ, WritBody},
 };
