@@ -118,6 +118,49 @@ async fn postgres_appends_and_verifies_hash_chain() {
     eprintln!("PROOF: Postgres backend append → read-back → verify_integrity holds (traj={traj})");
 }
 
+/// A `skill_bound` entry round-trips on the real Postgres backend and replay
+/// re-hashes its inlined definition (the same self-verification SQLite gets).
+#[tokio::test]
+#[ignore = "live Postgres integration — set THYMOS_TEST_POSTGRES_URL and run with --ignored"]
+async fn postgres_skill_bound_roundtrips_and_replays() {
+    let Some(url) = skip_if_unset("postgres_skill_bound_roundtrips_and_replays") else {
+        return;
+    };
+    let ledger = PostgresLedger::connect(&url)
+        .await
+        .expect("connect to test Postgres");
+    let traj = unique_traj("skill-bound");
+    let root = ledger.append_root(traj, "skill pg").await.expect("root");
+    assert_eq!(root.seq, 0);
+
+    let skill = thymos_core::skill::SkillDef {
+        name: "pg-triage".into(),
+        version: 1,
+        title: String::new(),
+        instructions: "be careful".into(),
+        tools: vec![thymos_core::writ::ToolPattern::exact("kv_*")],
+        ceiling: thymos_core::writ::EffectCeiling::read_write_local(),
+        budget_cap: None,
+        params: vec![],
+        model_hint: Default::default(),
+    };
+    let e = ledger
+        .append_skill_bound(traj, skill, vec![("k".into(), "v".into())])
+        .await
+        .expect("append skill_bound");
+    assert_eq!(e.seq, 1, "skill_bound sits right after root");
+
+    let entries = ledger.entries(traj).await.expect("read entries");
+    ledger
+        .verify_integrity(traj)
+        .await
+        .expect("Postgres hash chain must verify");
+    // Replay performs the skill self-verification (recompute id == recorded id).
+    thymos_ledger::replay(&entries, &thymos_ledger::ReplayConfig::default())
+        .expect("replay incl. skill_bound self-verification must hold");
+    eprintln!("PROOF: Postgres skill_bound append → verify → replay holds (traj={traj})");
+}
+
 fn skip_if_unset(test: &str) -> Option<String> {
     match std::env::var("THYMOS_TEST_POSTGRES_URL") {
         Ok(u) if !u.trim().is_empty() => Some(u),
