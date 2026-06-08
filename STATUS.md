@@ -118,8 +118,13 @@ never produces a false failure — and proves the real path when you supply it.
   list/show/new/tune` + `thymos run --skill`, and a desktop **Skills** tab +
   composer picker. CI-proven across `thymos-core`/`thymos-ledger`/`thymos-server`
   (incl. an e2e binding test); the desktop UI ships unbuilt here (same Tauri
-  caveat as above). Deferred (unresolved RFC questions, non-blocking): ledger-
-  backed registry, richer param typing, marketplace distribution of skills.
+  caveat as above). The narrowing safety property is randomized-tested (4096
+  cases) and there's a runnable proof: `cargo run --example skill_narrowing -p
+  thymos-runtime` (effective ⊊ writ + replay verification + tamper rejection),
+  written up in `docs/demos/skill-narrowing.md`. **Next (designed, not built):**
+  `docs/rfcs/skill-distribution.md` (Draft) — a ledger-backed registry for
+  authoring provenance + signed marketplace sharing of skills, both additive and
+  authority-neutral.
 
 ## Release status
 
