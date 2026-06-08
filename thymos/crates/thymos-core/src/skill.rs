@@ -312,10 +312,11 @@ mod tests {
             assert!(eb.usd_millicents <= writ_budget.usd_millicents);
 
             // Tools: a tool the skill denies is denied regardless of the writ.
+            // The run-time check is `writ.authorizes_tool && skill.allows_tool`,
+            // so a skill `false` is decisive even when the writ would allow it.
+            let writ_authorizes = true;
             if !sk.allows_tool("git_commit") {
-                // The run-time check is `writ.authorizes_tool && skill.allows_tool`,
-                // so a skill `false` is decisive.
-                assert!(!(true && sk.allows_tool("git_commit")));
+                assert!(!(writ_authorizes && sk.allows_tool("git_commit")));
             }
         }
     }
