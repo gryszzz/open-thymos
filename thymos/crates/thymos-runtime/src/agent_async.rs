@@ -57,6 +57,8 @@ pub async fn run_agent_streaming<L: LedgerStore>(
     event_tx: broadcast::Sender<CognitionEvent>,
     approval_requester: Option<ApprovalRequester>,
     trace_tx: Option<AgentEventCallback>,
+    bound_skill: Option<thymos_core::skill::SkillDef>,
+    skill_params: Vec<(String, String)>,
 ) -> Result<AgentRunSummary> {
     // Seed the trajectory from the writ id (unique per run via the writ's
     // random nonce), NOT the task text — otherwise re-running the same task
@@ -64,6 +66,17 @@ pub async fn run_agent_streaming<L: LedgerStore>(
     // ledger's (trajectory_id, seq) ROOT entry.
     let run = runtime.create_run(task, writ.id.0.as_bytes())?;
     let trajectory_id = run.trajectory_id();
+
+    // Record a bound skill at seq 1, immediately after the genesis root, so the
+    // provenance sits with the run's start; replay verifies it inline. The
+    // narrowing itself already happened via the signed `writ`. Soft-fail: a
+    // provenance write must not abort an otherwise-authorized run.
+    if let Some(skill) = bound_skill {
+        let _ = runtime
+            .ledger
+            .append_skill_bound(trajectory_id, skill, skill_params);
+    }
+
     emit_event(
         trace_tx.as_ref(),
         AgentTraceEvent::RunCreated {

@@ -116,6 +116,18 @@ h2 { margin: 4px 0 12px; }
 .provider-form input:focus { outline: none; border-color: var(--violet); }
 .provider-actions { display: flex; align-items: center; gap: 12px; margin-top: 2px; }
 .dim { color: var(--muted); font-weight: 400; }
+.provider-form textarea, .provider-form select {
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 14px;
+  font-family: inherit; resize: vertical;
+}
+.provider-form textarea:focus { outline: none; border-color: var(--violet); }
+.ceiling-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
+.ceiling-row .ck { flex-direction: row; align-items: center; gap: 5px; color: var(--text); }
+.composer select {
+  background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 0 8px; font-size: 13px; max-width: 140px;
+}
 
 /* Lists / cards */
 .list { display: flex; flex-direction: column; gap: 8px; }

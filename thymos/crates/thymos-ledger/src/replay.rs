@@ -99,6 +99,24 @@ pub fn replay(entries: &[Entry], cfg: &ReplayConfig) -> Result<(World, ReplayRep
                 compiler_versions_seen.push(commit.body.compiler_version.clone());
             }
         }
+
+        // A bound skill is self-verifying: recompute its content hash from the
+        // inlined definition and assert it equals the recorded id. This catches
+        // a definition mutated after the fact and keeps replay independent of any
+        // live skill registry. (The skill only narrowed authority; the signed
+        // writ remains the source of truth for what actually ran.)
+        if let EntryPayload::SkillBound {
+            skill_id, skill, ..
+        } = &entry.payload
+        {
+            let recomputed = skill.id();
+            if recomputed != *skill_id {
+                return Err(thymos_core::error::Error::Invariant(format!(
+                    "skill_bound at seq {} claims {} but definition hashes to {}",
+                    entry.seq, skill_id, recomputed
+                )));
+            }
+        }
     }
 
     Ok((

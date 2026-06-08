@@ -1284,6 +1284,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                 thymos_ledger::EntryKind::PendingApproval => pending_approvals += 1,
                 thymos_ledger::EntryKind::Delegation => {}
                 thymos_ledger::EntryKind::Branch => {}
+                thymos_ledger::EntryKind::SkillBound => {}
             }
         }
         self.runtime.ledger.verify_integrity(self.trajectory_id)?;
@@ -1349,6 +1350,7 @@ pub use thymos_core::{
     delta::{DeltaOp, StructuredDelta as Delta},
     intent::{Intent as CoreIntent, IntentBody, IntentKind},
     proposal::{PolicyDecision, RejectionReason as CoreRejectionReason},
+    skill::{SkillDef, SkillId, SkillParam},
     world::{ResourceKey, World as CoreWorld},
     writ::{Budget, DelegationBounds, EffectCeiling, TimeWindow, ToolPattern, Writ, WritBody},
 };

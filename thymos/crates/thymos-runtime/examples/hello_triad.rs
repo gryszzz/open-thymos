@@ -164,6 +164,9 @@ fn main() -> anyhow::Result<()> {
             } => {
                 format!("Branch(from={source_trajectory_id}@{source_commit_id}, {note})")
             }
+            EntryPayload::SkillBound { skill, .. } => {
+                format!("SkillBound({} v{})", skill.name, skill.version)
+            }
         };
         println!("   [{i}] seq={} {} id={}", e.seq, label, e.id.short());
     }

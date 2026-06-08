@@ -215,6 +215,29 @@ impl PostgresLedger {
         Ok(entry)
     }
 
+    pub async fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: thymos_core::skill::SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry> {
+        let (parent_id, parent_seq) = self.current_head(trajectory_id).await?;
+        let payload = EntryPayload::SkillBound {
+            skill_id: skill.id(),
+            skill,
+            params,
+        };
+        let entry = build_entry(
+            trajectory_id,
+            Some(parent_id),
+            parent_seq + 1,
+            EntryKind::SkillBound,
+            payload,
+        )?;
+        self.insert_entry(&entry, true).await?;
+        Ok(entry)
+    }
+
     pub async fn append_branch_root(
         &self,
         new_trajectory_id: TrajectoryId,
@@ -676,6 +699,14 @@ impl crate::LedgerStore for BlockingPostgresLedger {
             l.append_delegation(trajectory_id, child_trajectory_id, &task, final_answer)
                 .await
         })
+    }
+    fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: thymos_core::skill::SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry> {
+        self.call(move |l| async move { l.append_skill_bound(trajectory_id, skill, params).await })
     }
     fn append_branch_root(
         &self,

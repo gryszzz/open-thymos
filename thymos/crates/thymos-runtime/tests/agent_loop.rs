@@ -372,6 +372,14 @@ mod backend_agnostic {
         ) -> Result<Entry> {
             self.0.append_branch_root(new_t, src, src_commit, note)
         }
+        fn append_skill_bound(
+            &self,
+            t: TrajectoryId,
+            skill: thymos_core::skill::SkillDef,
+            params: Vec<(String, String)>,
+        ) -> Result<Entry> {
+            self.0.append_skill_bound(t, skill, params)
+        }
         fn head(&self, t: TrajectoryId) -> Result<(ContentHash, u64)> {
             self.0.head(t)
         }

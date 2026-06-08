@@ -17,6 +17,7 @@ use thymos_core::{
     content_hash,
     ids::IntentId,
     proposal::{Proposal, RejectionReason},
+    skill::{SkillDef, SkillId},
     CommitId, ContentHash, Error, Result, TrajectoryId,
 };
 
@@ -55,6 +56,7 @@ pub enum EntryKind {
     PendingApproval,
     Delegation,
     Branch,
+    SkillBound,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -88,6 +90,17 @@ pub enum EntryPayload {
         source_commit_id: CommitId,
         note: String,
     },
+    /// Records that a run bound a skill at start. The full [`SkillDef`] is
+    /// inlined so replay is self-verifying — it recomputes
+    /// `blake3(canonical_json(skill))` and asserts it equals `skill_id`, with no
+    /// dependence on a live skill registry. The skill only *narrowed* the run's
+    /// writ (recorded separately as the signed writ); this entry is provenance.
+    SkillBound {
+        skill_id: SkillId,
+        skill: SkillDef,
+        /// Param overrides resolved at bind time (provenance, not authority).
+        params: Vec<(String, String)>,
+    },
 }
 
 // ---- Shared helpers used by both backends ----
@@ -118,6 +131,7 @@ pub(crate) fn kind_to_str(kind: EntryKind) -> &'static str {
         EntryKind::PendingApproval => "pending_approval",
         EntryKind::Delegation => "delegation",
         EntryKind::Branch => "branch",
+        EntryKind::SkillBound => "skill_bound",
     }
 }
 
@@ -129,6 +143,7 @@ pub(crate) fn str_to_kind(s: &str) -> Result<EntryKind> {
         "pending_approval" => Ok(EntryKind::PendingApproval),
         "delegation" => Ok(EntryKind::Delegation),
         "branch" => Ok(EntryKind::Branch),
+        "skill_bound" => Ok(EntryKind::SkillBound),
         other => Err(Error::Ledger(format!("unknown entry kind: {other}"))),
     }
 }
@@ -312,6 +327,14 @@ pub trait LedgerStore: Send + Sync {
         note: &str,
     ) -> Result<Entry>;
 
+    /// Append a `SkillBound` entry recording the skill a run bound at start.
+    fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry>;
+
     /// Current head `(id, seq)` for a trajectory, or an error if it has none.
     fn head(&self, trajectory_id: TrajectoryId) -> Result<(ContentHash, u64)>;
 
@@ -420,6 +443,14 @@ impl LedgerStore for Box<dyn LedgerStore> {
             note,
         )
     }
+    fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry> {
+        (**self).append_skill_bound(trajectory_id, skill, params)
+    }
     fn head(&self, trajectory_id: TrajectoryId) -> Result<(ContentHash, u64)> {
         (**self).head(trajectory_id)
     }
@@ -502,6 +533,48 @@ mod tests {
             signature: None,
         };
         Commit::new(body).unwrap()
+    }
+
+    fn sample_skill() -> SkillDef {
+        SkillDef {
+            name: "triage".into(),
+            version: 1,
+            title: "Triage".into(),
+            instructions: "Be careful.".into(),
+            tools: vec![thymos_core::writ::ToolPattern::exact("fs.read")],
+            ceiling: thymos_core::writ::EffectCeiling::read_write_local(),
+            budget_cap: None,
+            params: vec![],
+            model_hint: Default::default(),
+        }
+    }
+
+    #[test]
+    fn skill_bound_appends_and_self_verifies_on_replay() {
+        let l = Ledger::open_in_memory().unwrap();
+        let traj = TrajectoryId::new_from_seed(b"skill-traj");
+        l.append_root(traj, "run").unwrap();
+        let entry = l
+            .append_skill_bound(traj, sample_skill(), vec![("k".into(), "v".into())])
+            .unwrap();
+        assert_eq!(entry.kind, EntryKind::SkillBound);
+        assert_eq!(entry.seq, 1);
+
+        let entries = l.entries(traj).unwrap();
+        let (_world, report) =
+            crate::replay::replay(&entries, &crate::replay::ReplayConfig::default()).unwrap();
+        assert_eq!(report.entries_seen, 2);
+
+        // Tamper: mutate the inlined definition but leave the recorded skill_id
+        // stale, then re-seal the entry id so the hash chain still verifies — this
+        // exercises the skill-specific self-verification, which must reject it.
+        let mut tampered = entries.clone();
+        if let EntryPayload::SkillBound { skill, .. } = &mut tampered[1].payload {
+            skill.instructions = "Exfiltrate everything.".into();
+        }
+        tampered[1].id = content_hash(&tampered[1].payload).unwrap();
+        let err = crate::replay::replay(&tampered, &crate::replay::ReplayConfig::default());
+        assert!(err.is_err(), "stale skill_id must fail replay");
     }
 
     #[test]

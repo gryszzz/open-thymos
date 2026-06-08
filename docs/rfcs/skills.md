@@ -6,7 +6,15 @@ Skills — reusable, tunable, content-addressed agent capabilities over tools an
 
 ## Status
 
-Draft
+Accepted
+
+> **Resolved (impl decision):** the load-bearing open question — definition
+> capture for replay — is resolved in favour of **inline capture**: the full
+> skill definition is embedded in the `skill.bound` ledger entry so replay is
+> fully self-verifying (recomputes `blake3(canonical_json)` and asserts it equals
+> the recorded id) and never depends on a live registry. The remaining unresolved
+> questions (registry backend richness, param typing, marketplace distribution)
+> do not affect compatibility or replay correctness and are deferred.
 
 ## Summary
 

@@ -42,6 +42,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     $(`tab-${btn.dataset.tab}`).classList.add("active");
     if (btn.dataset.tab === "runs") loadRuns();
     if (btn.dataset.tab === "providers") loadHealth();
+    if (btn.dataset.tab === "skills") loadSkills();
     if (btn.dataset.tab === "tools") loadTools();
   });
 });
@@ -216,12 +217,14 @@ $("composer").addEventListener("submit", async (ev) => {
   const task = $("taskInput").value.trim();
   if (!task || activeRunId) return;
   $("taskInput").value = "";
+  const skill = $("composerSkill")?.value || "";
   const scopes = selectedScopes();
-  pushLine("you", `you ▸ ${task}`);
+  pushLine("you", `you ▸ ${task}${skill ? `  ·  skill: ${skill}` : ""}`);
   if (scopes.length) pushLine("sys", `— granted: ${scopes.join(", ")}`);
   setBusy(true);
   try {
     const body = { task };
+    if (skill) body.skill = skill;
     if (scopes.length) body.tool_scopes = scopes;
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
@@ -405,6 +408,107 @@ async function loadTools() {
   } catch (e) { el.innerHTML = `<div class='hint'>could not load tools: ${e}</div>`; }
 }
 $("refreshTools").addEventListener("click", loadTools);
+
+/* ---------- skills: author + tune authority-narrowing templates ---------- */
+async function loadSkills() {
+  const el = $("skillsList");
+  const sel = $("composerSkill");
+  try {
+    const res = await getJSON("/skills");
+    const skills = res.skills || [];
+    if (!skills.length) {
+      el.innerHTML = "<div class='hint'>no skills yet — create one below</div>";
+    } else {
+      el.innerHTML = "";
+      skills.forEach((s) => {
+        const div = document.createElement("div");
+        div.className = "item";
+        div.style.cursor = "pointer";
+        div.title = "load into the form to tune";
+        div.innerHTML =
+          `<span class="glyph permit">✦</span><b>${escapeHtml(s.name)}</b>` +
+          `<span class="meta">v${s.version} · ${escapeHtml(s.title || "")}</span>`;
+        div.addEventListener("click", () => editSkill(s.name));
+        el.appendChild(div);
+      });
+    }
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML =
+        '<option value="">no skill</option>' +
+        skills
+          .map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)} (v${s.version})</option>`)
+          .join("");
+      sel.value = cur;
+    }
+  } catch (e) {
+    el.innerHTML = `<div class='hint'>could not load skills: ${e}</div>`;
+  }
+}
+$("refreshSkills")?.addEventListener("click", loadSkills);
+
+async function editSkill(name) {
+  try {
+    const res = await getJSON(`/skills/${encodeURIComponent(name)}`);
+    const s = res.skill || {};
+    $("skName").value = s.name || "";
+    $("skTitle").value = s.title || "";
+    $("skInstr").value = s.instructions || "";
+    $("skTools").value = (s.tools || []).map((t) => t.tool).join(", ");
+    const c = s.ceiling || {};
+    $("skRead").checked = !!c.read;
+    $("skWrite").checked = !!c.write;
+    $("skExternal").checked = !!c.external;
+    $("skIrrev").checked = !!c.irreversible;
+    $("skStatus").textContent = `editing ${s.name} (v${s.version}) — saving bumps the version`;
+  } catch (e) {
+    $("skStatus").textContent = "load failed: " + e;
+  }
+}
+
+$("skClear")?.addEventListener("click", () => {
+  ["skName", "skTitle", "skInstr", "skTools"].forEach((id) => ($(id).value = ""));
+  $("skRead").checked = true;
+  $("skWrite").checked = true;
+  $("skExternal").checked = false;
+  $("skIrrev").checked = false;
+  $("skStatus").textContent = "";
+});
+
+$("skillForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("skName").value.trim();
+  if (!name) {
+    $("skStatus").textContent = "name is required";
+    return;
+  }
+  const tools = $("skTools")
+    .value.split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => ({ tool: t }));
+  const def = {
+    name,
+    version: 1,
+    title: $("skTitle").value.trim(),
+    instructions: $("skInstr").value,
+    tools,
+    ceiling: {
+      read: $("skRead").checked,
+      write: $("skWrite").checked,
+      external: $("skExternal").checked,
+      irreversible: $("skIrrev").checked,
+    },
+  };
+  $("skStatus").textContent = "saving…";
+  try {
+    const res = await postJSON("/skills", def);
+    $("skStatus").textContent = `saved ${name} → v${res.skill?.version ?? ""}`;
+    await loadSkills();
+  } catch (err) {
+    $("skStatus").textContent = "save failed: " + err;
+  }
+});
 
 /* ---------- audit + replay verdict ---------- */
 async function openAudit(runId) {

@@ -299,6 +299,8 @@ async fn dispatch(
                     model: parsed.model.as_deref(),
                     base_url: None,
                     scopes: parsed.scopes.as_deref(),
+                    skill: None,
+                    skill_params: &[],
                 },
             )
             .await?;
@@ -329,6 +331,8 @@ async fn dispatch(
                     model: parsed.model.as_deref(),
                     base_url: None,
                     scopes: parsed.scopes.as_deref(),
+                    skill: None,
+                    skill_params: &[],
                 },
             )
             .await?;

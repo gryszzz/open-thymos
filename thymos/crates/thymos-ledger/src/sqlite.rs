@@ -205,6 +205,30 @@ impl SqliteLedger {
         Ok(entry)
     }
 
+    pub fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: thymos_core::skill::SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry> {
+        let conn = self.conn.lock().unwrap();
+        let (parent_id, parent_seq) = Self::current_head(&conn, trajectory_id)?;
+        let payload = EntryPayload::SkillBound {
+            skill_id: skill.id(),
+            skill,
+            params,
+        };
+        let entry = build_entry(
+            trajectory_id,
+            Some(parent_id),
+            parent_seq + 1,
+            EntryKind::SkillBound,
+            payload,
+        )?;
+        Self::insert_entry_inner(&conn, &entry, true)?;
+        Ok(entry)
+    }
+
     pub fn append_branch_root(
         &self,
         new_trajectory_id: TrajectoryId,
@@ -538,6 +562,15 @@ impl crate::LedgerStore for SqliteLedger {
         final_answer: Option<String>,
     ) -> Result<Entry> {
         SqliteLedger::append_delegation(self, trajectory_id, child_trajectory_id, task, final_answer)
+    }
+
+    fn append_skill_bound(
+        &self,
+        trajectory_id: TrajectoryId,
+        skill: thymos_core::skill::SkillDef,
+        params: Vec<(String, String)>,
+    ) -> Result<Entry> {
+        SqliteLedger::append_skill_bound(self, trajectory_id, skill, params)
     }
 
     fn append_branch_root(
