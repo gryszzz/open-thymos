@@ -1,0 +1,285 @@
+openapi: 3.1.0
+info:
+  title: OpenThymos Runtime API
+  version: "0.6.0"
+  description: >
+    Governed-cognition runtime control plane. Cognition proposes; the runtime
+    governs; the ledger records. Every effect passes through Intent → Proposal →
+    Commit and is recorded on an append-only, hash-chained, replayable ledger.
+    This spec is the machine-programmability contract: generate a typed SDK in
+    any language from it. Hand-authored against the live router; covers the core
+    surface. Control-plane endpoints accept a Bearer JWT (tenant + roles claims).
+  license:
+    name: Apache-2.0
+servers:
+  - url: http://localhost:3001
+    description: Local runtime (default)
+security:
+  - bearerAuth: []
+  - {}   # auth is enforced on control-plane endpoints; local/dev may run open
+tags:
+  - name: health
+  - name: runs
+  - name: governance
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness + honest provider/ledger truth
+      security: [{}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      security: [{}]
+      responses:
+        "200": { description: ready }
+        "503": { description: not ready }
+  /runs:
+    get:
+      tags: [runs]
+      summary: List runs (tenant-scoped)
+      responses:
+        "200":
+          description: Run records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RunRecord" }
+    post:
+      tags: [runs]
+      summary: Start a governed run
+      description: >
+        Spawns a run. `tool_scopes` sets the run's writ scope — the runtime
+        rejects any tool not granted (empty = `*`). `cognition` selects the
+        model per run (omit = server default; mock unless a key is set).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRunRequest" }
+      responses:
+        "202":
+          description: Accepted; run started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { run_id: { type: string } }
+        "400": { description: invalid task / max_steps }
+        "429": { description: at capacity (global or per-tenant) }
+  /runs/{id}:
+    get:
+      tags: [runs]
+      summary: Get a run record
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunRecord" }
+        "404": { description: not found }
+  /runs/{id}/execution:
+    get:
+      tags: [runs]
+      summary: Operator-truth execution snapshot
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionSession" }
+  /runs/{id}/execution/stream:
+    get:
+      tags: [runs]
+      summary: Live execution snapshots (SSE)
+      description: text/event-stream of ExecutionSession snapshots; closes on terminal status.
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /runs/{id}/world:
+    get:
+      tags: [governance]
+      summary: World projection (folded from committed deltas)
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200": { description: world projection }
+  /runs/{id}/replay:
+    get:
+      tags: [governance]
+      summary: Verify the ledger and fold the world (replay)
+      description: Recomputes the hash chain and folds committed deltas; provider/tool-free.
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplayReport" }
+  /runs/{id}/approvals/{channel}:
+    post:
+      tags: [governance]
+      summary: Approve or deny a suspended proposal
+      parameters:
+        - { $ref: "#/components/parameters/RunId" }
+        - { name: channel, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalRequest" }
+      responses:
+        "200": { description: decision recorded }
+        "404": { description: no pending approval for this run/channel }
+  /runs/{id}/cancel:
+    post:
+      tags: [runs]
+      summary: Cancel an in-flight run
+      parameters: [{ $ref: "#/components/parameters/RunId" }]
+      responses:
+        "200": { description: cancelling }
+  /audit/entries:
+    get:
+      tags: [governance]
+      summary: Ledger entries for a run (the audit trail)
+      parameters:
+        - { name: run_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Entry" }
+        "404": { description: run not found or has no trajectory }
+  /usage:
+    get:
+      tags: [governance]
+      summary: API gateway usage stats (per key)
+      responses:
+        "200": { description: usage stats }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RunId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        mode: { type: string, enum: [reference, production] }
+        default_provider: { type: string, example: anthropic }
+        cognition_live:
+          type: boolean
+          description: false = runs without their own cognition use the deterministic mock
+        ledger: { type: string, enum: [sqlite, postgres] }
+        shutdown: { type: boolean }
+    CreateRunRequest:
+      type: object
+      required: [task]
+      properties:
+        task: { type: string, maxLength: 10000 }
+        max_steps: { type: integer, default: 16, maximum: 256 }
+        tool_scopes:
+          type: array
+          items: { type: string }
+          description: Writ scope; empty grants `*`. e.g. ["fs_read","grep"]
+        cognition: { $ref: "#/components/schemas/CognitionConfig" }
+    CognitionConfig:
+      type: object
+      properties:
+        provider:
+          type: string
+          description: anthropic | openai | ollama | lmstudio | groq | gemini | … (preset id)
+        model: { type: string }
+        max_tokens: { type: integer }
+        base_url: { type: string }
+        thinking_budget_tokens: { type: integer }
+    RunRecord:
+      type: object
+      properties:
+        run_id: { type: string }
+        trajectory_id: { type: string }
+        task: { type: string }
+        status: { type: string, enum: [running, completed, failed] }
+        tenant_id: { type: string }
+        summary: { $ref: "#/components/schemas/RunSummary" }
+    RunSummary:
+      type: object
+      properties:
+        steps_executed: { type: integer }
+        intents_submitted: { type: integer }
+        commits: { type: integer }
+        rejections: { type: integer }
+        failures: { type: integer }
+        final_answer: { type: [string, "null"] }
+        terminated_by: { type: string }
+    ExecutionSession:
+      type: object
+      properties:
+        run_id: { type: string }
+        task: { type: string }
+        trajectory_id: { type: [string, "null"] }
+        status: { type: string, enum: [running, waiting_approval, completed, failed, cancelled] }
+        phase: { type: string, enum: [system, intent, proposal, execution, result] }
+        current_step: { type: integer }
+        max_steps: { type: integer }
+        final_answer: { type: [string, "null"] }
+        log:
+          type: array
+          items: { $ref: "#/components/schemas/LogEntry" }
+    LogEntry:
+      type: object
+      properties:
+        idx: { type: integer }
+        phase: { type: string }
+        level: { type: string, enum: [info, success, warning, error] }
+        title: { type: string }
+        detail: { type: string }
+        commit_id: { type: [string, "null"] }
+        seq: { type: [integer, "null"] }
+    Entry:
+      type: object
+      properties:
+        seq: { type: integer }
+        kind: { type: string, description: ROOT | Commit | Rejection | PendingApproval | Delegation | … }
+        id: { type: string }
+        detail: {}
+        commit_id: { type: string, description: full 64-hex id (commit entries only) }
+    ReplayReport:
+      type: object
+      properties:
+        run_id: { type: string }
+        trajectory_id: { type: string }
+        entries_seen: { type: integer }
+        commits_replayed: { type: integer }
+        head_commit: { type: [string, "null"] }
+        head_seq: { type: integer }
+        final_world_hash: { type: string }
+        rejected_proposals: { type: integer }
+        pending_approvals: { type: integer }
+        delegations: { type: integer }
+    ApprovalRequest:
+      type: object
+      required: [approve]
+      properties:
+        approve: { type: boolean }
+        proposal_id: { type: [string, "null"] }
