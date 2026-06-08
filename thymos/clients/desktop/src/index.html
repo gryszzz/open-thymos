@@ -41,6 +41,18 @@
     <main>
       <!-- CHAT: a message starts a governed run; the reply IS the verdict feed -->
       <section class="panel active" id="tab-chat">
+        <div class="chatbar">
+          <div class="grants" id="grants" title="What this run is allowed to do — the writ scope. The runtime rejects anything not granted.">
+            <span class="grant-label">grant</span>
+            <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
+            <button type="button" class="chip on" data-scope="grep">grep</button>
+            <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
+            <button type="button" class="chip" data-scope="shell">shell</button>
+            <button type="button" class="chip" data-scope="http">http</button>
+            <button type="button" class="chip" data-scope="test_run">test_run</button>
+          </div>
+          <button type="button" class="ghost" id="newChat">＋ New chat</button>
+        </div>
         <div class="feed" id="chatFeed">
           <div class="welcome">
             <div class="spine">◆ Intent&nbsp;&nbsp;▸ Proposal&nbsp;&nbsp;✓ Commit&nbsp;&nbsp;✕ Rejected&nbsp;&nbsp;⏸ Suspended</div>
@@ -50,14 +62,16 @@
               Each message becomes a <b>governed run</b>: you see every intent, the
               runtime's verdict, and each commit, with replay proof. The model can
               propose anything; only an authorized proposal ever runs, and risky
-              steps pause for your approval.
+              steps pause for your approval. Use <b>grant</b> above to decide what
+              it may touch — the runtime enforces it.
             </p>
           </div>
         </div>
         <form class="composer" id="composer">
           <input id="taskInput" autocomplete="off"
             placeholder="Describe a task in plain language…" />
-          <button type="submit">Send</button>
+          <button type="submit" id="sendBtn">Send</button>
+          <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
         </form>
       </section>
 

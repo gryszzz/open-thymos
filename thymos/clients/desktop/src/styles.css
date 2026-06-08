@@ -134,6 +134,36 @@ code {
 .badge.bad { background: rgba(255,107,138,.15); color: var(--red); border: 1px solid var(--red); }
 .glyph { width: 1.4em; display: inline-block; text-align: center; }
 
+/* Chat toolbar: capability grants + new chat */
+.chatbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.grants { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.grant-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+.chip {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600;
+}
+.chip:hover { color: var(--text); }
+.chip.on {
+  background: rgba(124, 92, 255, .16); color: var(--text);
+  border-color: var(--violet); box-shadow: 0 0 8px rgba(124, 92, 255, .25);
+}
+.chatbar #newChat { margin-left: auto; }
+button.danger { background: var(--red); }
+button.danger:hover { background: #e85c7c; }
+
+/* Model answer block with copy */
+.answer {
+  margin: 10px 2px 2px; border: 1px solid var(--line); border-radius: 10px;
+  background: rgba(70, 211, 154, .05); overflow: hidden;
+}
+.answer-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-bottom: 1px solid var(--line);
+  color: var(--green); font-weight: 700; font-size: 12.5px;
+}
+.answer-head .copy { margin-left: auto; padding: 3px 10px; font-size: 12px; }
+.answer-body { padding: 12px; white-space: pre-wrap; font-family: -apple-system, "Segoe UI", sans-serif; }
+
 /* Mind — 3D reasoning view */
 .mind-controls { display: flex; gap: 8px; }
 .mind-controls input {
