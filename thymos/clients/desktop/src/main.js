@@ -108,6 +108,22 @@ function glyphFor(entry) {
 
 let currentStream = null;
 let renderedUpTo = 0;
+let activeRunId = null;
+
+// Capability grants: clicking a chip toggles whether the run's writ authorizes
+// that tool. Empty selection lets the server grant `*` (all tools).
+document.querySelectorAll("#grants .chip").forEach((chip) =>
+  chip.addEventListener("click", () => chip.classList.toggle("on")));
+function selectedScopes() {
+  return [...document.querySelectorAll("#grants .chip.on")].map((c) => c.dataset.scope);
+}
+
+// Toggle Send/Stop + input while a run is in flight.
+function setBusy(on) {
+  $("sendBtn").hidden = on;
+  $("chatStop").hidden = !on;
+  $("taskInput").disabled = on;
+}
 
 function renderSnapshot(s) {
   // Snapshot carries the full log; render only newly-arrived entries.
@@ -119,9 +135,53 @@ function renderSnapshot(s) {
     pushLine(cls, `${g} ${e.title}${detail}`);
   });
   if (s.status === "waiting_approval") showApproval(s.run_id);
-  if (["completed", "failed", "cancelled"].includes(s.status) && s.final_answer)
-    pushLine("sys", `— ${s.status}: ${s.final_answer}`);
+  if (["completed", "failed", "cancelled"].includes(s.status)) {
+    if (s.final_answer) pushAnswer(s.status, s.final_answer);
+    activeRunId = null;
+    setBusy(false);
+  }
 }
+
+// The model's answer, with a copy button (typical chat affordance).
+function pushAnswer(status, text) {
+  const wrap = document.createElement("div");
+  wrap.className = "answer";
+  const body = document.createElement("div");
+  body.className = "answer-body";
+  body.textContent = text;
+  const copy = document.createElement("button");
+  copy.className = "ghost copy";
+  copy.textContent = "Copy";
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; }
+    catch (_) { copy.textContent = "—"; }
+    setTimeout(() => (copy.textContent = "Copy"), 1200);
+  };
+  const head = document.createElement("div");
+  head.className = "answer-head";
+  head.textContent = status === "completed" ? "✓ answer" : `— ${status}`;
+  head.appendChild(copy);
+  wrap.append(head, body);
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// New chat: clear the thread and stop watching (does not touch the ledger).
+$("newChat")?.addEventListener("click", () => {
+  if (currentStream) currentStream.close();
+  activeRunId = null;
+  renderedUpTo = 0;
+  feed.innerHTML = "";
+  setBusy(false);
+  $("taskInput").focus();
+});
+
+// Stop: cancel the in-flight run via the real cancel endpoint.
+$("chatStop")?.addEventListener("click", async () => {
+  if (!activeRunId) return;
+  try { await postJSON(`/runs/${activeRunId}/cancel`, {}); pushLine("sys", "— cancel requested"); }
+  catch (e) { pushLine("deny", `✕ cancel failed: ${e}`); }
+});
 
 function showApproval(runId) {
   if (document.querySelector(`.approval-row[data-run="${runId}"]`)) return;
@@ -154,11 +214,17 @@ function showApproval(runId) {
 $("composer").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const task = $("taskInput").value.trim();
-  if (!task) return;
+  if (!task || activeRunId) return;
   $("taskInput").value = "";
+  const scopes = selectedScopes();
   pushLine("you", `you ▸ ${task}`);
+  if (scopes.length) pushLine("sys", `— granted: ${scopes.join(", ")}`);
+  setBusy(true);
   try {
-    const { run_id } = await postJSON("/runs", { task });
+    const body = { task };
+    if (scopes.length) body.tool_scopes = scopes;
+    const { run_id } = await postJSON("/runs", body);
+    activeRunId = run_id;
     pushLine("sys", `— run ${run_id}`);
     if (currentStream) currentStream.close();
     renderedUpTo = 0;
@@ -169,6 +235,8 @@ $("composer").addEventListener("submit", async (ev) => {
     currentStream.onerror = () => { currentStream && currentStream.close(); };
   } catch (e) {
     pushLine("deny", `✕ could not start run: ${e}. Is the runtime live?`);
+    activeRunId = null;
+    setBusy(false);
   }
 });
 
