@@ -37,12 +37,19 @@ outside commit folding, or makes replay depend on a live provider), don't.
 - **Phase I — Unified deterministic runtime.** Largely done: I→P→C, ledger as
   truth, replay, signed writs, typed tools, policy traces.
 - **Phase II — Multi-agent coordination.** Delegation, child writs (strict
-  subsets of parent), child trajectories — implemented + tested; needs a
-  demonstrable end-to-end walkthrough.
-- **Phase III — Distributed execution ledger.** Postgres backend exists but is
-  **not yet wired into the HTTP runtime** (blocked on the runtime/ledger trait
-  refactor). This is the biggest claims-vs-reality gap; closing it is top
-  priority. See the tracking issues.
+  subsets of parent), child trajectories — implemented + tested, with a
+  demonstrable walkthrough (`cargo run --example delegation_lineage -p
+  thymos-runtime`, `docs/demos/delegation-lineage.md`). The same strict-subset
+  rule now also governs authority-narrowing **skills** (`skill_narrowing`
+  example + `docs/demos/skill-narrowing.md`).
+- **Phase III — Distributed execution ledger.** The Postgres backend **is wired
+  into the HTTP runtime** (feature-gated): `Runtime<L: LedgerStore>` with a
+  `BlockingPostgresLedger` facade, selected at startup via `THYMOS_POSTGRES_URL`
+  (default build stays SQLite, no Postgres dep compiled). It is **continuously
+  proven in CI** — the `postgres-integration` job in `rust.yml` runs the gated
+  tests against a real Postgres service container (append → read-back →
+  `verify_integrity` → replay). Remaining Phase-III work is operational hardening
+  (multi-writer/distributed semantics), not the basic wiring.
 
 Source of truth for current reality: **`STATUS.md`** (CI-proven vs gated vs
 caveats). Reconcile it every release; if it drifts from the code, the code wins.
