@@ -2,7 +2,7 @@
 
 <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 
-[![Download](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20Download&color=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
+[](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
 # open-thymos
 
