@@ -347,6 +347,7 @@ impl<L: LedgerStore> Runtime<L> {
             runtime: self,
             trajectory_id,
             last_commit: std::sync::Mutex::new(None),
+            proj: std::sync::Mutex::new(ProjCache::default()),
         })
     }
 
@@ -364,6 +365,7 @@ impl<L: LedgerStore> Runtime<L> {
             runtime: self,
             trajectory_id,
             last_commit: std::sync::Mutex::new(None),
+            proj: std::sync::Mutex::new(ProjCache::default()),
         })
     }
 }
@@ -376,6 +378,23 @@ pub struct Run<'a, L: LedgerStore = Ledger> {
     /// fetch what `submit` already produced. Pure optimization: a miss falls
     /// back to the ledger (still the source of truth), so behavior is identical.
     last_commit: std::sync::Mutex<Option<(CommitId, thymos_core::commit::Observation)>>,
+    /// Memoized world + budget + idempotency index for this trajectory, so the
+    /// submit hot path doesn't re-read and re-fold the whole ledger per intent.
+    /// Validated by the ledger head seq (append-only + unique `(traj,seq)` make
+    /// it a sound version token); a miss re-folds from the ledger. See
+    /// `docs/rfcs/incremental-projection-cache.md`.
+    proj: std::sync::Mutex<ProjCache>,
+}
+
+/// Memoized projection of a trajectory at a known head seq. `seq == None` means
+/// "unseeded — re-fold on next use". Never serves a stale or partial projection:
+/// `sync_to_head` re-folds whenever the head seq doesn't match.
+#[derive(Default)]
+struct ProjCache {
+    seq: Option<u64>,
+    world: World,
+    budget: BudgetCost,
+    proposals: std::collections::HashMap<thymos_core::ProposalId, CommitId>,
 }
 
 /// The result of submitting one Intent to the runtime.
@@ -426,8 +445,72 @@ impl<'a, L: LedgerStore> Run<'a, L> {
     }
 
     pub fn project_world(&self) -> Result<World> {
+        self.sync_to_head()?;
+        Ok(self.proj.lock().unwrap().world.clone())
+    }
+
+    /// Bring the projection cache up to the ledger head. If the cached seq
+    /// already equals the head seq, the cache is exactly the projection (the
+    /// ledger is append-only with a unique `(traj,seq)`, so equal seq ⇒ equal
+    /// projection) and we do no read. Otherwise re-fold from the ledger — the
+    /// source of truth — and record the new seq. This is the only place the
+    /// cache is (re)seeded, so it can never serve a stale or partial world.
+    fn sync_to_head(&self) -> Result<()> {
+        let (_, head_seq) = self.runtime.ledger.head(self.trajectory_id)?;
+        let mut c = self.proj.lock().unwrap();
+        if c.seq == Some(head_seq) {
+            return Ok(());
+        }
         let entries = self.runtime.ledger.entries(self.trajectory_id)?;
-        self.project_world_from(&entries)
+        c.world = self.project_world_from(&entries)?;
+        c.budget = Self::project_budget_used_from(&entries);
+        c.proposals.clear();
+        for e in &entries {
+            if let EntryPayload::Commit(cm) = &e.payload {
+                c.proposals.insert(cm.body.proposal_id, cm.id);
+            }
+        }
+        c.seq = Some(head_seq);
+        Ok(())
+    }
+
+    /// Advance the cache by the commit this run just appended, so the next
+    /// submit's head check matches and skips the re-read. Only advances from the
+    /// exact prior seq (i.e. this run produced the new head); any gap or apply
+    /// failure invalidates the cache, forcing a full re-fold next time. Keeping
+    /// the cache in lock-step with `append_commit` is what turns O(n) per submit
+    /// into O(1) `head()` + an incremental delta apply.
+    fn cache_record_commit(
+        &self,
+        new_seq: u64,
+        delta: &thymos_core::StructuredDelta,
+        commit_id: CommitId,
+        cost: &BudgetCost,
+        proposal_id: thymos_core::ProposalId,
+    ) {
+        let mut c = self.proj.lock().unwrap();
+        if c.seq == Some(new_seq.wrapping_sub(1)) && c.world.apply(delta, commit_id).is_ok() {
+            c.budget = c.budget.saturating_add(cost);
+            c.proposals.insert(proposal_id, commit_id);
+            c.seq = Some(new_seq);
+        } else {
+            c.seq = None; // out of lock-step → re-fold on next use
+        }
+    }
+
+    /// Snapshot the cached `(world, budget)` after syncing to head. The world is
+    /// cloned so the caller (compiler + trial apply) can use/mutate it without
+    /// touching the cache, which only advances via `cache_record_commit`.
+    fn synced_world_budget(&self) -> Result<(World, BudgetCost)> {
+        self.sync_to_head()?;
+        let c = self.proj.lock().unwrap();
+        Ok((c.world.clone(), c.budget.clone()))
+    }
+
+    /// Idempotency lookup served from the cache (synced to head): the commit id
+    /// already recorded for `proposal_id`, if any.
+    fn cached_commit_for_proposal(&self, proposal_id: thymos_core::ProposalId) -> Option<CommitId> {
+        self.proj.lock().unwrap().proposals.get(&proposal_id).copied()
     }
 
     /// Fold a world projection from an already-loaded entry list, avoiding a
@@ -472,6 +555,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
             runtime: self.runtime,
             trajectory_id: new_traj,
             last_commit: std::sync::Mutex::new(None),
+            proj: std::sync::Mutex::new(ProjCache::default()),
         })
     }
 
@@ -562,12 +646,11 @@ impl<'a, L: LedgerStore> Run<'a, L> {
         )
         .entered();
 
-        // Load the trajectory once and derive world + accumulated budget from
-        // the same snapshot (the idempotency check below reuses it too). This
-        // replaces three separate full-ledger reads per submission with one.
-        let entries = self.runtime.ledger.entries(self.trajectory_id)?;
-        let world = self.project_world_from(&entries)?;
-        let budget_used = Self::project_budget_used_from(&entries);
+        // World + accumulated budget from the head-validated projection cache:
+        // a cheap `head()` check, re-folding the ledger only on a cache miss
+        // (first submit / out-of-band append). The idempotency check below is
+        // served from the same cache. See docs/rfcs/incremental-projection-cache.md.
+        let (world, budget_used) = self.synced_world_budget()?;
         // Source the clock at the runtime layer — the compiler stays pure
         // (see thymos_compiler::CompileContext doc-comment). The clock is
         // pluggable so an attested time source can replace the host wall clock.
@@ -692,9 +775,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                     tool.meta().effect_class,
                     EffectClass::External | EffectClass::Irreversible
                 ) {
-                    if let Some(existing) =
-                        Self::find_commit_for_proposal_from(&entries, proposal.id)
-                    {
+                    if let Some(existing) = self.cached_commit_for_proposal(proposal.id) {
                         return Ok(Step::Committed(existing));
                     }
                 }
@@ -775,9 +856,11 @@ impl<'a, L: LedgerStore> Run<'a, L> {
                 let _commit_span =
                     tracing::info_span!("triad.commit", seq = parent_seq + 1).entered();
 
-                // Keep a copy of the observation to memoize on the Run after the
-                // commit lands, so the agent loop need not re-scan the ledger.
+                // Keep copies to memoize on the Run after the commit lands, so
+                // neither the agent loop nor the next submit re-scans the ledger.
                 let observation_for_cache = outcome.observation.clone();
+                let delta_for_cache = outcome.delta.clone();
+                let cost_for_cache = budget_cost.clone();
                 let commit_body = CommitBody {
                     parent: vec![CommitId(parent_hash)],
                     trajectory_id: self.trajectory_id,
@@ -800,6 +883,15 @@ impl<'a, L: LedgerStore> Run<'a, L> {
 
                 self.runtime.ledger.append_commit(commit)?;
                 *self.last_commit.lock().unwrap() = Some((committed_id, observation_for_cache));
+                // Advance the projection cache in lock-step with the append so the
+                // next submit's head check matches and skips the re-read.
+                self.cache_record_commit(
+                    parent_seq + 1,
+                    &delta_for_cache,
+                    committed_id,
+                    &cost_for_cache,
+                    proposal.id,
+                );
 
                 crate::agent::emit_event(
                     trace,
