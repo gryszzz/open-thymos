@@ -630,6 +630,62 @@ async function loadTools() {
 }
 $("refreshTools").addEventListener("click", loadTools);
 
+/* ---------- add a custom tool (governed manifest) ---------- */
+// Toggle shell vs http executor fields.
+$("tlKind")?.addEventListener("change", () => {
+  const http = $("tlKind").value === "http";
+  $("tlCmdRow").hidden = http;
+  $("tlUrlRow").hidden = !http;
+});
+
+$("toolForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!invoke) return;
+  const status = $("tlStatus");
+  const name = $("tlName").value.trim();
+  const kind = $("tlKind").value;
+  // Validation — fail clearly, never write an invalid manifest.
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+    status.textContent = "name must be lower_snake_case (letters, digits, _)"; return;
+  }
+  let schema;
+  try { schema = JSON.parse($("tlSchema").value); }
+  catch (_) { status.textContent = "input schema must be valid JSON"; return; }
+  const exec = kind === "http"
+    ? { kind: "http", url_template: $("tlUrl").value.trim(), method: "GET" }
+    : { kind: "shell", command_template: $("tlCmd").value.trim() };
+  const target = kind === "http" ? exec.url_template : exec.command_template;
+  if (!target) { status.textContent = `${kind === "http" ? "URL" : "command"} template is required`; return; }
+
+  const manifest = {
+    name,
+    version: $("tlVersion").value.trim() || "1.0.0",
+    description: $("tlDesc").value.trim(),
+    effect_class: $("tlEffect").value,
+    risk_class: $("tlRisk").value,
+    input_schema: schema,
+    executor: exec,
+  };
+  status.textContent = "saving…";
+  try {
+    await invoke("save_tool", { manifest });
+    // The runtime loads manifests at startup, so restart to register it.
+    const wasRunning = await invoke("runtime_running").catch(() => false);
+    if (wasRunning) await invoke("stop_runtime").catch(() => {});
+    await invoke("start_runtime").catch(() => {});
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      await refreshStatus();
+      if ($("dot").classList.contains("dot-on")) break;
+    }
+    await loadTools();
+    status.textContent = `✓ added “${name}” — now governed by the runtime`;
+    $("tlName").value = "";
+  } catch (err) {
+    status.textContent = "could not add tool: " + err;
+  }
+});
+
 /* ---------- backups: the real on-disk ledger file ---------- */
 async function loadBackups() {
   const pathEl = $("ledgerPath");

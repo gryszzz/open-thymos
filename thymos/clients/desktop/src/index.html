@@ -255,6 +255,58 @@
           against the writ (Pure ≤ Read ≤ Write ≤ External ≤ Irreversible)
           <b>before</b> it runs — a tool can never exceed its class.
         </p>
+
+        <details class="addtool">
+          <summary><b>＋ Add a custom tool</b> — declare a governed tool (no code)</summary>
+          <form id="toolForm" class="card provider-form">
+            <div class="row2">
+              <label>Name <input id="tlName" placeholder="deploy_staging" autocomplete="off" /></label>
+              <label>Version <input id="tlVersion" placeholder="1.0.0" value="1.0.0" autocomplete="off" /></label>
+            </div>
+            <label>Description
+              <input id="tlDesc" placeholder="Deploy the current build to staging" autocomplete="off" /></label>
+            <div class="row2">
+              <label>Effect class
+                <select id="tlEffect" title="The most authority this tool may ever exert. Enforced by the governor.">
+                  <option value="read">read — looks only</option>
+                  <option value="write">write — changes local state</option>
+                  <option value="external">external — calls out (HTTP, etc.)</option>
+                  <option value="irreversible">irreversible — can't be undone (needs approval)</option>
+                  <option value="pure">pure — no effect</option>
+                </select>
+              </label>
+              <label>Risk
+                <select id="tlRisk">
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="critical">critical</option>
+                </select>
+              </label>
+            </div>
+            <label>Executor
+              <select id="tlKind">
+                <option value="shell">shell — run a command ({arg} placeholders)</option>
+                <option value="http">http — call a URL ({arg} placeholders)</option>
+              </select>
+            </label>
+            <label id="tlCmdRow">Command template
+              <input id="tlCmd" placeholder="./deploy.sh {ref}" autocomplete="off" /></label>
+            <label id="tlUrlRow" hidden>URL template
+              <input id="tlUrl" placeholder="https://api.example.com/{path}" autocomplete="off" /></label>
+            <label>Input schema (JSON)
+              <textarea id="tlSchema" rows="3" spellcheck="false">{ "type": "object", "properties": { "ref": { "type": "string" } } }</textarea></label>
+            <div class="addtool-actions">
+              <button type="submit" id="tlSave">Add tool</button>
+              <span id="tlStatus" class="note"></span>
+            </div>
+            <p class="note">
+              The tool is governed exactly like a native one — its effect class is
+              enforced <b>before</b> it can run, every call is recorded on the
+              ledger, and an <b>irreversible</b> tool waits for your approval.
+            </p>
+          </form>
+        </details>
       </section>
 
       <!-- AUDIT: ledger entries + replay verdict for a run -->
