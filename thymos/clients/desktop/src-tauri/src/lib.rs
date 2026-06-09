@@ -172,6 +172,21 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
         }
     }
 
+    // If a Thymos server is already listening on 3001 — one you started in the
+    // terminal, or a prior session — adopt it instead of spawning a conflicting
+    // one. This is what lets the CLI and the desktop share a single runtime +
+    // ledger: whoever owns the port owns the truth, and both surfaces are clients
+    // of it. We only kill servers we ourselves spawned (window-close handler); an
+    // adopted one is left running.
+    if std::net::TcpStream::connect_timeout(
+        &([127, 0, 0, 1], 3001).into(),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
+    {
+        return Ok("adopted-existing".into());
+    }
+
     // Pin a durable, per-user ledger so runs, audit trails, and backups persist
     // across restarts — this is what makes the app a real client of a real,
     // permanent Thymos ledger rather than an ephemeral session. The hash-chained
