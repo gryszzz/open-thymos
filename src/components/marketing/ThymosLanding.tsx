@@ -179,11 +179,6 @@ export function ThymosLanding() {
 
         <section className="thymos-hero" id="top">
           <div className="thymos-hero-copy">
-            <div className="thymos-pill thymos-reveal thymos-delay-1">
-              <span className="thymos-pill-dot" />
-              Unified AI execution runtime
-            </div>
-
             <h1 className="thymos-reveal thymos-delay-2">{siteConfig.headline}</h1>
             <p className="thymos-hero-lede thymos-reveal thymos-delay-3">{siteConfig.tagline}</p>
             <p className="thymos-hero-subcopy thymos-reveal thymos-delay-4">
@@ -210,6 +205,37 @@ export function ThymosLanding() {
               >
                 Open the wiki
               </a>
+            </div>
+
+            <div className="thymos-download thymos-reveal thymos-delay-5">
+              <a
+                className="thymos-download-primary"
+                href={siteConfig.releasesUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ⬇ Download OpenThymos
+              </a>
+              <div className="thymos-download-plats">
+                {["macOS", "Linux", "Windows"].map((plat) => (
+                  <a
+                    key={plat}
+                    className="thymos-plat"
+                    href={siteConfig.releasesUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {plat}
+                  </a>
+                ))}
+              </div>
+              <p className="thymos-download-note">
+                CLI + runtime for every platform — no Rust, no compile. One line:{" "}
+                <code>curl -fsSL …/scripts/get.sh | sh</code>. The desktop app
+                (chat, Mind view, audit) builds from source today; signed{" "}
+                <code>.dmg</code> / <code>.msi</code> / <code>.AppImage</code> ship
+                with the next release.
+              </p>
             </div>
 
             <div className="thymos-launch-notes thymos-reveal thymos-delay-6">
