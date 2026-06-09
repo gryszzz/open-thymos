@@ -50,5 +50,7 @@ export const siteConfig = {
   issuesUrl: `${githubUrl}/issues`,
   readmeUrl: `${githubUrl}#readme`,
   wikiUrl: `${githubUrl}/wiki`,
+  releasesUrl: `${githubUrl}/releases/latest`,
+  getScriptUrl: `${githubUrl}/blob/main/scripts/get.sh`,
   org: "Exponet Labs",
 };
