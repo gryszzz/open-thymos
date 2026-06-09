@@ -42,6 +42,7 @@ body::before {
     linear-gradient(rgba(124, 92, 255, .035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(124, 92, 255, .035) 1px, transparent 1px);
   background-size: 38px 38px;
+  -webkit-mask-image: radial-gradient(circle at 50% 30%, #000 30%, transparent 85%);
   mask-image: radial-gradient(circle at 50% 30%, #000 30%, transparent 85%);
 }
 .topbar, .tabs, main { position: relative; z-index: 1; }
@@ -52,6 +53,7 @@ body::before {
   padding: 11px 18px;
   background: linear-gradient(180deg, rgba(28, 22, 52, .92) 0%, rgba(21, 17, 42, .92) 100%);
   border-bottom: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 .brandwrap { display: flex; align-items: center; gap: 12px; }
