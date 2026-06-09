@@ -71,3 +71,25 @@ jobs:
         run: |
           cargo test -p thymos-ledger --features postgres \
             --test postgres_integration -- --ignored --nocapture
+
+  # Prove the live-LLM agent loop end-to-end when a key is configured. The test
+  # skips cleanly (prints SKIP, passes) when ANTHROPIC_API_KEY is unset, so this
+  # job is green without the secret and only spends a real API call when one is
+  # set. Restricted to pushes on `main` to avoid spending budget on every PR
+  # (and forks never receive the secret anyway).
+  live-provider:
+    name: Live provider (gated)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: thymos
+      - name: Run gated live-provider test (skips cleanly without a key)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cargo test -p thymos-runtime --test live_provider \
+            -- --ignored --nocapture
