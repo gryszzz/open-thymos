@@ -57,26 +57,12 @@ body::before {
 .brandwrap { display: flex; align-items: center; gap: 12px; }
 .logobox {
   display: grid; place-items: center;
-  width: 64px; height: 64px;
-  border-radius: 15px;
-  background: linear-gradient(145deg, var(--panel-3), var(--panel));
-  border: 1px solid var(--line-2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .06),
-    0 0 0 1px rgba(124, 92, 255, .15),
-    0 6px 18px rgba(124, 92, 255, .28);
-  position: relative;
+  background: none; border: none; box-shadow: none; padding: 0;
 }
-.logobox::after {
-  content: ""; position: absolute; inset: -1px; border-radius: 12px;
-  padding: 1px; pointer-events: none;
-  background: linear-gradient(140deg, rgba(124, 92, 255, .8), rgba(69, 224, 255, .5), transparent 60%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-}
+.logobox::after { content: none; }
 .brandlogo {
-  width: 52px; height: 52px; border-radius: 12px; display: block;
-  box-shadow: 0 0 18px rgba(124, 92, 255, .45);
+  width: 60px; height: 60px; display: block;
+  filter: drop-shadow(0 0 14px rgba(124, 92, 255, .5));
 }
 .brandtext { display: flex; flex-direction: column; line-height: 1.15; }
 .brand { font-weight: 800; letter-spacing: 2px; color: var(--text); font-size: 15px; }
