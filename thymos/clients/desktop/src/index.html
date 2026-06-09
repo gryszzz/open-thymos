@@ -46,42 +46,55 @@
     <main>
       <!-- CHAT: a message starts a governed run; the reply IS the verdict feed -->
       <section class="panel active" id="tab-chat">
-        <div class="chatbar">
-          <div class="grants" id="grants" title="What this run is allowed to do — the writ scope. The runtime rejects anything not granted.">
-            <span class="grant-label">grant</span>
-            <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
-            <button type="button" class="chip on" data-scope="grep">grep</button>
-            <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
-            <button type="button" class="chip" data-scope="shell">shell</button>
-            <button type="button" class="chip" data-scope="http">http</button>
-            <button type="button" class="chip" data-scope="test_run">test_run</button>
+        <div class="chat-shell">
+          <!-- HISTORY: its own home — persistent local chat list -->
+          <aside class="chat-sidebar">
+            <button type="button" id="newChat" class="full">＋ New chat</button>
+            <div id="chatList" class="chat-list"></div>
+            <!-- Authority is configured ONCE here and saved to this model, not
+                 chosen per message. -->
+            <div class="chat-defaults">
+              <div class="def-title">This model can…</div>
+              <label class="def">Skill
+                <select id="defaultSkill" title="Bound to every chat on this model (narrows authority). Saved.">
+                  <option value="">none</option>
+                </select>
+              </label>
+              <div class="grants" id="grants" title="Default writ scope for this model — the runtime rejects anything not granted. Saved.">
+                <span class="grant-label">grant</span>
+                <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
+                <button type="button" class="chip on" data-scope="grep">grep</button>
+                <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
+                <button type="button" class="chip" data-scope="shell">shell</button>
+                <button type="button" class="chip" data-scope="http">http</button>
+                <button type="button" class="chip" data-scope="test_run">test_run</button>
+              </div>
+            </div>
+          </aside>
+
+          <div class="chat-main">
+            <div class="feed" id="chatFeed">
+              <div class="welcome">
+                <div class="spine">◆ Intent&nbsp;&nbsp;▸ Proposal&nbsp;&nbsp;✓ Commit&nbsp;&nbsp;✕ Rejected&nbsp;&nbsp;⏸ Suspended</div>
+                <p class="hint">
+                  Press <b>Start runtime</b>, then describe a task in plain language.
+                  Each message becomes a <b>governed run</b>: you see every intent,
+                  the runtime's verdict, and each commit, with replay proof. The model
+                  can propose anything; only an authorized proposal ever runs, and
+                  risky steps pause for your approval. What it may touch is set once
+                  on the left and saved to this model.
+                </p>
+              </div>
+            </div>
+            <form class="composer" id="composer">
+              <textarea id="taskInput" rows="1" autocomplete="off"
+                placeholder="Message OpenThymos…   (Enter to send · Shift+Enter for a new line)"></textarea>
+              <button type="button" id="regenBtn" class="ghost" disabled title="Re-run the last task on a fresh trajectory">↻</button>
+              <button type="submit" id="sendBtn">Send</button>
+              <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
+            </form>
           </div>
-          <button type="button" class="ghost" id="regenBtn" disabled title="Re-run the last task on a fresh trajectory">↻ Regenerate</button>
-          <button type="button" class="ghost" id="newChat">＋ New chat</button>
         </div>
-        <div class="feed" id="chatFeed">
-          <div class="welcome">
-            <div class="spine">◆ Intent&nbsp;&nbsp;▸ Proposal&nbsp;&nbsp;✓ Commit&nbsp;&nbsp;✕ Rejected&nbsp;&nbsp;⏸ Suspended</div>
-            <p class="hint">
-              Press <b>Start runtime</b>, then describe a task in plain language —
-              research, calling an API, moving data, drafting a change, anything.
-              Each message becomes a <b>governed run</b>: you see every intent, the
-              runtime's verdict, and each commit, with replay proof. The model can
-              propose anything; only an authorized proposal ever runs, and risky
-              steps pause for your approval. Use <b>grant</b> above to decide what
-              it may touch — the runtime enforces it.
-            </p>
-          </div>
-        </div>
-        <form class="composer" id="composer">
-          <select id="composerSkill" title="Bind a skill (narrows authority + adds instructions)">
-            <option value="">no skill</option>
-          </select>
-          <textarea id="taskInput" rows="1" autocomplete="off"
-            placeholder="Describe a task in plain language…   (Enter to send · Shift+Enter for a new line)"></textarea>
-          <button type="submit" id="sendBtn">Send</button>
-          <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
-        </form>
       </section>
 
       <!-- MIND: immersive 3D view of the run's reasoning/ledger DAG -->
