@@ -52,6 +52,25 @@ async fn health_check() {
 }
 
 #[tokio::test]
+async fn tools_lists_registered_contracts_with_effect_class() {
+    let server = test_server(test_state());
+    let resp = server.get("/tools").await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    let tools = body["tools"].as_array().expect("tools array");
+    assert!(!tools.is_empty(), "runtime registers tools");
+    assert_eq!(body["count"], tools.len());
+    // Every entry carries the governed effect ceiling.
+    for t in tools {
+        assert!(t["name"].is_string());
+        assert!(t["effect_class"].is_string(), "each tool is tagged with an effect class");
+    }
+    // A known read tool is present and classified at the read ceiling.
+    let kv_get = tools.iter().find(|t| t["name"] == "kv_get").expect("kv_get registered");
+    assert_eq!(kv_get["effect_class"], "read");
+}
+
+#[tokio::test]
 async fn ready_check() {
     let server = test_server(test_state());
     let resp = server.get("/ready").await;

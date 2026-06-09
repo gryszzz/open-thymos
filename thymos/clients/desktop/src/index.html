@@ -10,7 +10,9 @@
     <!-- Top bar: identity + the governance "is it live" truth from /health -->
     <header class="topbar">
       <div class="brandwrap">
-        <img class="brandlogo" src="logo.png" alt="OpenThymos" />
+        <div class="logobox">
+          <img class="brandlogo" src="logo.png" alt="OpenThymos" />
+        </div>
         <div class="brandtext">
           <div class="brand">OPEN&nbsp;THYMOS</div>
           <div class="tagline">cognition proposes · the runtime governs · the ledger records</div>
@@ -52,6 +54,7 @@
             <button type="button" class="chip" data-scope="http">http</button>
             <button type="button" class="chip" data-scope="test_run">test_run</button>
           </div>
+          <button type="button" class="ghost" id="regenBtn" disabled title="Re-run the last task on a fresh trajectory">↻ Regenerate</button>
           <button type="button" class="ghost" id="newChat">＋ New chat</button>
         </div>
         <div class="feed" id="chatFeed">
@@ -72,8 +75,8 @@
           <select id="composerSkill" title="Bind a skill (narrows authority + adds instructions)">
             <option value="">no skill</option>
           </select>
-          <input id="taskInput" autocomplete="off"
-            placeholder="Describe a task in plain language…" />
+          <textarea id="taskInput" rows="1" autocomplete="off"
+            placeholder="Describe a task in plain language…   (Enter to send · Shift+Enter for a new line)"></textarea>
           <button type="submit" id="sendBtn">Send</button>
           <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
         </form>
@@ -220,10 +223,19 @@
       <section class="panel" id="tab-tools">
         <div class="panel-head"><h2>Tools</h2>
           <button class="ghost" id="refreshTools">Refresh</button></div>
+        <div class="effect-legend">
+          <span class="effect eff-pure">pure</span>
+          <span class="effect eff-read">read</span>
+          <span class="effect eff-write">write</span>
+          <span class="effect eff-external">external</span>
+          <span class="effect eff-irreversible">irreversible</span>
+        </div>
         <div id="toolsList" class="list"></div>
         <p class="note">
-          Every tool call is checked against the writ's effect ceiling
-          (Read ≤ Write ≤ External ≤ Irreversible) <b>before</b> it runs.
+          These are the runtime's <b>registered tool contracts</b>, each tagged
+          with the effect ceiling the governor enforces. Every call is checked
+          against the writ (Pure ≤ Read ≤ Write ≤ External ≤ Irreversible)
+          <b>before</b> it runs — a tool can never exceed its class.
         </p>
       </section>
 
@@ -248,11 +260,15 @@
             <code>thymos replay &lt;run&gt; --verify</code> or the runtime's
             <code>verify_integrity</code>.
           </p>
+          <div class="ledger-path-row">
+            <span class="dim">ledger file</span>
+            <code id="ledgerPath" class="path">—</code>
+            <button type="button" id="copyLedgerPath" class="ghost">Copy path</button>
+          </div>
           <p class="note">
-            One-click backup/restore + a chain-head integrity report is a v1
-            task wired to the runtime's file path — tracked in
-            <code>docs/rfcs/desktop-app.md §3</code>. Until then this tab tells
-            you the truth instead of pretending.
+            Copy that file anywhere to back it up; restore by pointing the
+            runtime at the copy. One-click backup/restore + a chain-head
+            integrity report is tracked in <code>docs/rfcs/desktop-app.md §3</code>.
           </p>
         </div>
       </section>
