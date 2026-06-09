@@ -6,6 +6,49 @@
 
 # open-thymos
 
+### Get OpenThymos
+
+<div align="center">
+<table>
+<tr>
+<td width="50%" valign="top" align="center">
+
+#### ◇ Desktop app
+
+<img src="thymos/Thymos-logo.PNG" width="78" />
+
+Immersive, **local-first** GUI  chat, live runs, the 3D **Mind** reasoning view,
+audit + replay. Connect **any model** from the Providers tab  Claude, OpenAI,
+Ollama / LM Studio (local), or any OpenAI-compatible adapter. Your keys never
+leave your machine; no phone-home.
+
+[![Get the Desktop app](https://img.shields.io/badge/▶_Get_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](docs/rfcs/desktop-app.md)
+
+Run it now (dev build):<br/>
+`cd thymos/clients/desktop && npm install && npm run dev`
+
+<sub>One-click `.dmg` / `.msi` / `.AppImage` ships with the next signed release.</sub>
+
+</td>
+<td width="50%" valign="top" align="center">
+
+#### ▣ CLI + runtime
+
+<img src="thymos/thymosG.PNG" width="118" />
+
+Terminal, scriptable, server. No Rust, no clone, no compile.
+
+[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+
+`curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | sh`
+
+</td>
+</tr>
+</table>
+</div>
+
+
+
 </div>
 
 ---
@@ -261,46 +304,6 @@ thymos replay <run-id>          # verify the ledger folds to its world
 > **In a hurry?** `./scripts/quickstart.sh` runs one governed end-to-end proof with the
 > offline mock — no install, no keys. Pass a task + `ANTHROPIC_API_KEY=…` to prove it on a real model.
 
-### Get OpenThymos
-
-<div align="center">
-<table>
-<tr>
-<td width="50%" valign="top" align="center">
-
-#### ◇ Desktop app
-
-<img src="thymos/Thymos-logo.PNG" width="78" />
-
-Immersive, **local-first** GUI — chat, live runs, the 3D **Mind** reasoning view,
-audit + replay. Connect **any model** from the Providers tab — Claude, OpenAI,
-Ollama / LM Studio (local), or any OpenAI-compatible adapter. Your keys never
-leave your machine; no phone-home.
-
-[![Get the Desktop app](https://img.shields.io/badge/▶_Get_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](docs/rfcs/desktop-app.md)
-
-Run it now (dev build):<br/>
-`cd thymos/clients/desktop && npm install && npm run dev`
-
-<sub>One-click `.dmg` / `.msi` / `.AppImage` ships with the next signed release.</sub>
-
-</td>
-<td width="50%" valign="top" align="center">
-
-#### ▣ CLI + runtime
-
-<img src="thymos/thymosG.PNG" width="118" />
-
-Terminal, scriptable, server. No Rust, no clone, no compile.
-
-[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
-
-`curl -fsSL https://raw.githubusercontent.com/gryszzz/open-thymos/main/scripts/get.sh | sh`
-
-</td>
-</tr>
-</table>
-</div>
 
 **Install options (CLI + runtime)** — prebuilt for macOS / Linux / Windows, no toolchain:
 
