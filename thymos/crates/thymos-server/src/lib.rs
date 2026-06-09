@@ -520,10 +520,7 @@ fn build_runtime(
     tools.register(TestRunTool::default());
 
     load_programmable_capabilities(&mut tools, tool_manifest_dirs);
-
-    // To register MCP server tools at startup:
-    //   tools.register_mcp_server("my-server", &["uvx", "my-mcp-server"])
-    //       .expect("spawn MCP server");
+    load_mcp_servers(&mut tools);
 
     let policy = PolicyEngine::new().with(WritAuthorityPolicy);
     Arc::new(Runtime::new(ledger, tools, policy))
@@ -535,6 +532,51 @@ fn load_programmable_capabilities(tools: &mut ToolRegistry, tool_manifest_dirs: 
             .load_manifest_dir(FsPath::new(dir))
             .unwrap_or_else(|e| panic!("load tool manifests from {dir}: {e}"));
         eprintln!("capabilities: loaded {count} manifest tool(s) from {dir}");
+    }
+}
+
+/// Connect MCP servers listed in `THYMOS_MCP_CONFIG` (a JSON file:
+/// `{ "servers": { "<name>": ["uvx", "<pkg>"], ... } }`). Each server's tools are
+/// registered as **governed** Thymos tools (default effect class `External`, so a
+/// writ must grant External for any of them to run; every call commits to the
+/// ledger). Failure to spawn a server is logged and skipped — a missing or broken
+/// MCP server never prevents the runtime from starting.
+fn load_mcp_servers(tools: &mut ToolRegistry) {
+    let Ok(path) = std::env::var("THYMOS_MCP_CONFIG") else {
+        return;
+    };
+    if path.trim().is_empty() {
+        return;
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("mcp: could not read THYMOS_MCP_CONFIG {path}: {e}");
+            return;
+        }
+    };
+    #[derive(serde::Deserialize)]
+    struct McpConfig {
+        #[serde(default)]
+        servers: std::collections::BTreeMap<String, Vec<String>>,
+    }
+    let cfg: McpConfig = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("mcp: invalid config {path}: {e}");
+            return;
+        }
+    };
+    for (name, command) in cfg.servers {
+        if command.is_empty() {
+            eprintln!("mcp: skip '{name}': empty command");
+            continue;
+        }
+        let cmd_refs: Vec<&str> = command.iter().map(String::as_str).collect();
+        match tools.register_mcp_server(&name, &cmd_refs) {
+            Ok(n) => eprintln!("mcp: connected '{name}' — {n} governed tool(s)"),
+            Err(e) => eprintln!("mcp: skip '{name}': {e}"),
+        }
     }
 }
 
