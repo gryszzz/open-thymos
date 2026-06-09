@@ -37,10 +37,10 @@ const githubUrl = "https://github.com/gryszzz/open-thymos";
 
 export const siteConfig = {
   name: process.env.NEXT_PUBLIC_APP_NAME || "OpenThymos",
-  tagline: "Unified AI execution runtime, framework, and sandbox for coding agents.",
+  tagline: "Cognition proposes. The runtime governs. The ledger records.",
   headline: "OpenThymos",
   subheadline:
-    "A Rust framework that turns model output into typed intents, checks them against signed authority, routes approved capabilities through governed execution boundaries, and exposes one replayable state across CLI, VS Code, terminal, and web surfaces.",
+    "The governed execution runtime for AI agents — the only one where every action is provable. A model proposes; a signed capability writ and the Rust runtime decide what runs; an append-only, replayable ledger records what happened. Authorized, auditable, replayable — not trust-the-prompt.",
   basePath,
   siteUrl: normalizeSiteUrl(process.env.NEXT_PUBLIC_SITE_URL),
   githubUrl,
