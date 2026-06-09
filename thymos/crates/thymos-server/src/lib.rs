@@ -545,6 +545,7 @@ pub fn app(state: Arc<AppState>) -> Router {
     let router = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/tools", get(list_tools))
         .route("/runs", get(list_runs).post(create_run))
         .route("/runs/{id}", get(get_run))
         .route("/runs/{id}/execution", get(get_execution))
@@ -1008,6 +1009,41 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         "ledger": state.runtime.ledger.backend(),
         "shutdown": *state.shutdown_tx.borrow(),
     }))
+}
+
+/// The runtime's registered tool contracts — name, version, and the effect /
+/// risk class the governor enforces for each. Read-only metadata (like
+/// `/health`); lets a UI show exactly what the runtime can do and at what
+/// effect ceiling, rather than guessing.
+async fn list_tools(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let names: Vec<String> = state
+        .runtime
+        .tools
+        .names()
+        .map(|s| s.to_string())
+        .collect();
+    let mut tools: Vec<serde_json::Value> = names
+        .iter()
+        .map(|name| match state.runtime.tools.get(name) {
+            Ok(t) => {
+                let m = t.meta();
+                serde_json::json!({
+                    "name": m.name,
+                    "version": m.version,
+                    "effect_class": m.effect_class,
+                    "risk_class": m.risk_class,
+                })
+            }
+            Err(_) => serde_json::json!({ "name": name }),
+        })
+        .collect();
+    tools.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    Json(serde_json::json!({ "count": tools.len(), "tools": tools }))
 }
 
 async fn ready(State(state): State<Arc<AppState>>) -> impl IntoResponse {

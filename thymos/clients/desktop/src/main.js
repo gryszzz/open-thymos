@@ -44,6 +44,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     if (btn.dataset.tab === "providers") loadHealth();
     if (btn.dataset.tab === "skills") loadSkills();
     if (btn.dataset.tab === "tools") loadTools();
+    if (btn.dataset.tab === "backups") loadBackups();
   });
 });
 
@@ -119,11 +120,25 @@ function selectedScopes() {
   return [...document.querySelectorAll("#grants .chip.on")].map((c) => c.dataset.scope);
 }
 
-// Toggle Send/Stop + input while a run is in flight.
+// Toggle Send/Stop + a live "working" pulse while a run is in flight. The input
+// stays enabled (you can draft the next message); a second run is blocked by the
+// activeRunId guard, not by disabling the field.
 function setBusy(on) {
   $("sendBtn").hidden = on;
   $("chatStop").hidden = !on;
-  $("taskInput").disabled = on;
+  const regen = $("regenBtn");
+  if (regen) regen.disabled = on || !lastTask;
+  let w = document.getElementById("workingLine");
+  if (on && !w) {
+    w = document.createElement("div");
+    w.id = "workingLine";
+    w.className = "working";
+    w.innerHTML = `<span class="dots"><i></i><i></i><i></i></span><span>governing…</span>`;
+    feed.appendChild(w);
+    feed.scrollTop = feed.scrollHeight;
+  } else if (!on && w) {
+    w.remove();
+  }
 }
 
 function renderSnapshot(s) {
@@ -212,15 +227,38 @@ function showApproval(runId) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-$("composer").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const task = $("taskInput").value.trim();
+let lastTask = null;
+
+// A user message rendered as a chat bubble, with its grant/skill context.
+function pushBubble(text, skill, scopes) {
+  const wrap = document.createElement("div");
+  wrap.className = "bubble you-bubble";
+  const body = document.createElement("div");
+  body.className = "bubble-body";
+  body.textContent = text;
+  wrap.appendChild(body);
+  const tags = [];
+  if (skill) tags.push(`✦ ${skill}`);
+  if (scopes && scopes.length) tags.push(`grant: ${scopes.join(", ")}`);
+  if (tags.length) {
+    const meta = document.createElement("div");
+    meta.className = "bubble-meta";
+    meta.textContent = tags.join("   ·   ");
+    wrap.appendChild(meta);
+  }
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// Start a governed run from a task string. Shared by Send and Regenerate.
+async function startRun(task) {
   if (!task || activeRunId) return;
-  $("taskInput").value = "";
+  const welcome = feed.querySelector(".welcome");
+  if (welcome) welcome.remove();
   const skill = $("composerSkill")?.value || "";
   const scopes = selectedScopes();
-  pushLine("you", `you ▸ ${task}${skill ? `  ·  skill: ${skill}` : ""}`);
-  if (scopes.length) pushLine("sys", `— granted: ${scopes.join(", ")}`);
+  lastTask = task;
+  pushBubble(task, skill, scopes);
   setBusy(true);
   try {
     const body = { task };
@@ -228,7 +266,7 @@ $("composer").addEventListener("submit", async (ev) => {
     if (scopes.length) body.tool_scopes = scopes;
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
-    pushLine("sys", `— run ${run_id}`);
+    pushLine("sys", `— run ${String(run_id).slice(0, 8)}`);
     if (currentStream) currentStream.close();
     renderedUpTo = 0;
     currentStream = new EventSource(api(`/runs/${run_id}/execution/stream`));
@@ -241,6 +279,35 @@ $("composer").addEventListener("submit", async (ev) => {
     activeRunId = null;
     setBusy(false);
   }
+}
+
+$("composer").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const task = $("taskInput").value.trim();
+  if (!task || activeRunId) return;
+  $("taskInput").value = "";
+  autoGrow($("taskInput"));
+  startRun(task);
+});
+
+// Enter sends; Shift+Enter inserts a newline (ChatGPT/Claude convention).
+function autoGrow(t) {
+  if (!t || t.tagName !== "TEXTAREA") return;
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 160) + "px";
+}
+$("taskInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+$("taskInput").addEventListener("input", () => autoGrow($("taskInput")));
+
+// Regenerate: re-run the last task (new trajectory, fresh writ).
+$("regenBtn")?.addEventListener("click", () => {
+  if (activeRunId || !lastTask) return;
+  startRun(lastTask);
 });
 
 /* ---------- runs history ---------- */
@@ -388,26 +455,55 @@ $("providerForm").addEventListener("submit", async (e) => {
   }
 });
 
-/* ---------- tools (marketplace catalog, read-only) ---------- */
+/* ---------- tools: the runtime's governed tool contracts ---------- */
+// Effect class → the ceiling the governor enforces. This is the thymos-unique
+// signal: every tool is tagged with the maximum effect it may ever produce.
+const EFFECT_RANK = { pure: 0, read: 1, write: 2, external: 3, irreversible: 4 };
+function effectClassName(e) {
+  return ["pure", "read", "write", "external", "irreversible"][EFFECT_RANK[e] ?? 1];
+}
 async function loadTools() {
   const el = $("toolsList");
   el.innerHTML = "<div class='hint'>loading…</div>";
   try {
-    const res = await getJSON("/marketplace/search");
-    const pkgs = res.packages || res.results || (Array.isArray(res) ? res : []);
+    const res = await getJSON("/tools");
+    const tools = res.tools || (Array.isArray(res) ? res : []);
     el.innerHTML = "";
-    if (!pkgs.length) { el.innerHTML = "<div class='hint'>no tools published</div>"; return; }
-    pkgs.forEach((p) => {
-      const div = document.createElement("div");
-      div.className = "item";
-      div.innerHTML =
-        `<span class="glyph permit">▣</span><b>${escapeHtml(p.name || "")}</b>` +
-        `<span class="meta">${escapeHtml(p.description || p.version || "")}</span>`;
-      el.appendChild(div);
-    });
-  } catch (e) { el.innerHTML = `<div class='hint'>could not load tools: ${e}</div>`; }
+    if (!tools.length) { el.innerHTML = "<div class='hint'>no tools registered</div>"; return; }
+    tools
+      .sort((a, b) => (EFFECT_RANK[a.effect_class] ?? 0) - (EFFECT_RANK[b.effect_class] ?? 0))
+      .forEach((t) => {
+        const eff = effectClassName(t.effect_class);
+        const div = document.createElement("div");
+        div.className = "item tool-item";
+        div.innerHTML =
+          `<span class="glyph permit">▣</span>` +
+          `<b>${escapeHtml(t.name || "")}</b>` +
+          `<span class="effect eff-${eff}" title="effect ceiling enforced by the governor">${eff}</span>` +
+          (t.risk_class ? `<span class="risk risk-${escapeHtml(t.risk_class)}">${escapeHtml(t.risk_class)} risk</span>` : "") +
+          `<span class="meta">v${escapeHtml(t.version || "1")}</span>`;
+        el.appendChild(div);
+      });
+  } catch (e) { el.innerHTML = `<div class='hint'>could not load tools: ${e}. Is the runtime live?</div>`; }
 }
 $("refreshTools").addEventListener("click", loadTools);
+
+/* ---------- backups: the real on-disk ledger file ---------- */
+async function loadBackups() {
+  const pathEl = $("ledgerPath");
+  if (!pathEl) return;
+  if (!invoke) { pathEl.textContent = "available in the desktop app"; return; }
+  try {
+    const p = await invoke("ledger_path");
+    pathEl.textContent = p || "(runtime not started yet)";
+    const copy = $("copyLedgerPath");
+    if (copy) copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(p); copy.textContent = "Copied"; }
+      catch (_) { copy.textContent = "—"; }
+      setTimeout(() => (copy.textContent = "Copy path"), 1200);
+    };
+  } catch (e) { pathEl.textContent = "could not resolve ledger path: " + e; }
+}
 
 /* ---------- skills: author + tune authority-narrowing templates ---------- */
 async function loadSkills() {
