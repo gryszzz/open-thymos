@@ -91,6 +91,8 @@ Intent → Proposal → Commit
 | `Commit` | Written to the ledger | The only record that mutates world state |
 
 <p align="center">
+  <a href="VISION.md">Vision</a>
+  &nbsp;·&nbsp;
   <a href="https://gryszzz.github.io/open-thymos/specification/">Specification</a>
   &nbsp;·&nbsp;
   <a href="docs/architecture.md">Architecture</a>
