@@ -21,7 +21,9 @@
       <div class="status" id="status">
         <span id="dot" class="dot dot-off"></span>
         <span id="statusText">runtime: stopped</span>
+        <span id="liveBadge" class="badge"></span>
         <span id="provider" class="pill">provider: —</span>
+        <span id="model" class="pill">model: —</span>
         <span id="ledger" class="pill">ledger: —</span>
       </div>
       <div class="controls">
@@ -115,6 +117,9 @@
         <div class="panel-head"><h2>Providers</h2>
           <button class="ghost" id="refreshHealth">Refresh</button></div>
         <div id="providerCard" class="card"></div>
+
+        <h3 class="catalog-h">Available providers</h3>
+        <div id="providerCatalog" class="list"></div>
 
         <form id="providerForm" class="card provider-form">
           <h3>Connect a model</h3>

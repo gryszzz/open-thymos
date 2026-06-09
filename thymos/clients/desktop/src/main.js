@@ -62,10 +62,24 @@ async function refreshStatus() {
     ? "runtime: starting…"
     : "runtime: stopped";
   if (health) {
-    $("provider").textContent = `provider: ${health.default_provider}${
-      health.cognition_live ? "" : " (mock)"
-    }`;
+    $("provider").textContent = `provider: ${health.default_provider}`;
     $("ledger").textContent = `ledger: ${health.ledger}`;
+    const badge = $("liveBadge");
+    if (badge) {
+      badge.textContent = health.cognition_live ? "live model" : "mock";
+      badge.className = "badge " + (health.cognition_live ? "ok" : "bad");
+    }
+    // Model name comes from the host's provider config (server-side), not /health.
+    if (invoke) {
+      try {
+        const cfg = await invoke("get_provider_config");
+        const m = (cfg && cfg.model) || "";
+        $("model").textContent = `model: ${m || "(provider default)"}`;
+      } catch (_) { $("model").textContent = "model: —"; }
+    }
+  } else {
+    const badge = $("liveBadge");
+    if (badge) { badge.textContent = ""; badge.className = "badge"; }
   }
 }
 
@@ -353,8 +367,48 @@ async function loadHealth() {
     el.innerHTML = `<div class='hint'>runtime not reachable — start it from the top bar (${e})</div>`;
   }
   await loadProviderForm();
+  await loadCatalog();
 }
 $("refreshHealth").addEventListener("click", loadHealth);
+
+// Provider catalog: every supported provider at a glance — local vs cloud, its
+// default model + endpoint, and whether it needs a key. The active provider is
+// highlighted with its real key status. Click a row to prefill the form below.
+async function loadCatalog() {
+  const el = $("providerCatalog");
+  if (!el || typeof PRESETS === "undefined") return;
+  let active = "";
+  let keySet = false;
+  try { active = (await getJSON("/health")).default_provider || ""; } catch (_) {}
+  try { if (invoke) keySet = !!(await invoke("get_provider_config")).key_set; } catch (_) {}
+  el.innerHTML = "";
+  for (const [id, p] of Object.entries(PRESETS)) {
+    const local = (p.url || "").startsWith("http://localhost") || (!p.url && id === "mock");
+    const isActive = id === active;
+    const needsKey = !!p.key;
+    const keyBadge = isActive
+      ? (needsKey
+          ? `<span class="badge ${keySet ? "ok" : "bad"}">${keySet ? "key set" : "no key"}</span>`
+          : `<span class="badge ok">no key needed</span>`)
+      : `<span class="badge">${needsKey ? "needs key" : "no key"}</span>`;
+    const host = (p.url || "").replace(/^https?:\/\//, "");
+    const div = document.createElement("div");
+    div.className = "item" + (isActive ? " active" : "");
+    div.style.cursor = "pointer";
+    div.innerHTML =
+      `<span class="glyph ${isActive ? "commit" : "sys"}">${isActive ? "◆" : "◈"}</span>` +
+      `<b>${id}</b><span class="tag">${local ? "local" : "cloud"}</span>${keyBadge}` +
+      `<span class="meta">${p.model || "—"}${host ? " · " + host : ""}</span>`;
+    div.onclick = () => {
+      const inp = $("pfProvider");
+      inp.value = id;
+      inp.dispatchEvent(new Event("input"));
+      inp.scrollIntoView({ behavior: "smooth", block: "center" });
+      inp.focus();
+    };
+    el.appendChild(div);
+  }
+}
 
 // Populate the connect-a-model form from the host's stored config. The key is
 // never returned — we only learn whether one is set, and reflect that in the

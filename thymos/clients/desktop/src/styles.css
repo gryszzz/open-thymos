@@ -57,8 +57,8 @@ body::before {
 .brandwrap { display: flex; align-items: center; gap: 12px; }
 .logobox {
   display: grid; place-items: center;
-  width: 42px; height: 42px;
-  border-radius: 11px;
+  width: 64px; height: 64px;
+  border-radius: 15px;
   background: linear-gradient(145deg, var(--panel-3), var(--panel));
   border: 1px solid var(--line-2);
   box-shadow:
@@ -74,7 +74,10 @@ body::before {
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
 }
-.brandlogo { width: 28px; height: 28px; border-radius: 6px; display: block; }
+.brandlogo {
+  width: 52px; height: 52px; border-radius: 12px; display: block;
+  box-shadow: 0 0 18px rgba(124, 92, 255, .45);
+}
 .brandtext { display: flex; flex-direction: column; line-height: 1.15; }
 .brand { font-weight: 800; letter-spacing: 2px; color: var(--text); font-size: 15px; }
 .brand::first-letter { color: var(--violet); }
@@ -302,3 +305,17 @@ code {
 .lg.green { color: var(--green); }
 .lg.red { color: var(--red); }
 .lg.amber { color: var(--amber); }
+
+/* Provider catalog + status badges */
+.badge:not(.ok):not(.bad) {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+}
+.catalog-h {
+  margin: 16px 0 8px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .6px; font-weight: 700;
+}
+.tag {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+}
+.item.active { border-color: var(--violet); box-shadow: inset 0 0 0 1px var(--violet); }
