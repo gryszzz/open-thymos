@@ -80,7 +80,13 @@ fn root_writ() -> Writ {
 #[test]
 #[ignore = "live LLM integration — set ANTHROPIC_API_KEY and run with --ignored"]
 fn live_anthropic_closes_the_loop_and_commits() {
-    if std::env::var("ANTHROPIC_API_KEY").is_err() {
+    // Treat an empty value as unset: CI runners inject an empty env var when the
+    // secret is absent, so `is_err()` alone would let the test run keyless.
+    if std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty())
+        .is_none()
+    {
         eprintln!(
             "SKIP live_anthropic_closes_the_loop_and_commits: ANTHROPIC_API_KEY not set. \
              Export a key to run this test for real."

@@ -91,5 +91,12 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          # GitHub injects an *empty* env var when the secret is unset, so guard
+          # on emptiness here — otherwise the test sees `Ok("")`, not an error,
+          # and would call the API with no key (401). No key → nothing to prove.
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "SKIP live-provider: ANTHROPIC_API_KEY secret not set."
+            exit 0
+          fi
           cargo test -p thymos-runtime --test live_provider \
             -- --ignored --nocapture
