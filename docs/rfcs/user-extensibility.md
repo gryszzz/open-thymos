@@ -81,11 +81,14 @@ server's tools become governed Thymos tools (databases, browsers, SaaS, cloud).
 }
 ```
 
-- **Finish:** a `THYMOS_MCP_CONFIG` (path) loaded at startup that calls
-  `McpBridge::spawn_all` per server and registers the discovered tools, tagging
-  each with the **operator-declared effect class** for that server (a user
-  can't let an MCP tool claim a lower effect than the operator assigned). Add a
-  desktop **Tools → Connect MCP server** form.
+- **Shipped (server-side):** `THYMOS_MCP_CONFIG` (a JSON file
+  `{ "servers": { "<name>": ["uvx", "<pkg>"], … } }`) is loaded at startup;
+  each server is spawned via `register_mcp_server` and its tools registered,
+  defaulting to effect class **External** (a writ must grant External for any to
+  run). A server that can't spawn is logged and skipped — it never blocks
+  startup. **Remaining:** a desktop **Tools → Connect MCP server** form, and
+  per-server operator-assigned effect ceiling (currently the safe External
+  default).
 - **Stays governed:** an MCP tool is a tool — it runs only under a writ that
   grants its scope + effect, every call commits to the ledger, replay sees it.
   MCP servers are subprocesses, so they inherit the existing process-isolation
