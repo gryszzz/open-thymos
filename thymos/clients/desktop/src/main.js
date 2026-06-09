@@ -768,6 +768,49 @@ $("skClear")?.addEventListener("click", () => {
   $("skStatus").textContent = "";
 });
 
+// One-click starter templates — prefill a working example so users don't start
+// from a blank technical form. They can tweak then save.
+const SKILL_TEMPLATES = {
+  "repo-reader": { name: "repo-reader", title: "Read & summarize a repo",
+    instructions: "Explore the repository read-only and summarize what you find. Do not modify anything.",
+    tools: "fs.read, grep", read: true, write: false, external: false, irrev: false },
+  "web-research": { name: "web-research", title: "Research on the web",
+    instructions: "Research the question using HTTP and cite your sources.",
+    tools: "http", read: true, write: false, external: true, irrev: false },
+  "safe-editor": { name: "safe-editor", title: "Edit code safely",
+    instructions: "Make minimal, well-explained edits. Always read a file before you change it.",
+    tools: "fs.read, fs.patch, grep", read: true, write: true, external: false, irrev: false },
+};
+document.querySelectorAll("#skillForm .starter-row .chip").forEach((b) =>
+  b.addEventListener("click", () => {
+    const t = SKILL_TEMPLATES[b.dataset.skill];
+    if (!t) return;
+    $("skName").value = t.name; $("skTitle").value = t.title;
+    $("skInstr").value = t.instructions; $("skTools").value = t.tools;
+    $("skRead").checked = t.read; $("skWrite").checked = t.write;
+    $("skExternal").checked = t.external; $("skIrrev").checked = t.irrev;
+    $("skStatus").textContent = "template loaded — tweak and Save";
+  }));
+
+const TOOL_TEMPLATES = {
+  shell: { name: "run_script", desc: "Run a shell command", effect: "write", risk: "medium",
+    kind: "shell", cmd: "./script.sh {arg}", url: "",
+    schema: '{ "type": "object", "properties": { "arg": { "type": "string" } } }' },
+  http: { name: "call_api", desc: "Call an HTTP API", effect: "external", risk: "medium",
+    kind: "http", cmd: "", url: "https://api.example.com/{path}",
+    schema: '{ "type": "object", "properties": { "path": { "type": "string" } } }' },
+};
+document.querySelectorAll("#toolForm .starter-row .chip").forEach((b) =>
+  b.addEventListener("click", () => {
+    const t = TOOL_TEMPLATES[b.dataset.tool];
+    if (!t) return;
+    $("tlName").value = t.name; $("tlDesc").value = t.desc;
+    $("tlEffect").value = t.effect; $("tlRisk").value = t.risk;
+    $("tlKind").value = t.kind; $("tlKind").dispatchEvent(new Event("change"));
+    $("tlCmd").value = t.cmd; $("tlUrl").value = t.url; $("tlSchema").value = t.schema;
+    $("tlStatus").textContent = "template loaded — tweak and Add tool";
+  }));
+
 $("skillForm")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = $("skName").value.trim();
