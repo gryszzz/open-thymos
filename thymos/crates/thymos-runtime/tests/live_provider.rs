@@ -80,10 +80,18 @@ fn root_writ() -> Writ {
 #[test]
 #[ignore = "live LLM integration — set ANTHROPIC_API_KEY and run with --ignored"]
 fn live_anthropic_closes_the_loop_and_commits() {
-    if std::env::var("ANTHROPIC_API_KEY").is_err() {
+    // Skip cleanly when the key is missing *or blank*. An unset GitHub Actions
+    // secret expands to an empty string (Ok("")), not an error — so an
+    // `is_err()`-only guard would run the test with a blank key and fail the
+    // live call. Treat empty/whitespace as "not set" and skip (pass), per the
+    // gated-test rule: never fake a green, never a false red.
+    if std::env::var("ANTHROPIC_API_KEY")
+        .map(|k| k.trim().is_empty())
+        .unwrap_or(true)
+    {
         eprintln!(
-            "SKIP live_anthropic_closes_the_loop_and_commits: ANTHROPIC_API_KEY not set. \
-             Export a key to run this test for real."
+            "SKIP live_anthropic_closes_the_loop_and_commits: ANTHROPIC_API_KEY not set \
+             (or empty — e.g. an unset CI secret). Export a real key to run this for real."
         );
         return;
     }
