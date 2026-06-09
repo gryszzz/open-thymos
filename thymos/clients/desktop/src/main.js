@@ -62,10 +62,24 @@ async function refreshStatus() {
     ? "runtime: starting…"
     : "runtime: stopped";
   if (health) {
-    $("provider").textContent = `provider: ${health.default_provider}${
-      health.cognition_live ? "" : " (mock)"
-    }`;
+    $("provider").textContent = `provider: ${health.default_provider}`;
     $("ledger").textContent = `ledger: ${health.ledger}`;
+    const badge = $("liveBadge");
+    if (badge) {
+      badge.textContent = health.cognition_live ? "live model" : "mock";
+      badge.className = "badge " + (health.cognition_live ? "ok" : "bad");
+    }
+    // Model name comes from the host's provider config (server-side), not /health.
+    if (invoke) {
+      try {
+        const cfg = await invoke("get_provider_config");
+        const m = (cfg && cfg.model) || "";
+        $("model").textContent = `model: ${m || "(provider default)"}`;
+      } catch (_) { $("model").textContent = "model: —"; }
+    }
+  } else {
+    const badge = $("liveBadge");
+    if (badge) { badge.textContent = ""; badge.className = "badge"; }
   }
 }
 
@@ -112,12 +126,34 @@ let currentStream = null;
 let renderedUpTo = 0;
 let activeRunId = null;
 
-// Capability grants: clicking a chip toggles whether the run's writ authorizes
-// that tool. Empty selection lets the server grant `*` (all tools).
+// Authority is a SAVED property of the model, not a per-chat choice. The grant
+// chips + default skill are configured once (left rail) and persisted; every
+// chat on this model inherits them. Empty grant selection lets the server grant
+// `*` (all tools).
+const GRANTS_KEY = "thymos.grants.v1";
+const SKILL_KEY = "thymos.defaultSkill.v1";
 document.querySelectorAll("#grants .chip").forEach((chip) =>
-  chip.addEventListener("click", () => chip.classList.toggle("on")));
+  chip.addEventListener("click", () => {
+    chip.classList.toggle("on");
+    try { localStorage.setItem(GRANTS_KEY, JSON.stringify(selectedScopes())); } catch (_) {}
+  }));
 function selectedScopes() {
   return [...document.querySelectorAll("#grants .chip.on")].map((c) => c.dataset.scope);
+}
+// Restore saved grants + default skill (called at boot and after skills load).
+function restoreDefaults() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GRANTS_KEY) || "null");
+    if (Array.isArray(saved)) {
+      document.querySelectorAll("#grants .chip").forEach((c) =>
+        c.classList.toggle("on", saved.includes(c.dataset.scope)));
+    }
+  } catch (_) {}
+  const sk = $("defaultSkill");
+  if (sk) {
+    try { const v = localStorage.getItem(SKILL_KEY); if (v !== null) sk.value = v; } catch (_) {}
+    sk.onchange = () => { try { localStorage.setItem(SKILL_KEY, sk.value); } catch (_) {} };
+  }
 }
 
 // Toggle Send/Stop + a live "working" pulse while a run is in flight. The input
@@ -152,7 +188,13 @@ function renderSnapshot(s) {
   });
   if (s.status === "waiting_approval") showApproval(s.run_id);
   if (["completed", "failed", "cancelled"].includes(s.status)) {
-    if (s.final_answer) pushAnswer(s.status, s.final_answer);
+    if (s.final_answer) {
+      pushAnswer(s.status, s.final_answer);
+      // Persist the answer with its ledger link (run/trajectory) for audit+replay.
+      addMessage("agent", s.final_answer, {
+        status: s.status, run_id: s.run_id, trajectory_id: s.trajectory_id,
+      });
+    }
     activeRunId = null;
     setBusy(false);
   }
@@ -182,15 +224,81 @@ function pushAnswer(status, text) {
   feed.scrollTop = feed.scrollHeight;
 }
 
-// New chat: clear the thread and stop watching (does not touch the ledger).
-$("newChat")?.addEventListener("click", () => {
+/* ---------- chat history (local-first, persists across restarts) ---------- */
+const CHATS_KEY = "thymos.chats.v1";
+let chats = [];
+let activeChat = null;
+const WELCOME_HTML = feed.innerHTML; // captured before any clearing
+
+function loadChats() {
+  try { chats = JSON.parse(localStorage.getItem(CHATS_KEY) || "[]"); } catch (_) { chats = []; }
+}
+function saveChats() { try { localStorage.setItem(CHATS_KEY, JSON.stringify(chats)); } catch (_) {} }
+function curChat() { return chats.find((c) => c.id === activeChat); }
+
+function renderWelcome() { feed.innerHTML = WELCOME_HTML; }
+
+function renderChatList() {
+  const el = $("chatList");
+  if (!el) return;
+  el.innerHTML = "";
+  if (!chats.length) { el.innerHTML = "<div class='hint chat-empty'>no chats yet</div>"; return; }
+  chats.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "chat-item" + (c.id === activeChat ? " on" : "");
+    row.onclick = () => openChat(c.id);
+    const t = document.createElement("span");
+    t.className = "ci-title";
+    t.textContent = c.title || "Untitled";
+    const del = document.createElement("button");
+    del.className = "ci-del"; del.textContent = "×"; del.title = "delete chat";
+    del.onclick = (e) => { e.stopPropagation(); deleteChat(c.id); };
+    row.append(t, del);
+    el.appendChild(row);
+  });
+}
+
+function newChatSession(focus = true) {
   if (currentStream) currentStream.close();
-  activeRunId = null;
-  renderedUpTo = 0;
+  activeRunId = null; renderedUpTo = 0; setBusy(false);
+  const c = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+              title: "New chat", ts: Date.now(), messages: [] };
+  chats.unshift(c); activeChat = c.id; saveChats();
+  renderChatList(); renderWelcome();
+  if (focus) $("taskInput").focus();
+}
+
+function openChat(id) {
+  if (currentStream) currentStream.close();
+  activeRunId = null; renderedUpTo = 0; setBusy(false);
+  activeChat = id; renderChatList();
+  const c = curChat();
   feed.innerHTML = "";
-  setBusy(false);
+  if (!c || !c.messages.length) { renderWelcome(); return; }
+  c.messages.forEach((m) => {
+    if (m.role === "user") pushBubble(m.text);
+    else pushAnswer(m.status || "completed", m.text);
+  });
   $("taskInput").focus();
-});
+}
+
+function deleteChat(id) {
+  chats = chats.filter((c) => c.id !== id);
+  saveChats();
+  if (activeChat === id) activeChat = chats[0] ? chats[0].id : null;
+  if (!activeChat) newChatSession(false); else openChat(activeChat);
+}
+
+// Append a message to the active chat (creating one if needed) and persist.
+function addMessage(role, text, extra) {
+  let c = curChat();
+  if (!c) { newChatSession(false); c = curChat(); }
+  c.messages.push(Object.assign({ role, text }, extra || {}));
+  if (role === "user" && (!c.title || c.title === "New chat")) c.title = text.slice(0, 42);
+  c.ts = Date.now(); saveChats(); renderChatList();
+}
+
+$("newChat")?.addEventListener("click", () => newChatSession());
 
 // Stop: cancel the in-flight run via the real cancel endpoint.
 $("chatStop")?.addEventListener("click", async () => {
@@ -229,23 +337,15 @@ function showApproval(runId) {
 
 let lastTask = null;
 
-// A user message rendered as a chat bubble, with its grant/skill context.
-function pushBubble(text, skill, scopes) {
+// A user message rendered as a chat bubble. Authority (skill + grants) is a
+// saved model property shown in the left rail, not per-message clutter.
+function pushBubble(text) {
   const wrap = document.createElement("div");
   wrap.className = "bubble you-bubble";
   const body = document.createElement("div");
   body.className = "bubble-body";
   body.textContent = text;
   wrap.appendChild(body);
-  const tags = [];
-  if (skill) tags.push(`✦ ${skill}`);
-  if (scopes && scopes.length) tags.push(`grant: ${scopes.join(", ")}`);
-  if (tags.length) {
-    const meta = document.createElement("div");
-    meta.className = "bubble-meta";
-    meta.textContent = tags.join("   ·   ");
-    wrap.appendChild(meta);
-  }
   feed.appendChild(wrap);
   feed.scrollTop = feed.scrollHeight;
 }
@@ -255,10 +355,12 @@ async function startRun(task) {
   if (!task || activeRunId) return;
   const welcome = feed.querySelector(".welcome");
   if (welcome) welcome.remove();
-  const skill = $("composerSkill")?.value || "";
+  // Authority comes from the saved model defaults (left rail), not per chat.
+  const skill = $("defaultSkill")?.value || "";
   const scopes = selectedScopes();
   lastTask = task;
-  pushBubble(task, skill, scopes);
+  pushBubble(task);
+  addMessage("user", task);
   setBusy(true);
   try {
     const body = { task };
@@ -353,8 +455,48 @@ async function loadHealth() {
     el.innerHTML = `<div class='hint'>runtime not reachable — start it from the top bar (${e})</div>`;
   }
   await loadProviderForm();
+  await loadCatalog();
 }
 $("refreshHealth").addEventListener("click", loadHealth);
+
+// Provider catalog: every supported provider at a glance — local vs cloud, its
+// default model + endpoint, and whether it needs a key. The active provider is
+// highlighted with its real key status. Click a row to prefill the form below.
+async function loadCatalog() {
+  const el = $("providerCatalog");
+  if (!el || typeof PRESETS === "undefined") return;
+  let active = "";
+  let keySet = false;
+  try { active = (await getJSON("/health")).default_provider || ""; } catch (_) {}
+  try { if (invoke) keySet = !!(await invoke("get_provider_config")).key_set; } catch (_) {}
+  el.innerHTML = "";
+  for (const [id, p] of Object.entries(PRESETS)) {
+    const local = (p.url || "").startsWith("http://localhost") || (!p.url && id === "mock");
+    const isActive = id === active;
+    const needsKey = !!p.key;
+    const keyBadge = isActive
+      ? (needsKey
+          ? `<span class="badge ${keySet ? "ok" : "bad"}">${keySet ? "key set" : "no key"}</span>`
+          : `<span class="badge ok">no key needed</span>`)
+      : `<span class="badge">${needsKey ? "needs key" : "no key"}</span>`;
+    const host = (p.url || "").replace(/^https?:\/\//, "");
+    const div = document.createElement("div");
+    div.className = "item" + (isActive ? " active" : "");
+    div.style.cursor = "pointer";
+    div.innerHTML =
+      `<span class="glyph ${isActive ? "commit" : "sys"}">${isActive ? "◆" : "◈"}</span>` +
+      `<b>${id}</b><span class="tag">${local ? "local" : "cloud"}</span>${keyBadge}` +
+      `<span class="meta">${p.model || "—"}${host ? " · " + host : ""}</span>`;
+    div.onclick = () => {
+      const inp = $("pfProvider");
+      inp.value = id;
+      inp.dispatchEvent(new Event("input"));
+      inp.scrollIntoView({ behavior: "smooth", block: "center" });
+      inp.focus();
+    };
+    el.appendChild(div);
+  }
+}
 
 // Populate the connect-a-model form from the host's stored config. The key is
 // never returned — we only learn whether one is set, and reflect that in the
@@ -508,7 +650,7 @@ async function loadBackups() {
 /* ---------- skills: author + tune authority-narrowing templates ---------- */
 async function loadSkills() {
   const el = $("skillsList");
-  const sel = $("composerSkill");
+  const sel = $("defaultSkill");
   try {
     const res = await getJSON("/skills");
     const skills = res.skills || [];
@@ -529,13 +671,12 @@ async function loadSkills() {
       });
     }
     if (sel) {
-      const cur = sel.value;
       sel.innerHTML =
-        '<option value="">no skill</option>' +
+        '<option value="">none</option>' +
         skills
           .map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)} (v${s.version})</option>`)
           .join("");
-      sel.value = cur;
+      restoreDefaults(); // reselect the saved default skill for this model
     }
   } catch (e) {
     el.innerHTML = `<div class='hint'>could not load skills: ${e}</div>`;
@@ -656,5 +797,21 @@ function escapeHtml(s) {
 (async function boot() {
   await resolveBase();
   await refreshStatus();
+  // Auto-start the runtime so the app just works on launch (idempotent).
+  if (invoke && !$("dot").classList.contains("dot-on")) {
+    try {
+      await invoke("start_runtime");
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 400));
+        await refreshStatus();
+        if ($("dot").classList.contains("dot-on")) break;
+      }
+    } catch (_) {}
+  }
+  // Chat history + saved per-model defaults (skill + grants).
+  loadChats();
+  restoreDefaults();
+  if (chats.length) openChat(chats[0].id); else newChatSession(false);
+  loadSkills().catch(() => {}); // fills the default-skill selector + restores it
   setInterval(refreshStatus, 4000);
 })();
