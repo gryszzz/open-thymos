@@ -47,9 +47,38 @@ Terminal, scriptable, server. No Rust, no clone, no compile.
 </table>
 </div>
 
-
-
 </div>
+
+<details>
+<summary><b>🛠 Build from source</b> — macOS · Linux · Windows (copy-paste)</summary>
+
+**Prerequisites:** [Rust](https://rustup.rs) and [Node 18+](https://nodejs.org). On **Linux**, also install the webview toolkit:
+
+```bash
+# Debian / Ubuntu (Fedora: dnf install webkit2gtk4.1-devel openssl-devel …)
+sudo apt update && sudo apt install -y libwebkit2gtk-4.1-dev build-essential \
+  curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+**Desktop app** — same commands on every platform:
+
+```bash
+git clone https://github.com/gryszzz/open-thymos
+cd open-thymos/thymos/clients/desktop
+npm install
+npm run dev      # hot-reloading dev window
+npm run build    # installer → .dmg (macOS) · .msi (Windows) · .AppImage (Linux)
+```
+
+**CLI + runtime** — from source:
+
+```bash
+cd open-thymos/thymos
+cargo run -p thymos-server                # runtime on http://localhost:3001
+cargo run -p thymos-cli -- shell          # interactive governed shell
+```
+
+</details>
 
 ---
 
