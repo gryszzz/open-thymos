@@ -17,9 +17,9 @@ does the opposite, by construction:
 
 The effective authority is the *intersection* of the caller's writ and the skill:
 `tools = requested ∩ allow-list`, `ceiling = AND`, `budget = min`. This is the same
-strict-subset rule that governs [delegation](./delegation-lineage/), applied to a
+strict-subset rule that governs [delegation]({{ '/demos/delegation-lineage' | relative_url }}), applied to a
 template instead of a parent writ. The binding is recorded as a content-addressed
-`skill_bound` ledger entry that [replay](../replay/) re-verifies by hash.
+`skill_bound` ledger entry that [replay]({{ '/replay' | relative_url }}) re-verifies by hash.
 
 Every claim here is asserted in
 [`thymos-core`'s `skill` tests](https://github.com/gryszzz/open-thymos/blob/main/thymos/crates/thymos-core/src/skill.rs)
