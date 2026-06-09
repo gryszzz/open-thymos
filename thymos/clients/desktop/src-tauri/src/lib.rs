@@ -199,9 +199,16 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
         .map_err(|e| format!("create app data dir {}: {e}", data_dir.display()))?;
     let ledger_path = data_dir.join("ledger.db");
 
+    // User-defined governed tools: the runtime loads JSON manifests from this
+    // dir (`ToolManifest`), registering each as a first-class tool bound by its
+    // declared effect class. The desktop's Add-tool form writes manifests here.
+    let tools_dir = data_dir.join("tools");
+    let _ = std::fs::create_dir_all(&tools_dir);
+
     let bin = server_binary();
     let mut cmd = Command::new(&bin);
     cmd.env("THYMOS_LEDGER_PATH", &ledger_path);
+    cmd.env("THYMOS_TOOL_MANIFEST_DIRS", &tools_dir);
     apply_provider_env(&mut cmd, &load_provider_config(&app));
     let child = cmd
         .spawn()
@@ -219,6 +226,71 @@ fn ledger_path(app: tauri::AppHandle) -> Result<String, String> {
         .app_data_dir()
         .map_err(|e| format!("resolve app data dir: {e}"))?;
     Ok(dir.join("ledger.db").to_string_lossy().into_owned())
+}
+
+/// Directory holding the user's custom tool manifests (loaded by the runtime via
+/// `THYMOS_TOOL_MANIFEST_DIRS`).
+fn tools_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data dir: {e}"))?
+        .join("tools");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create tools dir: {e}"))?;
+    Ok(dir)
+}
+
+/// Persist a custom tool manifest as `<name>.json`. The runtime validates and
+/// registers it on next start; an invalid manifest is skipped by the loader, so
+/// this only does light shape checks (a non-empty, file-safe `name`). The tool
+/// then runs under the same governance as any native tool — its declared
+/// `effect_class` is enforced by the compiler before it can execute.
+#[tauri::command]
+fn save_tool(app: tauri::AppHandle, manifest: serde_json::Value) -> Result<String, String> {
+    let name = manifest
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("tool name must be non-empty and use only letters, digits, or _".into());
+    }
+    let path = tools_dir(&app)?.join(format!("{name}.json"));
+    let json = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// List the names of the user's saved tool manifests.
+#[tauri::command]
+fn list_tool_manifests(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = tools_dir(&app)?;
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|e| e.to_str()) == Some("json") {
+            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                names.push(stem.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// Delete a saved tool manifest by name. Takes effect on the next runtime start.
+#[tauri::command]
+fn delete_tool_manifest(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let safe = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !safe {
+        return Err("invalid tool name".into());
+    }
+    let path = tools_dir(&app)?.join(format!("{name}.json"));
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("delete {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -253,7 +325,10 @@ pub fn run() {
             runtime_running,
             ledger_path,
             get_provider_config,
-            set_provider_config
+            set_provider_config,
+            save_tool,
+            list_tool_manifests,
+            delete_tool_manifest
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.

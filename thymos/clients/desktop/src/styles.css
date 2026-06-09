@@ -335,3 +335,15 @@ button.full { width: 100%; }
 .chat-defaults .grants { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .chat-main { display: flex; flex-direction: column; min-width: 0; }
 .chat-main .feed { flex: 1; max-height: none; }
+
+/* Add-custom-tool form */
+.addtool { margin-top: 14px; }
+.addtool summary { cursor: pointer; color: var(--cyan); padding: 6px 0; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.addtool-actions { display: flex; align-items: center; gap: 12px; }
+#toolForm label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+#toolForm input, #toolForm select, #toolForm textarea {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: var(--radius-sm); padding: 7px 9px; font-size: 13px;
+}
+#toolForm textarea { font-family: ui-monospace, Menlo, monospace; }
