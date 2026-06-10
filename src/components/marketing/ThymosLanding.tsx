@@ -214,14 +214,19 @@ export function ThymosLanding() {
                 target="_blank"
                 rel="noreferrer"
               >
-                ⬇ Download OpenThymos
+                ⬇ Download Desktop App
               </a>
               <div className="thymos-download-plats">
-                {["macOS", "Linux", "Windows"].map((plat) => (
+                {[
+                  ["macOS (Apple silicon)", "OpenThymos-desktop-macos-arm64.dmg"],
+                  ["macOS (Intel)", "OpenThymos-desktop-macos-x64.dmg"],
+                  ["Windows", "OpenThymos-desktop-windows-x64.msi"],
+                  ["Linux", "OpenThymos-desktop-linux-x64.AppImage"],
+                ].map(([plat, asset]) => (
                   <a
-                    key={plat}
+                    key={asset}
                     className="thymos-plat"
-                    href={siteConfig.releasesUrl}
+                    href={`${siteConfig.downloadBase}/${asset}`}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -230,11 +235,14 @@ export function ThymosLanding() {
                 ))}
               </div>
               <p className="thymos-download-note">
-                CLI + runtime for every platform — no Rust, no compile. One line:{" "}
-                <code>curl -fsSL …/scripts/get.sh | sh</code>. The desktop app
-                (chat, Mind view, audit) builds from source today; signed{" "}
-                <code>.dmg</code> / <code>.msi</code> / <code>.AppImage</code> ship
-                with the next release.
+                Desktop app (chat, Mind view, audit): unsigned{" "}
+                <code>.dmg</code> / <code>.msi</code> / <code>.AppImage</code> —
+                one-time &ldquo;Open anyway&rdquo;. Prefer the CLI runtime? One
+                line: <code>curl -fsSL …/scripts/get.sh | sh</code>, or grab a{" "}
+                <a href={siteConfig.releasesUrl} target="_blank" rel="noreferrer">
+                  release tarball
+                </a>
+                . Both come from the same stable release.
               </p>
             </div>
 

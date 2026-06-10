@@ -225,7 +225,7 @@ function renderSnapshot(s) {
     if (detail.length > 300) detail = detail.slice(0, 300) + "…";
     pushLine(cls, `${g} ${e.title}${detail}`);
   });
-  if (s.status === "waiting_approval") showApproval(s.run_id);
+  if (s.status === "waiting_approval") showApproval(s.run_id, s.pending_channel);
   if (["completed", "failed", "cancelled"].includes(s.status)) {
     if (s.final_answer) {
       pushAnswer(s.status, s.final_answer);
@@ -346,14 +346,14 @@ $("chatStop")?.addEventListener("click", async () => {
   catch (e) { pushLine("deny", `✕ cancel failed: ${e}`); }
 });
 
-function showApproval(runId) {
+function showApproval(runId, channel) {
   if (document.querySelector(`.approval-row[data-run="${runId}"]`)) return;
   const row = document.createElement("div");
   row.className = "approval-row";
   row.dataset.run = runId;
   row.innerHTML = `<span class="q">⏸ approval required — channel</span>`;
   const chan = document.createElement("input");
-  chan.value = "ops";
+  chan.value = channel || "ops"; // prefilled with the actual pending channel
   chan.style.maxWidth = "120px";
   const approve = document.createElement("button");
   approve.textContent = "Approve";
@@ -474,7 +474,7 @@ async function loadRuns() {
         `<span class="meta">${r.trajectory_id?.slice(0, 8) || ""}` +
         `${commits !== "" ? " · " + commits + " commits" : ""}</span>`;
       div.style.cursor = "pointer";
-      div.onclick = () => openAudit(r.trajectory_id);
+      div.onclick = () => openAudit(r.run_id);
       el.appendChild(div);
     });
   } catch (e) { el.innerHTML = `<div class='hint'>could not load runs: ${e}</div>`; }

@@ -95,6 +95,10 @@ pub struct ExecutionSession {
     pub active_tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_answer: Option<String>,
+    /// Channel of the proposal currently awaiting operator approval, so the
+    /// UI can target the decision instead of asking the operator to guess.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_channel: Option<String>,
     pub counters: ExecutionCounters,
     pub updated_at_ms: u64,
     pub log: Vec<ExecutionLogEntry>,
@@ -115,6 +119,7 @@ impl ExecutionSession {
             max_steps,
             active_tool: None,
             final_answer: None,
+            pending_channel: None,
             counters: ExecutionCounters::default(),
             updated_at_ms: now_ms(),
             log: Vec::new(),
@@ -329,6 +334,7 @@ impl ExecutionSession {
                 self.phase = ExecutionPhase::Proposal;
                 self.active_tool = Some(tool.clone());
                 self.counters.approvals_pending += 1;
+                self.pending_channel = Some(channel.clone());
                 self.operator_state = format!("Awaiting approval on {}", channel);
                 self.push_log(
                     ExecutionPhase::Proposal,
@@ -354,6 +360,7 @@ impl ExecutionSession {
                 self.phase = ExecutionPhase::Proposal;
                 self.active_tool = Some(tool.clone());
                 self.counters.approvals_pending = self.counters.approvals_pending.saturating_sub(1);
+                self.pending_channel = None;
                 self.operator_state = if approved {
                     "Approval received; resuming execution".into()
                 } else {
