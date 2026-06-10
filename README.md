@@ -20,7 +20,7 @@ machine.
 
 [![Download the Desktop app](https://img.shields.io/badge/⬇_Download_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](https://github.com/gryszzz/open-thymos/releases/latest)
 
-<sub>macOS `.dmg` · Windows `.msi` · Linux `.AppImage` — unsigned; one-time "Open anyway".<br/>Or build from source (below).</sub>
+<sub>[macOS Apple silicon](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-macos-arm64.dmg) · [macOS Intel](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-macos-x64.dmg) · [Windows `.msi`](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-windows-x64.msi) · [Linux `.AppImage`](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-linux-x64.AppImage)<br/>Unsigned; one-time "Open anyway". Or build from source (below).</sub>
 
 
 
@@ -33,7 +33,9 @@ machine.
 
 Terminal, scriptable, server. No Rust, no clone, no compile.
 
-[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-1c1738?style=for-the-badge&logo=apple&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-macos-arm64.tar.gz) [![Linux](https://img.shields.io/badge/Linux-1c1738?style=for-the-badge&logo=linux&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-linux-x64.tar.gz) [![Windows](https://img.shields.io/badge/Windows-1c1738?style=for-the-badge&logo=windows&logoColor=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-windows-x64.tar.gz)
+
+<sub>macOS badge = Apple silicon; [Intel build here](https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-macos-x64.tar.gz). Or one line: `curl -fsSL …/scripts/get.sh | sh` (auto-detects).</sub>
 
 
 </td>

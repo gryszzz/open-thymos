@@ -40,11 +40,20 @@ fn default_format() -> String {
 /// Resolve a run_id to a TrajectoryId by looking up the runs map.
 fn resolve_trajectory(state: &AppState, run_id: &str) -> Option<TrajectoryId> {
     let runs = state.runs.lock().unwrap();
-    let rec = runs.get(run_id)?;
-    if rec.trajectory_id.is_empty() {
-        return None;
-    }
-    let bytes = hex::decode(&rec.trajectory_id).ok()?;
+    // Run id (the normal case), else accept a trajectory id directly — the
+    // Runs list and chat history carry both, and operators paste either.
+    let hex_id = match runs.get(run_id) {
+        Some(rec) if !rec.trajectory_id.is_empty() => rec.trajectory_id.clone(),
+        _ => {
+            let candidate = run_id.strip_prefix("traj:").unwrap_or(run_id);
+            if runs.values().any(|r| r.trajectory_id == candidate) {
+                candidate.to_string()
+            } else {
+                return None;
+            }
+        }
+    };
+    let bytes = hex::decode(&hex_id).ok()?;
     if bytes.len() != 32 {
         return None;
     }

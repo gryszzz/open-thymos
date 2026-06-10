@@ -205,6 +205,19 @@ pub fn backoff_delay_ms(attempt: u32) -> u64 {
     500u64 << attempt.min(6)
 }
 
+/// Pick the retry delay: honor the server's `retry-after` hint (delta-seconds)
+/// when present — a rate-limit window can't be cleared by a shorter local
+/// backoff — floored at the exponential and capped so a pathological hint
+/// can't hang the loop.
+pub fn retry_delay_ms(attempt: u32, retry_after: Option<&str>) -> u64 {
+    const MAX_MS: u64 = 60_000;
+    let exp = backoff_delay_ms(attempt);
+    retry_after
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .map(|secs| ((secs * 1000.0) as u64).clamp(exp, MAX_MS))
+        .unwrap_or(exp)
+}
+
 /// Map short / legacy aliases to canonical model ids.
 ///
 /// Explicit full ids pass through unchanged, so operators can pin any model.
@@ -243,7 +256,7 @@ impl Cognition for AnthropicCognition {
         self.trim_internal_history();
 
         // 2. Assemble the request with optional cache_control breakpoints.
-        let tools_payload = build_tools_payload(ctx.tools, self.cache_prefix);
+        let tools_payload = build_tools_payload(ctx.tools, ctx.writ, self.cache_prefix);
         let system = build_system_prompt_blocks(ctx.writ, self.cache_prefix);
 
         let mut req_body = json!({
@@ -443,17 +456,35 @@ impl AnthropicCognition {
                         attempt += 1;
                         continue;
                     }
-                    return Err(Error::Other(format!("anthropic request failed: {e}")));
+                    // Name the failure class (reqwest's Display omits the
+                    // cause) so downstream layers can produce a useful message.
+                    let kind = if e.is_timeout() {
+                        " (timeout)"
+                    } else if e.is_connect() {
+                        " (connection failed)"
+                    } else {
+                        ""
+                    };
+                    return Err(Error::Other(format!("anthropic request failed{kind}: {e}")));
                 }
             };
 
             let status = resp.status();
+            // Server retry hint, captured before the body is consumed.
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
             // Quick transient HTTP status check before we parse the body.
             if !status.is_success()
                 && is_transient_status(status.as_u16(), None)
                 && attempt < self.max_retries
             {
-                std::thread::sleep(Duration::from_millis(backoff_delay_ms(attempt)));
+                std::thread::sleep(Duration::from_millis(retry_delay_ms(
+                    attempt,
+                    retry_after.as_deref(),
+                )));
                 attempt += 1;
                 continue;
             }
@@ -469,12 +500,22 @@ impl AnthropicCognition {
                     .and_then(|e| e.get("type"))
                     .and_then(|v| v.as_str());
                 if is_transient_status(status.as_u16(), error_type) && attempt < self.max_retries {
-                    std::thread::sleep(Duration::from_millis(backoff_delay_ms(attempt)));
+                    std::thread::sleep(Duration::from_millis(retry_delay_ms(
+                        attempt,
+                        retry_after.as_deref(),
+                    )));
                     attempt += 1;
                     continue;
                 }
+                // Surface the server's wait hint so the runtime-level retry
+                // loop can honor it (same convention as the OpenAI adapter).
+                let suffix = retry_after
+                    .as_deref()
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .map(|secs| format!(" [retry_after_ms={}]", (secs * 1000.0) as u64))
+                    .unwrap_or_default();
                 return Err(Error::Other(format!(
-                    "anthropic API error {status}: {resp_json}"
+                    "anthropic API error {status}: {resp_json}{suffix}"
                 )));
             }
 
@@ -581,6 +622,12 @@ PROPOSED actions. The runtime compiles each proposal, evaluates policy \
 against a bounded Capability Writ, and either commits the effect or rejects \
 the proposal. The runtime is the sole source of truth.
 
+Not every message needs a tool. If the user is greeting you, making small \
+talk, or asking something you can answer from your own knowledge, just reply \
+with plain text and no tool_use blocks. Only propose a tool call when the task \
+genuinely requires an external effect (reading or writing files, running a \
+command, fetching data). Never call a tool merely to acknowledge a message.
+
 Constraints you MUST respect:
   * You may only call tools that match your Writ scope. Current scope: [{scopes_str}].
   * Your budget is bounded: {tokens} tokens, {calls} tool calls, ~{usd} USD (in millicents), {time}ms wall-clock.
@@ -646,8 +693,15 @@ fn summarize_world(ctx: &CognitionContext<'_>) -> String {
     lines.join("\n")
 }
 
-fn build_tools_payload(tools: &ToolRegistry, cache_prefix: bool) -> Vec<Value> {
-    let names: Vec<String> = tools.names().map(|s| s.to_string()).collect();
+/// Build the `tools` request payload, advertising **only** the tools the Writ
+/// authorizes — same rationale as the OpenAI adapter: out-of-scope schemas
+/// waste tokens and invite proposals the runtime can only reject.
+fn build_tools_payload(tools: &ToolRegistry, writ: &Writ, cache_prefix: bool) -> Vec<Value> {
+    let names: Vec<String> = tools
+        .names()
+        .filter(|n| writ.authorizes_tool(n))
+        .map(|s| s.to_string())
+        .collect();
     let mut out = Vec::with_capacity(names.len());
     let last_idx = names.len().saturating_sub(1);
     for (i, name) in names.iter().enumerate() {
@@ -835,5 +889,20 @@ mod tests {
         assert!(is_tool_result_user_message(&tool_result));
         assert!(!is_tool_result_user_message(&plain_user));
         assert!(!is_tool_result_user_message(&assistant));
+    }
+
+    #[test]
+    fn retry_delay_honors_server_hint_within_bounds() {
+        // No hint → pure exponential.
+        assert_eq!(retry_delay_ms(0, None), 500);
+        assert_eq!(retry_delay_ms(2, None), 2000);
+        // Hint above the exponential floor is honored.
+        assert_eq!(retry_delay_ms(0, Some("10")), 10_000);
+        // Hint below the floor is raised to the exponential.
+        assert_eq!(retry_delay_ms(3, Some("0.1")), 4000);
+        // Pathological hint is capped at 60s.
+        assert_eq!(retry_delay_ms(0, Some("3600")), 60_000);
+        // Unparseable (HTTP-date) hint falls back to the exponential.
+        assert_eq!(retry_delay_ms(1, Some("Wed, 21 Oct 2015 07:28:00 GMT")), 1000);
     }
 }

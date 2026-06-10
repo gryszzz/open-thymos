@@ -95,6 +95,10 @@ pub struct ExecutionSession {
     pub active_tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_answer: Option<String>,
+    /// Channel of the proposal currently awaiting operator approval, so the
+    /// UI can target the decision instead of asking the operator to guess.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_channel: Option<String>,
     pub counters: ExecutionCounters,
     pub updated_at_ms: u64,
     pub log: Vec<ExecutionLogEntry>,
@@ -115,6 +119,7 @@ impl ExecutionSession {
             max_steps,
             active_tool: None,
             final_answer: None,
+            pending_channel: None,
             counters: ExecutionCounters::default(),
             updated_at_ms: now_ms(),
             log: Vec::new(),
@@ -329,6 +334,7 @@ impl ExecutionSession {
                 self.phase = ExecutionPhase::Proposal;
                 self.active_tool = Some(tool.clone());
                 self.counters.approvals_pending += 1;
+                self.pending_channel = Some(channel.clone());
                 self.operator_state = format!("Awaiting approval on {}", channel);
                 self.push_log(
                     ExecutionPhase::Proposal,
@@ -354,6 +360,7 @@ impl ExecutionSession {
                 self.phase = ExecutionPhase::Proposal;
                 self.active_tool = Some(tool.clone());
                 self.counters.approvals_pending = self.counters.approvals_pending.saturating_sub(1);
+                self.pending_channel = None;
                 self.operator_state = if approved {
                     "Approval received; resuming execution".into()
                 } else {
@@ -577,14 +584,20 @@ impl ExecutionSession {
     }
 
     pub fn mark_failed(&mut self, detail: impl Into<String>) {
+        let detail = detail.into();
         self.status = ExecutionStatus::Failed;
         self.phase = ExecutionPhase::Result;
         self.operator_state = "Runtime stopped on an unrecovered error".into();
+        // The chat renders `final_answer` as the reply bubble; give it the
+        // plain-English line. The raw detail stays in the log entry below.
+        self.final_answer = Some(thymos_runtime::agent_async::humanize_provider_error(
+            &detail,
+        ));
         self.push_log(
             ExecutionPhase::Result,
             ExecutionLogLevel::Error,
             "Run failed",
-            detail.into(),
+            detail,
             Some(self.current_step.saturating_sub(1)),
             self.active_tool.clone(),
             None,
@@ -598,6 +611,7 @@ impl ExecutionSession {
         self.status = ExecutionStatus::Cancelled;
         self.phase = ExecutionPhase::Result;
         self.operator_state = "Run cancelled by operator".into();
+        self.final_answer = Some("Run cancelled.".into());
         self.push_log(
             ExecutionPhase::Result,
             ExecutionLogLevel::Warning,
