@@ -55,7 +55,8 @@ jobs:
           cp target/${{ matrix.target }}/release/thymos-server${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/thymos${{ matrix.ext }}        dist/
           cd dist
-          versioned="../../thymos-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          release_name="${GITHUB_REF_NAME//\//-}"
+          versioned="../../thymos-${release_name}-${{ matrix.target }}.tar.gz"
           tar czf "$versioned" thymos-server${{ matrix.ext }} thymos${{ matrix.ext }}
           cp "$versioned" "../../${{ matrix.stable_asset }}"
       - uses: actions/upload-artifact@v4
