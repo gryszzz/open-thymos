@@ -42,6 +42,39 @@ permalink: /
     </a>
   </div>
 
+  <div class="downloads" id="downloads">
+    <div class="download-group">
+      <div>
+        <span class="download-kicker">Desktop</span>
+        <strong>OpenThymos app</strong>
+        <small>Includes the local governed runtime.</small>
+      </div>
+      <div class="download-links">
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-macos-arm64.dmg">macOS Apple silicon</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-macos-x64.dmg">macOS Intel</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-windows-x64.msi">Windows x64</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-desktop-linux-x64.AppImage">Linux x64</a>
+      </div>
+    </div>
+    <div class="download-group">
+      <div>
+        <span class="download-kicker">CLI + runtime</span>
+        <strong>Terminal release</strong>
+        <small>Contains <code>thymos</code> and <code>thymos-server</code>.</small>
+      </div>
+      <div class="download-links">
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-macos-arm64.tar.gz">macOS Apple silicon</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-macos-x64.tar.gz">macOS Intel</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-windows-x64.tar.gz">Windows x64</a>
+        <a href="https://github.com/gryszzz/open-thymos/releases/latest/download/OpenThymos-cli-runtime-linux-x64.tar.gz">Linux x64</a>
+      </div>
+    </div>
+    <p class="download-note">
+      Stable release. Installers are currently unsigned, so your operating system may ask you to confirm the first launch.
+      <a href="https://github.com/gryszzz/open-thymos/releases/latest">Release notes and checksums</a>
+    </p>
+  </div>
+
   <div class="hero-meta">
     <span class="mono">Intent → Proposal → Commit</span>
     <span>·</span>

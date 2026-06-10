@@ -1,11 +1,12 @@
 {
   "name": "thymos-desktop",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "OpenThymos Desktop — governed-cognition runtime, install once.",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "node scripts/prepare-sidecar.mjs && tauri build --config src-tauri/tauri.release.conf.json",
+    "tauri": "tauri",
     "icon": "tauri icon ../../Thymos-logo.PNG"
   },
   "devDependencies": {

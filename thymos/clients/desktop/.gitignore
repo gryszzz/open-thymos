@@ -1,6 +1,7 @@
 node_modules/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/
 # Generated icons (run `npm run icon` to regenerate from Thymos-logo.PNG).
 # NOTE: src/logo.png is a hand-placed frontend asset, NOT generated — it is committed.
 src-tauri/icons/*.png

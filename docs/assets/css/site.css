@@ -426,6 +426,76 @@ main.page {
   flex-wrap: wrap;
 }
 
+.downloads {
+  max-width: 900px;
+  margin: 28px auto 0;
+  padding: 18px;
+  text-align: left;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 4, 15, .78);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .28);
+  backdrop-filter: blur(12px);
+}
+.download-group {
+  display: grid;
+  grid-template-columns: minmax(190px, .7fr) minmax(0, 1.3fr);
+  gap: 20px;
+  align-items: center;
+  padding: 4px;
+}
+.download-group + .download-group {
+  margin-top: 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.download-group strong,
+.download-group small { display: block; }
+.download-group strong { margin-top: 3px; color: var(--text); font-size: 15px; }
+.download-group small { margin-top: 4px; color: var(--text-soft); font-size: 12px; }
+.download-kicker {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.download-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.download-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .025);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color .18s ease, color .18s ease, background .18s ease;
+}
+.download-links a:hover {
+  border-color: var(--accent);
+  background: rgba(168, 85, 247, .08);
+  color: var(--text);
+}
+.download-note {
+  margin: 15px 4px 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: center;
+}
+.download-note a { margin-left: 4px; color: var(--text-dim); }
+
 .hero-meta {
   display: flex; gap: 28px; justify-content: center;
   margin-top: 34px;
@@ -802,5 +872,7 @@ main.page {
   .hero-canvas { height: 540px; transform: translate(-50%, -50%); }
   .prose h1 { font-size: 32px; }
   .hero h1 { font-size: 42px; }
+  .download-group { grid-template-columns: 1fr; gap: 12px; }
+  .download-links { grid-template-columns: 1fr; }
   .footer-bottom { flex-direction: column; gap: 10px; text-align: center; }
 }
