@@ -791,7 +791,34 @@ $("toolForm")?.addEventListener("submit", async (e) => {
 });
 
 /* ---------- backups: the real on-disk ledger file ---------- */
+$("refreshBackups")?.addEventListener("click", loadBackups);
+
 async function loadBackups() {
+  // Live snapshot of the runtime + ledger, as of now.
+  const stateEl = $("backupState");
+  if (stateEl) {
+    let health = null, runs = 0;
+    try { health = await getJSON("/health"); } catch (_) {}
+    try {
+      const r = await getJSON("/runs");
+      const list = Array.isArray(r) ? r : r.runs || [];
+      runs = (Array.isArray(r) ? r : r).total ?? list.length ?? 0;
+    } catch (_) {}
+    const now = new Date().toLocaleTimeString();
+    if (health) {
+      stateEl.innerHTML =
+        `<div class="state-grid">` +
+        `<span class="dim">runtime</span><span><span class="badge ok">live</span></span>` +
+        `<span class="dim">provider</span><span>${escapeHtml(health.default_provider)} ` +
+        `<span class="badge ${health.cognition_live ? "ok" : "bad"}">${health.cognition_live ? "real model" : "mock"}</span></span>` +
+        `<span class="dim">ledger</span><span>${escapeHtml(health.ledger)}</span>` +
+        `<span class="dim">runs recorded</span><span>${runs}</span>` +
+        `<span class="dim">mode</span><span>${escapeHtml(health.mode)}</span>` +
+        `</div><div class="state-asof">as of ${now}</div>`;
+    } else {
+      stateEl.innerHTML = `<div class="hint">Runtime not running — press <b>Start runtime</b> (top right).</div>`;
+    }
+  }
   const pathEl = $("ledgerPath");
   if (!pathEl) return;
   if (!invoke) { pathEl.textContent = "available in the desktop app"; return; }
@@ -806,6 +833,7 @@ async function loadBackups() {
     };
   } catch (e) { pathEl.textContent = "could not resolve ledger path: " + e; }
 }
+$("refreshBackups")?.addEventListener("click", loadBackups);
 
 /* ---------- skills: author + tune authority-narrowing templates ---------- */
 async function loadSkills() {
@@ -830,10 +858,11 @@ async function loadSkills() {
         el.appendChild(div);
       });
     }
-    // Multi-select skill chips: any combination can be active at once.
+    // Multi-select skill chips: any combination can be active at once. When
+    // there are no skills, the rail stays clean (no placeholder).
     if (chipsEl) {
       if (!skills.length) {
-        chipsEl.innerHTML = "<span class='hint sk-empty'>no skills yet</span>";
+        chipsEl.innerHTML = "";
       } else {
         chipsEl.innerHTML = "";
         skills.forEach((s) => {

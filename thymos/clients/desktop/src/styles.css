@@ -408,3 +408,17 @@ body.advanced .adv-only { display: revert; }
 }
 .adv-toggle:hover { border-color: var(--violet); color: var(--text); }
 .adv-toggle input { accent-color: var(--violet); margin: 0; }
+
+/* Per-tab framework context intro */
+.tab-intro {
+  color: var(--muted); font-size: 13px; line-height: 1.6;
+  margin: 0 0 14px; max-width: 70ch;
+  padding: 10px 14px; border-left: 2px solid var(--violet);
+  background: rgba(124, 92, 255, .05); border-radius: 0 8px 8px 0;
+}
+
+/* Backups — live state snapshot */
+.state-card { padding: 14px 16px; }
+.state-grid { display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px; font-size: 13px; align-items: center; }
+.state-grid .dim { color: var(--muted); }
+.state-asof { margin-top: 10px; font-size: 11.5px; color: var(--muted); }

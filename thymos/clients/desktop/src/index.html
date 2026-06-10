@@ -57,17 +57,11 @@
             <!-- Authority is configured ONCE here and saved to this model, not
                  chosen per message. -->
             <div class="chat-defaults">
-              <div class="def-title">This model can…</div>
-              <label class="def">Model <span class="dim">(this chat · blank = default)</span>
-                <input id="chatModel" list="modelList" autocomplete="off" placeholder="e.g. llama3.2 · gpt-4o" />
-              </label>
-              <div class="def">
-                <span>Skills <span class="dim">(combine any — they only narrow)</span></span>
-                <div id="skillChips" class="skill-chips" title="Active skills for this chat. Multiple combine: their tools union, their limits AND. Saved per chat.">
-                  <span class="hint sk-empty">no skills yet</span>
-                </div>
-              </div>
-              <div class="grants" id="grants" title="Default writ scope for this model — the runtime rejects anything not granted. Saved.">
+              <!-- Per-chat model override (advanced) + active skill chips — both
+                   appear only when in use, keeping the rail clean. -->
+              <input id="chatModel" class="adv-only" list="modelList" autocomplete="off" placeholder="model override (blank = default)" />
+              <div id="skillChips" class="skill-chips" title="Active skills — combine any; they only narrow authority."></div>
+              <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted.">
                 <span class="grant-label">grant</span>
                 <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
                 <button type="button" class="chip on" data-scope="grep">grep</button>
@@ -113,6 +107,12 @@
             <button id="mindLoad" class="ghost">Visualize</button>
           </div>
         </div>
+        <p class="tab-intro">
+          A live map of the run's reasoning — each node is a real ledger entry
+          (intent, proposal, commit, rejection, suspension), wired in the order
+          they happened. It's the <b>Intent → Proposal → Commit</b> spine made
+          visible; click any node to see exactly what it was.
+        </p>
         <div class="mind-stage">
           <div id="mindCanvas" class="mind-canvas"></div>
           <div id="mindTip" class="mind-tip" hidden></div>
@@ -134,6 +134,12 @@
           <h2>Runs</h2>
           <button class="ghost" id="refreshRuns">Refresh</button>
         </div>
+        <p class="tab-intro">
+          Every message you send is a <b>governed run</b> — a trajectory of
+          intents → proposals → commits recorded on the ledger. Each row shows
+          what the agent did and how it ended; open one to see its full audit
+          trail and replay it.
+        </p>
         <div id="runsList" class="list"></div>
       </section>
 
@@ -340,8 +346,15 @@
       <!-- AUDIT: ledger entries + replay verdict for a run -->
       <section class="panel" id="tab-audit">
         <div class="panel-head"><h2>Audit</h2></div>
+        <p class="tab-intro">
+          The complete, tamper-evident record of what the agent did — every
+          <b>intent</b> the model proposed, the runtime's <b>verdict</b> (permit /
+          deny / needs-approval), and every <b>commit</b> that changed state, under
+          which signed authority. <b>Replay</b> independently re-folds the ledger to
+          prove it's intact (it never re-runs a tool or calls the model).
+        </p>
         <form id="auditForm" class="inline-form">
-          <input id="auditRunId" placeholder="run id" />
+          <input id="auditRunId" placeholder="run id (blank = latest)" />
           <button type="submit">Load trail</button>
         </form>
         <div id="replayBadge"></div>
@@ -350,7 +363,14 @@
 
       <!-- BACKUPS: thin — explained honestly, no fake one-click yet -->
       <section class="panel" id="tab-backups">
-        <div class="panel-head"><h2>Backups</h2></div>
+        <div class="panel-head"><h2>Backups &amp; state</h2>
+          <button type="button" class="ghost" id="refreshBackups">Refresh</button></div>
+        <p class="tab-intro">
+          A live snapshot of your local runtime and the ledger it writes to —
+          the single hash-chained file that holds every governed action. Copy it
+          anywhere to back up; integrity is re-verifiable by replay.
+        </p>
+        <div id="backupState" class="card state-card"></div>
         <div class="card">
           <p>
             The ledger is a single content-addressed, hash-chained SQLite file.
