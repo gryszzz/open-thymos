@@ -107,7 +107,12 @@
             <button id="mindLoad" class="ghost">Visualize</button>
           </div>
         </div>
-        <div id="mindCanvas" class="mind-canvas"></div>
+        <div class="mind-stage">
+          <div id="mindCanvas" class="mind-canvas"></div>
+          <div id="mindTip" class="mind-tip" hidden></div>
+          <div id="mindInspector" class="mind-inspector" hidden></div>
+        </div>
+        <p class="hint mind-hint">Click any node to inspect it — its kind, sequence, id, and what it represents in <b>Intent → Proposal → Commit</b>. Drag to orbit · scroll to zoom.</p>
         <div class="mind-legend">
           <span class="lg cyan">◆ intent</span>
           <span class="lg violet">▸ proposal</span>
