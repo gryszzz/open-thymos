@@ -833,7 +833,6 @@ async function loadBackups() {
     };
   } catch (e) { pathEl.textContent = "could not resolve ledger path: " + e; }
 }
-$("refreshBackups")?.addEventListener("click", loadBackups);
 
 /* ---------- skills: author + tune authority-narrowing templates ---------- */
 async function loadSkills() {

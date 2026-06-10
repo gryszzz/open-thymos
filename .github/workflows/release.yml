@@ -19,20 +19,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            archive: tar.gz
             ext: ""
+            stable_asset: OpenThymos-cli-runtime-linux-x64.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            archive: tar.gz
             ext: ""
+            stable_asset: OpenThymos-cli-runtime-macos-arm64.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
-            archive: tar.gz
             ext: ""
+            stable_asset: OpenThymos-cli-runtime-macos-x64.tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            archive: tar.gz
             ext: ".exe"
+            stable_asset: OpenThymos-cli-runtime-windows-x64.tar.gz
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -55,14 +55,21 @@ jobs:
           cp target/${{ matrix.target }}/release/thymos-server${{ matrix.ext }} dist/
           cp target/${{ matrix.target }}/release/thymos${{ matrix.ext }}        dist/
           cd dist
-          tar czf ../../thymos-${{ github.ref_name }}-${{ matrix.target }}.tar.gz thymos-server${{ matrix.ext }} thymos${{ matrix.ext }}
+          release_name="${GITHUB_REF_NAME//\//-}"
+          versioned="../../thymos-${release_name}-${{ matrix.target }}.tar.gz"
+          tar czf "$versioned" thymos-server${{ matrix.ext }} thymos${{ matrix.ext }}
+          cp "$versioned" "../../${{ matrix.stable_asset }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: thymos-${{ matrix.target }}
-          path: thymos-*.tar.gz
+          name: release-cli-${{ matrix.target }}
+          path: |
+            thymos-*.tar.gz
+            OpenThymos-cli-runtime-*.tar.gz
+          if-no-files-found: error
 
   container:
     name: Build and push GitHub Packages container
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,9 +111,97 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  desktop:
+    name: Desktop installer (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            extension: dmg
+            asset: OpenThymos-desktop-macos-arm64.dmg
+            ext: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            extension: dmg
+            asset: OpenThymos-desktop-macos-x64.dmg
+            ext: ""
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bundle: appimage
+            extension: AppImage
+            asset: OpenThymos-desktop-linux-x64.AppImage
+            ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: msi
+            extension: msi
+            asset: OpenThymos-desktop-windows-x64.msi
+            ext: ".exe"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            thymos
+            thymos/clients/desktop/src-tauri
+          key: desktop-${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: thymos/clients/desktop/package-lock.json
+      - name: Linux webview deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install desktop dependencies
+        working-directory: thymos/clients/desktop
+        run: npm ci
+      - name: Build bundled runtime
+        working-directory: thymos
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.target }}" -p thymos-server
+          mkdir -p clients/desktop/src-tauri/binaries
+          cp \
+            "target/${{ matrix.target }}/release/thymos-server${{ matrix.ext }}" \
+            "clients/desktop/src-tauri/binaries/thymos-server-${{ matrix.target }}${{ matrix.ext }}"
+      - name: Build bundles
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: thymos/clients/desktop
+          args: >-
+            --target ${{ matrix.target }}
+            --bundles ${{ matrix.bundle }}
+            --config src-tauri/tauri.release.conf.json
+      - name: Normalize desktop asset name
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="thymos/clients/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          source_asset="$(find "$bundle_root" -type f -name '*.${{ matrix.extension }}' -print -quit)"
+          test -n "$source_asset"
+          mkdir -p release-assets
+          cp "$source_asset" "release-assets/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-${{ matrix.target }}
+          path: release-assets/${{ matrix.asset }}
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release
-    needs: [binaries, container]
+    needs: [binaries, desktop, container]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -114,68 +209,32 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: thymos-*
+          pattern: release-*
           merge-multiple: true
-      - name: Create release
+      - name: Create stable release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/thymos-*.tar.gz
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.dmg
+            artifacts/*.msi
+            artifacts/*.AppImage
           generate_release_notes: true
           body: |
             ## OpenThymos ${{ github.ref_name }}
+
+            Stable downloads:
+            - Desktop installers for macOS (Apple silicon and Intel), Windows x64, and Linux x64.
+            - CLI + runtime archives for macOS, Windows, and Linux.
+
+            Desktop installers include the local `thymos-server` runtime. They are
+            currently unsigned, so Gatekeeper or SmartScreen may show a warning.
 
             GitHub Packages images:
             - `ghcr.io/${{ github.repository_owner }}/openthymos-runtime:${{ github.ref_name }}`
             - `ghcr.io/${{ github.repository_owner }}/thymos-server:${{ github.ref_name }}` (compatibility alias)
 
-            Binaries attached for linux/x86_64, darwin/arm64, darwin/x86_64, windows/x86_64.
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for setup.
-
-  # ---------------------------------------------------------------------------
-  # Desktop installers (.dmg / .msi / .AppImage) for OpenThymos Desktop.
-  # UNTESTED in CI to date — the Tauri app is a scaffold (docs/rfcs/desktop-app.md).
-  # Safe by construction: continue-on-error + APPENDS bundles to the existing
-  # release, so a desktop build failure can never break the binary/container
-  # release above. Bundles are currently UNSIGNED (Gatekeeper/SmartScreen will
-  # warn); add Apple Developer ID + Windows certs as secrets to notarize/sign.
-  # ---------------------------------------------------------------------------
-  desktop:
-    name: Desktop installer (${{ matrix.os }})
-    needs: [release]
-    if: startsWith(github.ref, 'refs/tags/v')
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Linux webview deps
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - name: Install app deps + icons
-        working-directory: thymos/clients/desktop
-        run: |
-          npm install
-          npm run icon
-      - name: Build bundles
-        uses: tauri-apps/tauri-action@v0
-        with:
-          projectPath: thymos/clients/desktop
-      - name: Append installers to the release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.dmg
-            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.msi
-            thymos/clients/desktop/src-tauri/target/release/bundle/**/*.AppImage
 
   # ---------------------------------------------------------------------------
   # Homebrew tap update: `brew install <owner>/tap/thymos`.
