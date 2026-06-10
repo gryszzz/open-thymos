@@ -48,6 +48,29 @@ document.querySelectorAll(".tab").forEach((btn) => {
   });
 });
 
+/* ---------- Advanced Mode ---------- */
+// Off by default: normal users never see raw runtime data, schemas, writs, or
+// commits. The toggle reveals everything tagged `.adv-only` (see the UX
+// philosophy doc). Persisted locally.
+const ADV_KEY = "thymos.advanced.v1";
+(function initAdvanced() {
+  const on = (() => { try { return localStorage.getItem(ADV_KEY) === "1"; } catch (_) { return false; } })();
+  document.body.classList.toggle("advanced", on);
+  const t = $("advToggle");
+  if (t) {
+    t.checked = on;
+    t.addEventListener("change", () => {
+      document.body.classList.toggle("advanced", t.checked);
+      try { localStorage.setItem(ADV_KEY, t.checked ? "1" : "0"); } catch (_) {}
+      // If an advanced-only tab was active and we just hid it, fall back to Chat.
+      const active = document.querySelector(".tab.active");
+      if (!t.checked && active && active.classList.contains("adv-only")) {
+        document.querySelector('.tab[data-tab="chat"]').click();
+      }
+    });
+  }
+})();
+
 /* ---------- runtime supervision + health ---------- */
 async function refreshStatus() {
   let running = false;
