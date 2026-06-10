@@ -9,6 +9,7 @@ let BASE = "http://127.0.0.1:3001";
 (async () => { try { if (invoke) BASE = await invoke("runtime_addr"); } catch (_) {} })();
 
 const VIOLET = 0x7c5cff, CYAN = 0x45e0ff, GREEN = 0x46d39a, RED = 0xff6b8a, AMBER = 0xffc24b;
+let nodeMeshes = [], raycaster, pointer, dragMoved = false;
 function colorFor(kind) {
   const k = (kind || "").toLowerCase();
   if (k.includes("commit")) return GREEN;
@@ -87,12 +88,15 @@ function init() {
   glow.scale.set(8, 8, 1);
   scene.add(glow);
 
-  // Interaction: drag to orbit, wheel to zoom.
+  // Interaction: drag to orbit, wheel to zoom, click a node to inspect it.
+  raycaster = new THREE.Raycaster();
+  pointer = new THREE.Vector2();
   const el = renderer.domElement;
-  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; });
+  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; dragMoved = false; });
   window.addEventListener("pointerup", () => { drag = null; });
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) dragMoved = true;
     targetRotY += (e.clientX - drag.x) * 0.006;
     targetRotX += (e.clientY - drag.y) * 0.006;
     targetRotX = Math.max(-1.2, Math.min(1.2, targetRotX));
@@ -102,6 +106,20 @@ function init() {
     e.preventDefault();
     camera.position.z = Math.max(7, Math.min(26, camera.position.z + e.deltaY * 0.01));
   }, { passive: false });
+  // Click (not drag) on a node → open the inspector.
+  el.addEventListener("click", (e) => {
+    if (dragMoved) return;
+    const hit = nodeAt(e);
+    if (hit) inspectNode(hit);
+  });
+  // Hover → quick tooltip + pointer cursor.
+  el.addEventListener("pointermove", (e) => {
+    if (drag) return;
+    const hit = nodeAt(e);
+    el.style.cursor = hit ? "pointer" : "grab";
+    if (hit) showTip(e, hit); else hideTip();
+  });
+  el.addEventListener("pointerleave", hideTip);
 
   new ResizeObserver(resize).observe(container);
   inited = true;
@@ -122,6 +140,65 @@ function clearNodes() {
     o.geometry?.dispose?.();
     o.material?.dispose?.();
   }
+  nodeMeshes = [];
+}
+
+/* ---------- inspectable nodes ---------- */
+// Raycast the pointer event against node meshes; return the hit entry or null.
+function nodeAt(e) {
+  if (!raycaster || !nodeMeshes.length) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes, false);
+  return hits.length ? hits[0].object.userData : null;
+}
+
+// Human-readable one-liner for an entry kind.
+function summaryFor(en) {
+  const k = (en.kind || "").toLowerCase();
+  if (k.includes("root")) return "Trajectory root — the run began.";
+  if (k.includes("commit")) return "Commit — an authorized action that mutated world state.";
+  if (k.includes("rejection") || k.includes("reject")) return "Rejected — a proposal the runtime refused.";
+  if (k.includes("approval") || k.includes("pending")) return "Suspended — waiting for human approval.";
+  if (k.includes("delegation") || k.includes("deleg")) return "Delegation — authority handed to a child run.";
+  if (k.includes("skill")) return "Skill bound — a skill narrowed this run's authority.";
+  return en.kind || "Ledger entry";
+}
+
+function inspectNode(en) {
+  const box = document.getElementById("mindInspector");
+  if (!box) return;
+  const id = en.commit_id || en.id || "";
+  const detail = en.detail ? (typeof en.detail === "string" ? en.detail : JSON.stringify(en.detail, null, 2)) : "";
+  box.hidden = false;
+  box.innerHTML =
+    `<div class="mi-head"><span class="mi-kind">${escHtml(en.kind || "entry")}</span>` +
+    `<button class="mi-close" title="close">×</button></div>` +
+    `<div class="mi-sum">${escHtml(summaryFor(en))}</div>` +
+    `<dl class="mi-fields">` +
+    (en.seq != null ? `<dt>seq</dt><dd>${en.seq}</dd>` : "") +
+    (id ? `<dt>id</dt><dd class="mono">${escHtml(String(id).slice(0, 24))}…</dd>` : "") +
+    `</dl>` +
+    (detail ? `<pre class="mi-detail">${escHtml(detail).slice(0, 1200)}</pre>` : "");
+  box.querySelector(".mi-close").onclick = () => { box.hidden = true; };
+}
+
+let tipEl = null;
+function showTip(e, en) {
+  if (!tipEl) tipEl = document.getElementById("mindTip");
+  if (!tipEl) return;
+  tipEl.hidden = false;
+  tipEl.textContent = `${en.kind || "entry"}${en.seq != null ? " · seq " + en.seq : ""} — click to inspect`;
+  const rect = renderer.domElement.getBoundingClientRect();
+  tipEl.style.left = (e.clientX - rect.left + 12) + "px";
+  tipEl.style.top = (e.clientY - rect.top + 12) + "px";
+}
+function hideTip() { if (tipEl) tipEl.hidden = true; }
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function placeNodes(entries) {
@@ -142,7 +219,9 @@ function placeNodes(entries) {
       new THREE.SphereGeometry(0.16, 16, 16),
       new THREE.MeshBasicMaterial({ color: col }));
     node.position.copy(p);
+    node.userData = e; // the ledger entry — makes the node inspectable
     nodesGroup.add(node);
+    nodeMeshes.push(node);
     const halo = new THREE.Sprite(new THREE.SpriteMaterial(
       { map: glowTex, color: col, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.8 }));
     halo.scale.set(1.1, 1.1, 1);

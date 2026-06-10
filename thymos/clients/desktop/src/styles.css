@@ -356,3 +356,31 @@ button.full { width: 100%; }
   border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; box-shadow: none;
 }
 .starter-row .chip:hover { border-color: var(--violet); background: var(--panel-3); transform: none; }
+
+/* Mind — inspectable node panel + hover tooltip */
+.mind-stage { position: relative; }
+.mind-tip {
+  position: absolute; z-index: 5; pointer-events: none;
+  background: rgba(21, 17, 42, .96); border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 9px; font-size: 12px; color: var(--text); white-space: nowrap;
+}
+.mind-inspector {
+  position: absolute; top: 12px; right: 12px; width: 300px; max-height: 82%; overflow: auto;
+  z-index: 6; background: rgba(17, 13, 34, .97); border: 1px solid var(--line-2);
+  border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+}
+.mi-head { display: flex; align-items: center; justify-content: space-between; }
+.mi-kind { font-weight: 700; color: var(--cyan); text-transform: capitalize; }
+.mi-close { background: none; border: none; box-shadow: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0 4px; }
+.mi-close:hover { color: var(--red); transform: none; box-shadow: none; }
+.mi-sum { color: var(--muted); font-size: 12.5px; margin: 6px 0 10px; }
+.mi-fields { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 12.5px; }
+.mi-fields dt { color: var(--muted); }
+.mi-fields dd { margin: 0; color: var(--text); }
+.mi-fields .mono { font-family: ui-monospace, Menlo, monospace; }
+.mi-detail {
+  margin-top: 10px; font-size: 11.5px; color: var(--muted); white-space: pre-wrap;
+  word-break: break-word; max-height: 220px; overflow: auto; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+}
+.mind-hint { font-size: 12px; margin: 8px 0; }
