@@ -207,6 +207,12 @@
 
         <form id="skillForm" class="card provider-form">
           <h3>Create / tune a skill</h3>
+          <div class="starter-row">
+            <span class="starter-label">Start from a template:</span>
+            <button type="button" class="chip" data-skill="repo-reader">Repo reader</button>
+            <button type="button" class="chip" data-skill="web-research">Web researcher</button>
+            <button type="button" class="chip" data-skill="safe-editor">Safe editor</button>
+          </div>
           <label>Name <input id="skName" autocomplete="off" placeholder="diff-review" /></label>
           <label>Title <span class="dim">(optional)</span>
             <input id="skTitle" autocomplete="off" placeholder="Review a code diff" /></label>
@@ -259,6 +265,11 @@
         <details class="addtool">
           <summary><b>＋ Add a custom tool</b> — declare a governed tool (no code)</summary>
           <form id="toolForm" class="card provider-form">
+            <div class="starter-row">
+              <span class="starter-label">Start from a template:</span>
+              <button type="button" class="chip" data-tool="shell">Shell command</button>
+              <button type="button" class="chip" data-tool="http">HTTP request</button>
+            </div>
             <div class="row2">
               <label>Name <input id="tlName" placeholder="deploy_staging" autocomplete="off" /></label>
               <label>Version <input id="tlVersion" placeholder="1.0.0" value="1.0.0" autocomplete="off" /></label>
