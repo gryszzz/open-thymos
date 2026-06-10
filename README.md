@@ -2,7 +2,7 @@
 
 <img src="./thymos/thymosG.PNG" alt="OpenThymos" width="325" />
 
-[](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
+[![Download](https://img.shields.io/github/v/release/gryszzz/open-thymos?style=for-the-badge&label=⬇%20Download&color=7c5cff)](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
 <div align="center">
 <table>
@@ -13,10 +13,14 @@
 
 <img src="docs/img/desktop-mind.png" alt="OpenThymos Desktop — the Mind reasoning view" width="420" />
 
-Immersive, **local-first** GUI — chat, live runs, the 3D **Mind** reasoning view,
-audit + replay. Connect any model; your keys never leave your machine.
+Immersive, **local-first** GUI — chat, multi-skill runtime, live runs, the 3D
+**Mind** reasoning view, audit + replay. Connect **any model** (Claude, OpenAI,
+Ollama / LM Studio, any OpenAI-compatible adapter); your keys never leave your
+machine.
 
-[![Get the Desktop app](https://img.shields.io/badge/▶_Get_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](docs/rfcs/desktop-app.md)
+[![Download the Desktop app](https://img.shields.io/badge/⬇_Download_Desktop_App-7c5cff?style=for-the-badge&labelColor=1c1738)](https://github.com/gryszzz/open-thymos/releases/latest)
+
+<sub>macOS `.dmg` · Windows `.msi` · Linux `.AppImage` — unsigned; one-time "Open anyway".<br/>Or build from source (below).</sub>
 
 
 
