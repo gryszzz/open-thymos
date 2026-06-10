@@ -451,6 +451,12 @@ pub struct CreateRunRequest {
     /// Param overrides for the bound skill(s) (`[[key, value], …]`).
     #[serde(default)]
     pub skill_params: Vec<(String, String)>,
+    /// Per-run model override (e.g. picked in the desktop chat). Takes
+    /// precedence over a bound skill's preferred model, which in turn beats the
+    /// server default. Only the model id changes; the provider/key stay the
+    /// server's configured ones.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 fn default_max_steps() -> u32 {
@@ -1740,15 +1746,27 @@ async fn create_run(
     let run_id2 = run_id.clone();
     let task2 = task.clone();
     let bound_skills2 = bound_skills.clone();
+    // Effective model: per-run override (chat) > a bound skill's preferred model
+    // > the server default. Only the model id is swapped — the provider/key are
+    // the server's configured ones.
+    let model_override = req
+        .model
+        .clone()
+        .filter(|m| !m.trim().is_empty())
+        .or_else(|| bound_skills.iter().find_map(|s| s.model_hint.model.clone()));
     let skill_params2 = req.skill_params.clone();
 
     tokio::spawn(async move {
         // Build cognition from per-run config, or the server's configured
         // default provider (env-resolved) instead of silently using mock.
-        let config = req
+        let mut config = req
             .cognition
             .clone()
             .unwrap_or_else(|| state2.default_cognition.clone());
+        // Apply the effective model override (chat / skill) onto the config.
+        if let Some(m) = &model_override {
+            config.model = Some(m.clone());
+        }
         // `build_cognition` may call `reqwest::blocking::ClientBuilder::build()`,
         // which internally creates and drops a current-thread tokio runtime.
         // Dropping a runtime from inside an async context panics, so construct

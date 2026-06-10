@@ -132,6 +132,7 @@ let activeRunId = null;
 // `*` (all tools).
 const GRANTS_KEY = "thymos.grants.v1";
 const SKILLS_KEY = "thymos.skills.v1"; // array of active skill names (multi-skill)
+const MODEL_KEY = "thymos.chatModel.v1"; // per-chat model override
 document.querySelectorAll("#grants .chip").forEach((chip) =>
   chip.addEventListener("click", () => {
     chip.classList.toggle("on");
@@ -161,6 +162,11 @@ function restoreDefaults() {
   const on = savedSkills();
   document.querySelectorAll("#skillChips .chip").forEach((c) =>
     c.classList.toggle("on", on.includes(c.dataset.skill)));
+  const cm = $("chatModel");
+  if (cm) {
+    try { cm.value = localStorage.getItem(MODEL_KEY) || ""; } catch (_) {}
+    cm.onchange = () => { try { localStorage.setItem(MODEL_KEY, cm.value.trim()); } catch (_) {} };
+  }
 }
 
 // Toggle Send/Stop + a live "working" pulse while a run is in flight. The input
@@ -373,6 +379,8 @@ async function startRun(task) {
     const body = { task };
     if (skills.length) body.skills = skills;
     if (scopes.length) body.tool_scopes = scopes;
+    const model = $("chatModel")?.value.trim();
+    if (model) body.model = model; // per-chat model override (else server default)
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
     pushLine("sys", `— run ${String(run_id).slice(0, 8)}`);
@@ -554,11 +562,42 @@ const PRESETS = {
   mock:        { url: "", model: "", key: "" },
 };
 
-// When a provider is picked, prefill its endpoint/model/key hint so each one is
-// one-click. Only fills empty fields, so a typed override is never clobbered.
+// Common models per provider — suggestions for the Model fields (provider form,
+// chat, skill). "Discover models" replaces these with the provider's live list;
+// these give every provider a sensible menu without a round-trip, and manual
+// entry always works. (Kept conservative; not authoritative.)
+const MODELS = {
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5",
+    "claude-opus-4-1", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
+  openai: ["gpt-4o", "gpt-4o-mini", "o3-mini", "o1", "gpt-4.1", "gpt-4-turbo"],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "qwen-2.5-32b"],
+  gemini: ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
+  xai: ["grok-2-latest", "grok-2-vision-latest", "grok-beta"],
+  openrouter: ["anthropic/claude-sonnet-4-6", "openai/gpt-4o", "google/gemini-2.0-flash", "meta-llama/llama-3.3-70b-instruct"],
+  together: ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen2.5-72B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"],
+  perplexity: ["sonar", "sonar-pro", "sonar-reasoning"],
+  ollama: ["llama3.2", "llama3.1", "qwen2.5", "mistral", "phi3", "gemma2", "deepseek-r1"],
+  lmstudio: ["local-model"],
+};
+
+// Populate the shared model datalist with a provider's common models (fallback
+// to its single default). Used by every Model field via list="modelList".
+function fillModelList(provider) {
+  const dl = $("modelList");
+  if (!dl) return;
+  const id = (provider || "").trim().toLowerCase();
+  const list = MODELS[id] || (PRESETS[id] && PRESETS[id].model ? [PRESETS[id].model] : []);
+  dl.innerHTML = list.map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
+}
+
+// When a provider is picked, prefill its endpoint/model/key hint + model menu.
 $("pfProvider")?.addEventListener("input", () => {
-  const p = PRESETS[$("pfProvider").value.trim().toLowerCase()];
+  const id = $("pfProvider").value.trim().toLowerCase();
+  const p = PRESETS[id];
   if (!p) return;
+  fillModelList(id);
   $("pfModel").placeholder = p.model || "provider default";
   if (p.url) {
     $("pfBaseUrl").placeholder = p.url;
@@ -769,6 +808,7 @@ async function editSkill(name) {
     $("skTitle").value = s.title || "";
     $("skInstr").value = s.instructions || "";
     $("skTools").value = (s.tools || []).map((t) => t.tool).join(", ");
+    $("skModel").value = (s.model_hint && s.model_hint.model) || "";
     const c = s.ceiling || {};
     $("skRead").checked = !!c.read;
     $("skWrite").checked = !!c.write;
@@ -856,6 +896,7 @@ $("skillForm")?.addEventListener("submit", async (e) => {
       external: $("skExternal").checked,
       irreversible: $("skIrrev").checked,
     },
+    model_hint: { model: $("skModel").value.trim() || null },
   };
   $("skStatus").textContent = "saving…";
   try {
@@ -932,6 +973,11 @@ function escapeHtml(s) {
   loadChats();
   restoreDefaults();
   if (chats.length) openChat(chats[0].id); else newChatSession(false);
-  loadSkills().catch(() => {}); // fills the default-skill selector + restores it
+  loadSkills().catch(() => {}); // fills the skill chips + restores the active set
+  // Seed the model menu from the configured provider so chat/skill Model fields
+  // suggest real models from the start (Discover replaces with the live list).
+  if (invoke) {
+    try { fillModelList((await invoke("get_provider_config")).provider); } catch (_) {}
+  }
   setInterval(refreshStatus, 4000);
 })();

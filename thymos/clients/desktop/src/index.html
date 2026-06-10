@@ -55,6 +55,9 @@
                  chosen per message. -->
             <div class="chat-defaults">
               <div class="def-title">This model can…</div>
+              <label class="def">Model <span class="dim">(this chat · blank = default)</span>
+                <input id="chatModel" list="modelList" autocomplete="off" placeholder="e.g. llama3.2 · gpt-4o" />
+              </label>
               <div class="def">
                 <span>Skills <span class="dim">(combine any — they only narrow)</span></span>
                 <div id="skillChips" class="skill-chips" title="Active skills for this chat. Multiple combine: their tools union, their limits AND. Saved per chat.">
@@ -226,6 +229,8 @@
             <textarea id="skInstr" rows="3" placeholder="You review diffs for correctness…"></textarea></label>
           <label>Tools <span class="dim">(comma globs, e.g. fs.read,git_* — blank = no extra limit)</span>
             <input id="skTools" autocomplete="off" placeholder="fs.read, git_*" /></label>
+          <label>Preferred model <span class="dim">(optional — used when this skill is active)</span>
+            <input id="skModel" list="modelList" autocomplete="off" placeholder="e.g. claude-opus-4-8" /></label>
           <label>Effect ceiling
             <span class="ceiling-row">
               <label class="ck"><input type="checkbox" id="skRead" checked /> read</label>
