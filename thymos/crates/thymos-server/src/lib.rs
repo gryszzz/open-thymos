@@ -441,7 +441,14 @@ pub struct CreateRunRequest {
     /// budget min); it can never widen authority.
     #[serde(default)]
     pub skill: Option<String>,
-    /// Param overrides for the bound skill (`[[key, value], …]`).
+    /// Multiple skills to bind together (by `name` or content-id). They combine
+    /// safely: instructions concatenate, tool scopes UNION (then ∩ the writ),
+    /// effect ceilings AND, budgets min — so the result is always a strict
+    /// subset of the writ, never a widening. `skill` (singular) is merged in for
+    /// back-compat.
+    #[serde(default)]
+    pub skills: Vec<String>,
+    /// Param overrides for the bound skill(s) (`[[key, value], …]`).
     #[serde(default)]
     pub skill_params: Vec<(String, String)>,
 }
@@ -1358,7 +1365,7 @@ async fn resume_run(
             cognition_tx,
             Some(approval_requester),
             Some(trace_tx),
-            None,
+            Vec::new(), // resumed run: no skill provenance
             Vec::new(),
         )
         .await;
@@ -1527,10 +1534,22 @@ async fn create_run(
 
     // Resolve an optional bound skill. It NARROWS authority (never widens) and
     // prepends its instructions to the task.
-    let bound_skill = match req.skill.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        None => None,
-        Some(name_or_id) => match state.skills.resolve(name_or_id) {
-            Some(s) => Some(s),
+    // Resolve every requested skill: the singular `skill` plus `skills`, deduped
+    // by name. Unknown skill ⇒ 400.
+    let mut skill_names: Vec<String> = Vec::new();
+    if let Some(s) = req.skill.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        skill_names.push(s.to_string());
+    }
+    for s in &req.skills {
+        let s = s.trim();
+        if !s.is_empty() && !skill_names.iter().any(|n| n == s) {
+            skill_names.push(s.to_string());
+        }
+    }
+    let mut bound_skills: Vec<thymos_core::skill::SkillDef> = Vec::new();
+    for name_or_id in &skill_names {
+        match state.skills.resolve(name_or_id) {
+            Some(s) => bound_skills.push(s),
             None => {
                 return (
                     StatusCode::BAD_REQUEST,
@@ -1538,10 +1557,10 @@ async fn create_run(
                 )
                     .into_response()
             }
-        },
-    };
-    // Validate enum params against the skill's declared choices.
-    if let Some(s) = &bound_skill {
+        }
+    }
+    // Validate enum params against every bound skill's declared choices.
+    for s in &bound_skills {
         for (k, v) in &req.skill_params {
             if let Some(p) = s.params.iter().find(|p| &p.key == k) {
                 if !p.accepts(v) {
@@ -1558,13 +1577,15 @@ async fn create_run(
     }
 
     let run_id = uuid::Uuid::new_v4().to_string();
-    let task = match &bound_skill {
-        Some(s) => format!(
-            "{}\n\n---\nTask: {}",
-            s.render_instructions(&req.skill_params),
-            req.task
-        ),
-        None => req.task.clone(),
+    // Prepend every bound skill's instructions, then the task.
+    let task = if bound_skills.is_empty() {
+        req.task.clone()
+    } else {
+        let instrs: Vec<String> = bound_skills
+            .iter()
+            .map(|s| s.render_instructions(&req.skill_params))
+            .collect();
+        format!("{}\n\n---\nTask: {}", instrs.join("\n\n"), req.task)
     };
 
     let user_id = if let Some(axum::Extension(claims)) = &jwt_claims {
@@ -1601,26 +1622,34 @@ async fn create_run(
         usd_millicents: 0,
     };
     let base_ceiling = EffectCeiling::read_write_local();
-    // Apply skill narrowing — strictly an intersection, so authority can only
-    // shrink: tools = (requested ∩ skill allow-list), ceiling = AND, budget = min.
-    let (scopes, budget, effect_ceiling) = match &bound_skill {
-        None => (base_scopes, base_budget, base_ceiling),
-        Some(s) => {
-            let scopes = if s.tools.is_empty() {
-                base_scopes
-            } else {
-                s.tools
-                    .iter()
-                    .filter(|st| base_scopes.iter().any(|rs| rs.covers(st)))
-                    .cloned()
-                    .collect()
-            };
-            (
-                scopes,
-                s.cap_budget(&base_budget),
-                s.cap_ceiling(&base_ceiling),
-            )
+    // Combine all bound skills — the result is always a STRICT SUBSET of the
+    // writ, never a widening: tool scopes = (⋃ skills' allow-lists) ∩ requested
+    // base; effect ceiling = AND across skills; budget = min across skills. A
+    // skill with an empty tool list adds no extra tool limit (keeps the base).
+    let (scopes, budget, effect_ceiling) = if bound_skills.is_empty() {
+        (base_scopes, base_budget, base_ceiling)
+    } else {
+        let any_unrestricted = bound_skills.iter().any(|s| s.tools.is_empty());
+        let scopes: Vec<ToolPattern> = if any_unrestricted {
+            base_scopes.clone()
+        } else {
+            // Union of every skill's allow-listed tools, kept only where the
+            // requested base already covers them (so ⊆ base ⊆ writ). Duplicate
+            // patterns are harmless (they don't widen authority).
+            bound_skills
+                .iter()
+                .flat_map(|s| s.tools.iter())
+                .filter(|st| base_scopes.iter().any(|rs| rs.covers(st)))
+                .cloned()
+                .collect()
+        };
+        let mut budget = base_budget;
+        let mut ceiling = base_ceiling;
+        for s in &bound_skills {
+            budget = s.cap_budget(&budget);
+            ceiling = s.cap_ceiling(&ceiling);
         }
+        (scopes, budget, ceiling)
     };
 
     let writ = match Writ::sign(
@@ -1710,7 +1739,7 @@ async fn create_run(
     let state2 = state.clone();
     let run_id2 = run_id.clone();
     let task2 = task.clone();
-    let bound_skill2 = bound_skill.clone();
+    let bound_skills2 = bound_skills.clone();
     let skill_params2 = req.skill_params.clone();
 
     tokio::spawn(async move {
@@ -1770,7 +1799,7 @@ async fn create_run(
             cognition_tx,
             Some(approval_requester),
             Some(trace_tx),
-            bound_skill2.clone(),
+            bound_skills2.clone(),
             skill_params2.clone(),
         );
 

@@ -131,7 +131,7 @@ let activeRunId = null;
 // chat on this model inherits them. Empty grant selection lets the server grant
 // `*` (all tools).
 const GRANTS_KEY = "thymos.grants.v1";
-const SKILL_KEY = "thymos.defaultSkill.v1";
+const SKILLS_KEY = "thymos.skills.v1"; // array of active skill names (multi-skill)
 document.querySelectorAll("#grants .chip").forEach((chip) =>
   chip.addEventListener("click", () => {
     chip.classList.toggle("on");
@@ -140,7 +140,16 @@ document.querySelectorAll("#grants .chip").forEach((chip) =>
 function selectedScopes() {
   return [...document.querySelectorAll("#grants .chip.on")].map((c) => c.dataset.scope);
 }
-// Restore saved grants + default skill (called at boot and after skills load).
+// Active skills for the chat — multiple can be on at once; they combine (the
+// runtime unions their tools and ANDs their limits, so authority only narrows).
+function selectedSkills() {
+  return [...document.querySelectorAll("#skillChips .chip.on")].map((c) => c.dataset.skill);
+}
+function savedSkills() {
+  try { const a = JSON.parse(localStorage.getItem(SKILLS_KEY) || "[]"); return Array.isArray(a) ? a : []; }
+  catch (_) { return []; }
+}
+// Restore saved grants + active skills (called at boot and after skills load).
 function restoreDefaults() {
   try {
     const saved = JSON.parse(localStorage.getItem(GRANTS_KEY) || "null");
@@ -149,11 +158,9 @@ function restoreDefaults() {
         c.classList.toggle("on", saved.includes(c.dataset.scope)));
     }
   } catch (_) {}
-  const sk = $("defaultSkill");
-  if (sk) {
-    try { const v = localStorage.getItem(SKILL_KEY); if (v !== null) sk.value = v; } catch (_) {}
-    sk.onchange = () => { try { localStorage.setItem(SKILL_KEY, sk.value); } catch (_) {} };
-  }
+  const on = savedSkills();
+  document.querySelectorAll("#skillChips .chip").forEach((c) =>
+    c.classList.toggle("on", on.includes(c.dataset.skill)));
 }
 
 // Toggle Send/Stop + a live "working" pulse while a run is in flight. The input
@@ -355,8 +362,8 @@ async function startRun(task) {
   if (!task || activeRunId) return;
   const welcome = feed.querySelector(".welcome");
   if (welcome) welcome.remove();
-  // Authority comes from the saved model defaults (left rail), not per chat.
-  const skill = $("defaultSkill")?.value || "";
+  // Authority comes from the active skills + grants in the left rail.
+  const skills = selectedSkills();
   const scopes = selectedScopes();
   lastTask = task;
   pushBubble(task);
@@ -364,7 +371,7 @@ async function startRun(task) {
   setBusy(true);
   try {
     const body = { task };
-    if (skill) body.skill = skill;
+    if (skills.length) body.skills = skills;
     if (scopes.length) body.tool_scopes = scopes;
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
@@ -706,7 +713,7 @@ async function loadBackups() {
 /* ---------- skills: author + tune authority-narrowing templates ---------- */
 async function loadSkills() {
   const el = $("skillsList");
-  const sel = $("defaultSkill");
+  const chipsEl = $("skillChips");
   try {
     const res = await getJSON("/skills");
     const skills = res.skills || [];
@@ -726,13 +733,27 @@ async function loadSkills() {
         el.appendChild(div);
       });
     }
-    if (sel) {
-      sel.innerHTML =
-        '<option value="">none</option>' +
-        skills
-          .map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)} (v${s.version})</option>`)
-          .join("");
-      restoreDefaults(); // reselect the saved default skill for this model
+    // Multi-select skill chips: any combination can be active at once.
+    if (chipsEl) {
+      if (!skills.length) {
+        chipsEl.innerHTML = "<span class='hint sk-empty'>no skills yet</span>";
+      } else {
+        chipsEl.innerHTML = "";
+        skills.forEach((s) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "chip";
+          chip.dataset.skill = s.name;
+          chip.title = `${s.title || s.name} — narrows authority. Click to toggle.`;
+          chip.textContent = `✦ ${s.name}`;
+          chip.addEventListener("click", () => {
+            chip.classList.toggle("on");
+            try { localStorage.setItem(SKILLS_KEY, JSON.stringify(selectedSkills())); } catch (_) {}
+          });
+          chipsEl.appendChild(chip);
+        });
+      }
+      restoreDefaults(); // re-activate the saved set of skills
     }
   } catch (e) {
     el.innerHTML = `<div class='hint'>could not load skills: ${e}</div>`;
