@@ -364,6 +364,7 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
             let base_url = config
                 .base_url
                 .clone()
+                .or_else(generic_base_url_env)
                 .unwrap_or_else(|| "http://localhost:11434/v1".into());
             let model = config.model.clone().unwrap_or_else(|| "llama3".into());
             // Local endpoints often don't need an API key; use a dummy.
@@ -391,6 +392,7 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
                 .base_url
                 .clone()
                 .or_else(|| std::env::var("LMSTUDIO_BASE_URL").ok())
+                .or_else(generic_base_url_env)
                 .unwrap_or_else(|| "http://localhost:1234/v1".into());
             let model = config
                 .model
@@ -418,6 +420,7 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
                 .base_url
                 .clone()
                 .or_else(|| std::env::var("HF_BASE_URL").ok())
+                .or_else(generic_base_url_env)
                 .unwrap_or_else(|| "https://router.huggingface.co/v1".into());
             let model = config
                 .model
@@ -426,6 +429,9 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
                 .unwrap_or_else(|| "Qwen/Qwen2.5-Coder-32B-Instruct".into());
             let api_key = std::env::var("HF_TOKEN")
                 .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+                // The desktop injects the stored key generically; honor it so
+                // an HF token entered there isn't silently dropped.
+                .or_else(|_| std::env::var("OPENAI_API_KEY"))
                 .unwrap_or_default();
             if api_key.is_empty() {
                 eprintln!(
@@ -453,6 +459,16 @@ pub fn build_cognition(config: &CognitionConfig) -> Box<dyn Cognition> {
     }
 }
 
+/// Generic base-URL override for any OpenAI-compatible adapter. This is the
+/// variable the desktop injects for every non-Anthropic provider, so a custom
+/// endpoint (Ollama on another port, a remote LM Studio, a gateway) reaches
+/// the preset path instead of being silently dropped.
+fn generic_base_url_env() -> Option<String> {
+    std::env::var("OPENAI_BASE_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+}
+
 /// Build an OpenAI-compatible adapter from a named [`presets`] entry. The API
 /// key is read **server-side** from the preset's environment variables (never
 /// from the wire); local presets need no key. Falls back to mock — with a clear
@@ -472,6 +488,7 @@ fn build_from_preset(name: &str, config: &CognitionConfig) -> Box<dyn Cognition>
     let base_url = config
         .base_url
         .clone()
+        .or_else(generic_base_url_env)
         .unwrap_or_else(|| preset.base_url.to_string());
     let model = config
         .model

@@ -66,6 +66,24 @@ pub struct OpenAiCognition {
     pub total_output_tokens: u64,
 }
 
+/// Parse a `Retry-After` header into milliseconds. The header is delta-seconds
+/// for rate limits (we ignore the rare HTTP-date form, which returns `None`).
+fn parse_retry_after_header(v: &str) -> Option<u64> {
+    v.trim().parse::<f64>().ok().map(|s| (s * 1000.0) as u64)
+}
+
+/// Some providers (e.g. Groq) put the precise wait only in the JSON error body:
+/// `"Please try again in 9.62s"`. Extract that as milliseconds.
+fn parse_retry_after_body(body: &str) -> Option<u64> {
+    const MARKER: &str = "try again in ";
+    let start = body.find(MARKER)? + MARKER.len();
+    let num: String = body[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    num.parse::<f64>().ok().map(|s| (s * 1000.0) as u64)
+}
+
 impl OpenAiCognition {
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENAI_API_KEY")
@@ -169,7 +187,7 @@ impl Cognition for OpenAiCognition {
             "messages": self.messages,
         });
         if matches!(self.tool_protocol, ToolProtocol::Native) {
-            let tools_payload = build_tools_payload(ctx.tools);
+            let tools_payload = build_tools_payload(ctx.tools, ctx.writ);
             if !tools_payload.is_empty() {
                 req_body["tools"] = json!(tools_payload);
             }
@@ -184,15 +202,45 @@ impl Cognition for OpenAiCognition {
             .header("Content-Type", "application/json")
             .json(&req_body)
             .send()
-            .map_err(|e| Error::Other(format!("openai request failed: {e}")))?;
+            .map_err(|e| {
+                // reqwest's Display omits the cause ("error sending request for
+                // url (…)"); name the failure class so downstream layers can
+                // produce a useful message.
+                let kind = if e.is_timeout() {
+                    " (timeout)"
+                } else if e.is_connect() {
+                    " (connection failed)"
+                } else {
+                    ""
+                };
+                Error::Other(format!("openai request failed{kind}: {e}"))
+            })?;
 
         let status = resp.status();
+        // Capture the server's retry hint *before* the body is consumed. On a
+        // 429 the budget (e.g. Groq's tokens-per-minute) resets on the
+        // provider's wall clock; a fixed local backoff can't clear it, so we
+        // surface the server's own wait for the runtime to honor.
+        let retry_after_header = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
         let resp_json: Value = resp
             .json()
             .map_err(|e| Error::Other(format!("openai response parse: {e}")))?;
         if !status.is_success() {
+            // Prefer the standard header; fall back to providers that put the
+            // precise wait only in the JSON body ("Please try again in 9.62s").
+            let hint_ms = retry_after_header
+                .as_deref()
+                .and_then(parse_retry_after_header)
+                .or_else(|| parse_retry_after_body(&resp_json.to_string()));
+            let suffix = hint_ms
+                .map(|ms| format!(" [retry_after_ms={ms}]"))
+                .unwrap_or_default();
             return Err(Error::Other(format!(
-                "openai API error {status}: {resp_json}"
+                "openai API error {status}: {resp_json}{suffix}"
             )));
         }
 
@@ -352,6 +400,13 @@ fn build_system_prompt(writ: &Writ) -> String {
          PROPOSED actions. The runtime evaluates policy against a bounded Capability \
          Writ, and either commits the effect or rejects the proposal.\n\
          \n\
+         Not every message needs a tool. If the user is greeting you, making \
+         small talk, or asking something you can answer from your own knowledge, \
+         just reply with plain text and no function calls. Only propose a tool \
+         call when the task genuinely requires an external effect (reading or \
+         writing files, running a command, fetching data). Never call a tool \
+         merely to acknowledge a message.\n\
+         \n\
          Constraints:\n\
          - You may only call tools matching your Writ scope: [{scopes_str}].\n\
          - Budget: {tokens} tokens, {calls} tool calls, ~{usd} USD (millicents), {time}ms wall-clock.\n\
@@ -384,9 +439,17 @@ fn build_opening_user_message(ctx: &CognitionContext<'_>) -> String {
     )
 }
 
-fn build_tools_payload(tools: &ToolRegistry) -> Vec<Value> {
+/// Build the `tools` request payload, advertising **only** the tools the Writ
+/// authorizes. Sending schemas for out-of-scope tools wastes tokens (a real
+/// problem against per-minute budgets) and invites guaranteed-rejected
+/// proposals — the model proposes a tool it can see, then hits `AuthorityVoid`.
+/// The advertised surface now matches the actual granted authority.
+fn build_tools_payload(tools: &ToolRegistry, writ: &Writ) -> Vec<Value> {
     let mut out = Vec::new();
     for name in tools.names() {
+        if !writ.authorizes_tool(name) {
+            continue;
+        }
         if let Ok(tool) = tools.get(name) {
             out.push(json!({
                 "type": "function",
@@ -494,6 +557,11 @@ fn build_system_prompt_jsonblock(writ: &Writ, tools: &ToolRegistry) -> String {
 
     let mut tool_lines = Vec::new();
     for name in tools.names() {
+        // Only inline tools the Writ authorizes — same rationale as the native
+        // payload: fewer tokens, no proposals the runtime will only reject.
+        if !writ.authorizes_tool(name) {
+            continue;
+        }
         if let Ok(t) = tools.get(name) {
             let schema_str =
                 serde_json::to_string(&t.input_schema()).unwrap_or_else(|_| "{}".into());
@@ -522,6 +590,11 @@ fn build_system_prompt_jsonblock(writ: &Writ, tools: &ToolRegistry) -> String {
          proposed action. Plain prose around the blocks is allowed but only \
          the JSON blocks are executed. When you are done, reply with text and \
          no JSON blocks.\n\
+         \n\
+         Not every message needs a tool. If the user is greeting you, making \
+         small talk, or asking something you can answer directly, just reply \
+         with plain text and emit no JSON blocks. Only emit a tool block when \
+         the task genuinely requires an external effect.\n\
          \n\
          Constraints:\n\
          - Writ scope: [{scopes_str}].\n\
@@ -662,6 +735,21 @@ pub(crate) fn parse_json_blocks(text: &str) -> Vec<JsonBlockCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_after_header_parses_delta_seconds() {
+        assert_eq!(parse_retry_after_header("10"), Some(10_000));
+        assert_eq!(parse_retry_after_header(" 2.5 "), Some(2_500));
+        // HTTP-date form is unsupported → None (caller falls back to body).
+        assert_eq!(parse_retry_after_header("Wed, 21 Oct 2015 07:28:00 GMT"), None);
+    }
+
+    #[test]
+    fn retry_after_body_extracts_groq_wait() {
+        let body = r#"{"error":{"message":"Rate limit reached ... Please try again in 9.62s. Need more tokens?","code":"rate_limit_exceeded"}}"#;
+        assert_eq!(parse_retry_after_body(body), Some(9_620));
+        assert_eq!(parse_retry_after_body("no hint here"), None);
+    }
 
     #[test]
     fn parse_json_blocks_extracts_fenced_blocks() {

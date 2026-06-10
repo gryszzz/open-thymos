@@ -577,14 +577,20 @@ impl ExecutionSession {
     }
 
     pub fn mark_failed(&mut self, detail: impl Into<String>) {
+        let detail = detail.into();
         self.status = ExecutionStatus::Failed;
         self.phase = ExecutionPhase::Result;
         self.operator_state = "Runtime stopped on an unrecovered error".into();
+        // The chat renders `final_answer` as the reply bubble; give it the
+        // plain-English line. The raw detail stays in the log entry below.
+        self.final_answer = Some(thymos_runtime::agent_async::humanize_provider_error(
+            &detail,
+        ));
         self.push_log(
             ExecutionPhase::Result,
             ExecutionLogLevel::Error,
             "Run failed",
-            detail.into(),
+            detail,
             Some(self.current_step.saturating_sub(1)),
             self.active_tool.clone(),
             None,
@@ -598,6 +604,7 @@ impl ExecutionSession {
         self.status = ExecutionStatus::Cancelled;
         self.phase = ExecutionPhase::Result;
         self.operator_state = "Run cancelled by operator".into();
+        self.final_answer = Some("Run cancelled.".into());
         self.push_log(
             ExecutionPhase::Result,
             ExecutionLogLevel::Warning,

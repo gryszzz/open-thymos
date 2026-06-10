@@ -1403,7 +1403,11 @@ async fn resume_run(
                         commits: 0,
                         rejections: 0,
                         failures: 1,
-                        final_answer: Some(format!("error: {e}")),
+                        // Plain-English for the chat UI; the raw error stays in
+                        // the execution session log below for diagnostics.
+                        final_answer: Some(
+                            thymos_runtime::agent_async::humanize_provider_error(&e.to_string()),
+                        ),
                         terminated_by: "Error".into(),
                     });
                 }
@@ -1424,7 +1428,6 @@ async fn resume_run(
         .into_response()
 }
 
-/// POST /runs ��� start a new agent run with async streaming cognition.
 /// GET /skills — list authored skills (id + metadata).
 async fn list_skills(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let skills: Vec<serde_json::Value> = state
@@ -1481,6 +1484,7 @@ async fn create_skill(
     }
 }
 
+/// POST /runs — start a new agent run with async streaming cognition.
 async fn create_run(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1865,21 +1869,29 @@ async fn create_run(
                 }
             }
             Err(e) => {
+                let cancelled = e.to_string().contains("run cancelled by user");
+                // Plain-English for the chat UI; the raw error stays in the
+                // execution session log below for diagnostics.
+                let answer = if cancelled {
+                    "Run cancelled.".to_string()
+                } else {
+                    thymos_runtime::agent_async::humanize_provider_error(&e.to_string())
+                };
                 let err_dto = RunSummaryDto {
                     steps_executed: 0,
                     intents_submitted: 0,
                     commits: 0,
                     rejections: 0,
                     failures: 1,
-                    final_answer: Some(format!("error: {e}")),
-                    terminated_by: "Error".into(),
+                    final_answer: Some(answer),
+                    terminated_by: if cancelled { "Cancelled".into() } else { "Error".into() },
                 };
                 if let Some(rec) = runs.get_mut(&run_id2) {
                     rec.status = RunStatus::Failed;
                     rec.summary = Some(err_dto.clone());
                 }
                 with_execution_session(&state2, &run_id2, &task2, req.max_steps, |session| {
-                    if e.to_string().contains("run cancelled by user") {
+                    if cancelled {
                         session.mark_cancelled();
                     } else {
                         session.mark_failed(format!("error: {e}"));

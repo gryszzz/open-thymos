@@ -24,6 +24,41 @@ use super::agent::{
 };
 use crate::{Run, Runtime, Step};
 
+/// Upper bound on a single retry backoff. A provider's wait hint is honored up
+/// to this; beyond it we'd rather surface the error than appear hung.
+const MAX_RETRY_BACKOFF_MS: u64 = 60_000;
+
+/// Extract a provider wait hint (`[retry_after_ms=N]`) embedded in an error
+/// string by the OpenAI-compatible adapter. Returns the wait in milliseconds.
+fn parse_retry_after_hint(msg: &str) -> Option<u64> {
+    const MARKER: &str = "retry_after_ms=";
+    let start = msg.find(MARKER)? + MARKER.len();
+    let digits: String = msg[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Map a raw provider/transport error to a short, plain-English sentence for
+/// the chat UI. Never echoes the raw JSON body (which can be noisy and, for
+/// some providers, embed request context). Unknown errors get a generic line.
+pub fn humanize_provider_error(msg: &str) -> String {
+    let m = msg.to_lowercase();
+    if m.contains("429") || m.contains("rate limit") {
+        "The provider is rate-limiting requests right now (token budget).".to_string()
+    } else if m.contains("401") || m.contains("invalid api key") || m.contains("unauthorized") {
+        "The provider rejected the API key. Check it in Settings.".to_string()
+    } else if m.contains("404") && m.contains("model") {
+        "That model isn't available on this provider.".to_string()
+    } else if m.contains("timeout") || m.contains("timed out") {
+        "The provider took too long to respond.".to_string()
+    } else if m.contains("connection") || m.contains("dns") || m.contains("connect") {
+        "Couldn't reach the provider. Check your network — or, for a local model, that it is running.".to_string()
+    } else if m.contains("500") || m.contains("502") || m.contains("503") {
+        "The provider had a server error.".to_string()
+    } else {
+        "The provider returned an error.".to_string()
+    }
+}
+
 /// Approval decision sent through the approval channel.
 #[derive(Debug, Clone)]
 pub struct ApprovalDecision {
@@ -161,7 +196,16 @@ pub async fn run_agent_streaming<L: LedgerStore>(
                         if !is_retryable || attempt > max_retries {
                             return Err(e);
                         }
-                        let backoff_ms = 1000 * 2u64.pow(attempt - 1); // 1s, 2s, 4s
+                        // Prefer the provider's own wait hint (e.g. Groq's
+                        // tokens-per-minute reset, surfaced as
+                        // `[retry_after_ms=N]`). A per-minute budget can't be
+                        // cleared by a sub-second local backoff, so honor the
+                        // server — capped so a pathological hint can't hang the
+                        // run, floored at the exponential as a sane minimum.
+                        let exp_ms = 1000 * 2u64.pow(attempt - 1); // 1s, 2s, 4s
+                        let backoff_ms = parse_retry_after_hint(&e.to_string())
+                            .map(|hint| hint.clamp(exp_ms, MAX_RETRY_BACKOFF_MS))
+                            .unwrap_or(exp_ms);
                         emit_event(
                             trace_tx.as_ref(),
                             AgentTraceEvent::RetryScheduled {
@@ -173,8 +217,11 @@ pub async fn run_agent_streaming<L: LedgerStore>(
                         );
                         let _ = event_tx.send(CognitionEvent::Error {
                             message: format!(
-                                "transient error (attempt {}/{}), retrying in {}ms: {}",
-                                attempt, max_retries, backoff_ms, e
+                                "{} Retrying (attempt {}/{}) in {}s\u{2026}",
+                                humanize_provider_error(&e.to_string()),
+                                attempt,
+                                max_retries,
+                                backoff_ms.div_ceil(1000),
                             ),
                         });
                         tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
@@ -419,4 +466,35 @@ fn last_observation<L: LedgerStore>(
         "commit {:?} not found in trajectory",
         commit_id
     )))
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+
+    #[test]
+    fn parses_embedded_retry_hint() {
+        let e = "openai API error 429 Too Many Requests: {\"error\":{...}} [retry_after_ms=9620]";
+        assert_eq!(parse_retry_after_hint(e), Some(9620));
+        assert_eq!(parse_retry_after_hint("no hint"), None);
+    }
+
+    #[test]
+    fn hint_is_clamped_into_sane_window() {
+        // A hint is honored, but never below the exponential floor (1s) nor
+        // above the ceiling.
+        assert_eq!(15_000u64.clamp(1_000, MAX_RETRY_BACKOFF_MS), 15_000);
+        assert_eq!(120_000u64.clamp(1_000, MAX_RETRY_BACKOFF_MS), MAX_RETRY_BACKOFF_MS);
+        assert_eq!(200u64.clamp(1_000, MAX_RETRY_BACKOFF_MS), 1_000);
+    }
+
+    #[test]
+    fn humanizes_known_provider_errors_without_leaking_body() {
+        let raw = "openai API error 429: {\"error\":{\"message\":\"Rate limit reached for org_secret123\"}}";
+        let friendly = humanize_provider_error(raw);
+        assert!(friendly.contains("rate-limiting"));
+        assert!(!friendly.contains("org_secret123")); // raw body never echoed
+        assert!(humanize_provider_error("401 invalid api key").contains("API key"));
+        assert!(humanize_provider_error("connection refused").contains("reach"));
+    }
 }

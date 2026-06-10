@@ -219,7 +219,10 @@ function renderSnapshot(s) {
     if (e.idx < renderedUpTo) return;
     renderedUpTo = e.idx + 1;
     const [g, cls] = glyphFor(e);
-    const detail = e.detail ? `  ${e.detail}` : "";
+    // Chat is a feed, not a log viewer: keep status lines one-line-ish. The
+    // full detail stays in the run's audit trail.
+    let detail = e.detail ? `  ${e.detail}` : "";
+    if (detail.length > 300) detail = detail.slice(0, 300) + "…";
     pushLine(cls, `${g} ${e.title}${detail}`);
   });
   if (s.status === "waiting_approval") showApproval(s.run_id);
