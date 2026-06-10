@@ -163,14 +163,17 @@
               <option value="mock">Mock — offline, deterministic</option>
             </datalist>
           </label>
-          <label>Model <span class="dim">(blank = provider default)</span>
-            <input id="pfModel" autocomplete="off" placeholder="e.g. claude-sonnet-4-6 · llama3.2 · gpt-4o" /></label>
+          <label>Model <span class="dim">(blank = provider default · or Discover for the live list)</span>
+            <input id="pfModel" list="modelList" autocomplete="off" placeholder="e.g. claude-sonnet-4-6 · llama3.2 · gpt-4o" />
+            <datalist id="modelList"></datalist></label>
           <label>Base URL <span class="dim">(OpenAI-compatible / self-hosted — optional)</span>
             <input id="pfBaseUrl" autocomplete="off" placeholder="e.g. http://localhost:11434/v1" /></label>
           <label>API key <span class="dim">(stored locally on this machine; local models need none)</span>
             <input id="pfKey" type="password" autocomplete="off" placeholder="leave blank to keep current key" /></label>
           <div class="provider-actions">
             <button type="submit">Save &amp; restart runtime</button>
+            <button type="button" id="pfTest" class="ghost">Test connection</button>
+            <button type="button" id="pfDiscover" class="ghost">Discover models</button>
             <span id="pfStatus" class="dim"></span>
           </div>
         </form>

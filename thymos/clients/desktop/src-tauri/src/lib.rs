@@ -217,6 +217,73 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     Ok("started".into())
 }
 
+/// Build the `/models` request for a provider — the host makes this call
+/// locally (the webview's CSP can't reach provider URLs), with the stored key
+/// applied as the right auth header. OpenAI-compatible by default; Anthropic
+/// uses `x-api-key` + a version header.
+fn models_request(provider: &str, base_url: &str, api_key: &str) -> ureq::Request {
+    let anthropic = provider.eq_ignore_ascii_case("anthropic");
+    let base = if !base_url.trim().is_empty() {
+        base_url.trim().trim_end_matches('/').to_string()
+    } else if anthropic {
+        "https://api.anthropic.com/v1".to_string()
+    } else {
+        "https://api.openai.com/v1".to_string()
+    };
+    let mut req = ureq::get(&format!("{base}/models"))
+        .timeout(std::time::Duration::from_secs(10));
+    if anthropic {
+        if !api_key.is_empty() {
+            req = req.set("x-api-key", api_key);
+        }
+        req = req.set("anthropic-version", "2023-06-01");
+    } else if !api_key.is_empty() {
+        req = req.set("Authorization", &format!("Bearer {api_key}"));
+    }
+    req
+}
+
+/// Test that a provider is reachable with the stored credentials (no secret
+/// crosses to the webview — the host reads it and reports only the result).
+#[tauri::command]
+fn test_provider(app: tauri::AppHandle, provider: String, base_url: String) -> Result<String, String> {
+    let cfg = load_provider_config(&app);
+    match models_request(&provider, &base_url, &cfg.api_key).call() {
+        Ok(resp) => {
+            let v: serde_json::Value = resp.into_json().unwrap_or(serde_json::json!({}));
+            let n = v.get("data").and_then(|d| d.as_array()).map(|a| a.len()).unwrap_or(0);
+            Ok(format!("reachable — {n} models"))
+        }
+        Err(ureq::Error::Status(code, _)) => Err(format!("HTTP {code} — check the key / base URL")),
+        Err(e) => Err(format!("not reachable: {e}")),
+    }
+}
+
+/// Discover the models a provider offers (OpenAI-compatible `/models`; Ollama,
+/// LM Studio, vLLM, etc. all serve this). Returns the model ids.
+#[tauri::command]
+fn discover_models(app: tauri::AppHandle, provider: String, base_url: String) -> Result<Vec<String>, String> {
+    let cfg = load_provider_config(&app);
+    let resp = models_request(&provider, &base_url, &cfg.api_key)
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(c, _) => format!("HTTP {c} — check the key / base URL"),
+            other => format!("not reachable: {other}"),
+        })?;
+    let v: serde_json::Value = resp.into_json().map_err(|e| e.to_string())?;
+    let mut models: Vec<String> = v
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|i| i.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    models.sort();
+    Ok(models)
+}
+
 /// Absolute path to the durable ledger the supervised runtime writes to. The
 /// Backups tab uses this to copy/verify the real on-disk chain.
 #[tauri::command]
@@ -326,6 +393,8 @@ pub fn run() {
             ledger_path,
             get_provider_config,
             set_provider_config,
+            test_provider,
+            discover_models,
             save_tool,
             list_tool_manifests,
             delete_tool_manifest

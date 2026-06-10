@@ -604,6 +604,41 @@ $("providerForm").addEventListener("submit", async (e) => {
   }
 });
 
+// Resolve the base URL: the typed field, else the provider's preset default.
+function resolveBaseUrl() {
+  const url = $("pfBaseUrl").value.trim();
+  if (url) return url;
+  const p = $("pfProvider").value.trim().toLowerCase();
+  return (typeof PRESETS !== "undefined" && PRESETS[p] && PRESETS[p].url) || "";
+}
+
+// Test connection — host pings the provider's /models with the SAVED key.
+$("pfTest")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  const provider = $("pfProvider").value.trim();
+  if (!provider) { $("pfStatus").textContent = "pick a provider first"; return; }
+  $("pfStatus").textContent = "testing…";
+  try {
+    const r = await invoke("test_provider", { provider, baseUrl: resolveBaseUrl() });
+    $("pfStatus").textContent = "✓ " + r;
+  } catch (e) { $("pfStatus").textContent = "✕ " + e + " (Save first if you changed the key)"; }
+});
+
+// Discover models — populate the Model field's list with the provider's real models.
+$("pfDiscover")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  const provider = $("pfProvider").value.trim();
+  if (!provider) { $("pfStatus").textContent = "pick a provider first"; return; }
+  $("pfStatus").textContent = "discovering models…";
+  try {
+    const models = await invoke("discover_models", { provider, baseUrl: resolveBaseUrl() });
+    $("modelList").innerHTML = models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
+    $("pfStatus").textContent = models.length
+      ? `${models.length} models found — pick one in Model`
+      : "no models returned";
+  } catch (e) { $("pfStatus").textContent = "✕ " + e + " (Save the key first if needed)"; }
+});
+
 /* ---------- tools: the runtime's governed tool contracts ---------- */
 // Effect class → the ceiling the governor enforces. This is the thymos-unique
 // signal: every tool is tagged with the maximum effect it may ever produce.
