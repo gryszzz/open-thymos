@@ -357,6 +357,19 @@ button.full { width: 100%; }
 }
 .starter-row .chip:hover { border-color: var(--violet); background: var(--panel-3); transform: none; }
 
+/* Multi-select skill chips (active skills combine) */
+.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.skill-chips .chip {
+  background: var(--panel-2); border: 1px solid var(--line-2); color: var(--muted);
+  border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; box-shadow: none;
+}
+.skill-chips .chip:hover { border-color: var(--violet); color: var(--text); transform: none; }
+.skill-chips .chip.on {
+  background: linear-gradient(180deg, rgba(124,92,255,.9), rgba(90,63,214,.9));
+  border-color: var(--violet); color: #fff;
+}
+.sk-empty { font-size: 12px; }
+
 /* Mind — inspectable node panel + hover tooltip */
 .mind-stage { position: relative; }
 .mind-tip {

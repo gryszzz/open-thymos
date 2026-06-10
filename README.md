@@ -4,10 +4,6 @@
 
 [](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
-# open-thymos
-
-### Get OpenThymos
-
 <div align="center">
 <table>
 <tr>
@@ -29,7 +25,7 @@ audit + replay. Connect any model; your keys never leave your machine.
 
 #### ▣ CLI + runtime
 
-<img src="thymos/thymosG.PNG" width="118" />
+<img width="1264" height="1054" alt="E898D7D3-78F4-4E88-AF0B-76DEF0616E42_1_206_a" src="https://github.com/user-attachments/assets/aacc08aa-c8b1-418c-8b0d-5b80c1078be7" />
 
 Terminal, scriptable, server. No Rust, no clone, no compile.
 
@@ -77,9 +73,6 @@ cargo run -p thymos-cli -- shell          # interactive governed shell
 ---
 
 **Cognition proposes. The runtime governs. The ledger records.**
-<img width="1264" height="1054" alt="E898D7D3-78F4-4E88-AF0B-76DEF0616E42_1_206_a" src="https://github.com/user-attachments/assets/aacc08aa-c8b1-418c-8b0d-5b80c1078be7" />
-<img width="1162" height="747" alt="3F26630A-DA93-4C2A-8B08-57E5C6A299A8" src="https://github.com/user-attachments/assets/d4791b91-01ca-443a-9c7f-6ee571c043d3" />
-
 
 A model cannot call a tool, mutate state, spend budget, delegate authority, or erase history  not by convention, by runtime semantics. Every effect passes through a typed proposal, a signed capability writ, a policy trace, and an append-only execution ledger.
 

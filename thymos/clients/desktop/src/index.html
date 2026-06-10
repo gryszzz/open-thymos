@@ -55,11 +55,12 @@
                  chosen per message. -->
             <div class="chat-defaults">
               <div class="def-title">This model can…</div>
-              <label class="def">Skill
-                <select id="defaultSkill" title="Bound to every chat on this model (narrows authority). Saved.">
-                  <option value="">none</option>
-                </select>
-              </label>
+              <div class="def">
+                <span>Skills <span class="dim">(combine any — they only narrow)</span></span>
+                <div id="skillChips" class="skill-chips" title="Active skills for this chat. Multiple combine: their tools union, their limits AND. Saved per chat.">
+                  <span class="hint sk-empty">no skills yet</span>
+                </div>
+              </div>
               <div class="grants" id="grants" title="Default writ scope for this model — the runtime rejects anything not granted. Saved.">
                 <span class="grant-label">grant</span>
                 <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
