@@ -4,10 +4,6 @@
 
 [](https://github.com/gryszzz/open-thymos/releases/latest) [![Star on GitHub](https://img.shields.io/badge/⭐_Star-on_GitHub-yellow?style=for-the-badge)](https://github.com/gryszzz/open-thymos) [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](LICENSE) ![Rust](https://img.shields.io/badge/Rust-Execution_Runtime-orange?style=for-the-badge&logo=rust)
 
-# open-thymos
-
-### Get OpenThymos
-
 <div align="center">
 <table>
 <tr>
