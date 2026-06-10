@@ -27,6 +27,9 @@
         <span id="ledger" class="pill">ledger: —</span>
       </div>
       <div class="controls">
+        <label class="adv-toggle" title="Show developer internals — raw ledger data, schemas, writs/commits. Off by default.">
+          <input type="checkbox" id="advToggle" /> Advanced
+        </label>
         <button id="startBtn">Start runtime</button>
         <button id="stopBtn" class="ghost">Stop</button>
       </div>
@@ -40,7 +43,7 @@
       <button class="tab" data-tab="skills">✦ Skills</button>
       <button class="tab" data-tab="tools">▣ Tools</button>
       <button class="tab" data-tab="audit">≡ Audit</button>
-      <button class="tab" data-tab="backups">↧ Backups</button>
+      <button class="tab adv-only" data-tab="backups">↧ Backups</button>
     </nav>
 
     <main>
@@ -276,7 +279,7 @@
           <b>before</b> it runs — a tool can never exceed its class.
         </p>
 
-        <details class="addtool">
+        <details class="addtool adv-only">
           <summary><b>＋ Add a custom tool</b> — declare a governed tool (no code)</summary>
           <form id="toolForm" class="card provider-form">
             <div class="starter-row">

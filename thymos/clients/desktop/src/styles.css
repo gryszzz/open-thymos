@@ -397,3 +397,14 @@ button.full { width: 100%; }
   border: 1px solid var(--line); border-radius: 6px; padding: 8px;
 }
 .mind-hint { font-size: 12px; margin: 8px 0; }
+
+/* Advanced Mode — developer internals hidden unless toggled (UX philosophy) */
+.adv-only { display: none; }
+body.advanced .adv-only { display: revert; }
+.adv-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--muted); cursor: pointer; user-select: none;
+  padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line);
+}
+.adv-toggle:hover { border-color: var(--violet); color: var(--text); }
+.adv-toggle input { accent-color: var(--violet); margin: 0; }
