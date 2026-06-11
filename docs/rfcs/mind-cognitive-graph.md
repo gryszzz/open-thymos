@@ -6,7 +6,7 @@ Mind as a navigable cognitive graph (sessions, concepts, decisions, ledger explo
 
 ## Status
 
-Draft
+Accepted
 
 ## Summary
 
