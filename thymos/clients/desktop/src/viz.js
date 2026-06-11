@@ -13,7 +13,7 @@ let BASE = "http://127.0.0.1:3001";
 (async () => { try { if (invoke) BASE = await invoke("runtime_addr"); } catch (_) {} })();
 
 const VIOLET = 0x7c5cff, CYAN = 0x45e0ff, GREEN = 0x46d39a, RED = 0xff6b8a,
-      AMBER = 0xffc24b, BLUE = 0x6ab0ff, DIM = 0x8a7fe0;
+      AMBER = 0xffc24b, BLUE = 0x6ab0ff, DIM = 0x8a7fe0, ORANGE = 0xff9d5c;
 
 // Node taxonomy — the lifecycle types a run can produce, with the question
 // each answers for the operator.
@@ -21,6 +21,7 @@ const TYPES = {
   intent:    { color: CYAN,   label: "Intent",     sum: "Cognition declared what it wants to do — no side effects yet." },
   proposal:  { color: VIOLET, label: "Proposal",   sum: "Compiler + policy checks resolved authority, budget, and risk." },
   grant:     { color: AMBER,  label: "Grant",      sum: "Suspended — waiting for (or resolved by) an operator approval." },
+  rejected:  { color: ORANGE, label: "Rejected",   sum: "The runtime refused this proposal — authority or policy said no. Governed, not broken: grant the tool (or change policy) and retry." },
   execution: { color: BLUE,   label: "Execution",  sum: "The runtime executed a governed tool contract." },
   commit:    { color: GREEN,  label: "Commit",     sum: "An authorized action mutated world state — appended to the ledger." },
   error:     { color: RED,    label: "Error",      sum: "Something failed here. The raw detail is preserved below." },
@@ -35,7 +36,12 @@ function classifyLog(e) {
   if (e.level === "error") return "error";
   const p = e.phase || "";
   if (p === "intent") return "intent";
-  if (p === "proposal") return e.level === "warning" ? "grant" : "proposal";
+  if (p === "proposal") {
+    // Both rejections and approval-requests arrive as proposal/warning —
+    // distinguish them so a blocked path reads as Rejected, not as a grant.
+    if (e.level !== "warning") return "proposal";
+    return /reject/i.test(e.title || "") ? "rejected" : "grant";
+  }
   if (p === "execution") return "execution";
   if (p === "result") return e.level === "success" ? "commit" : "system";
   return "system";
@@ -46,7 +52,7 @@ function classifyLog(e) {
 function classifyAudit(en) {
   const k = (en.kind || "").toLowerCase();
   if (k.includes("commit")) return "commit";
-  if (k.includes("reject")) return "error";
+  if (k.includes("reject")) return "rejected";
   if (k.includes("approval") || k.includes("suspend")) return "grant";
   if (k.includes("delegation")) return "proposal";
   if (k.includes("skill")) return "proposal";
@@ -67,7 +73,7 @@ let spawnQueue = [];           // meshes animating in
 let activeMesh = null;         // newest lifecycle node while the run is live
 let runStatus = "";            // running | waiting_approval | completed | failed
 let searchQ = "";
-const filters = { intent: true, proposal: true, grant: true, execution: true, commit: true, error: true, system: false };
+const filters = { intent: true, proposal: true, grant: true, rejected: true, execution: true, commit: true, error: true, system: false };
 
 function radialTexture(inner) {
   const c = document.createElement("canvas");
