@@ -88,11 +88,12 @@ async function loadAdvanced() {
   // Authority card: what new chats are allowed to do, right now.
   const au = $("advAuthority");
   if (au) {
-    const scopes = selectedScopes();
+    const scopes = effectiveScopes();
     const skills = selectedSkills();
     au.innerHTML =
       `<div class="state-grid">` +
-      `<span class="dim">grants</span><span>${scopes.length ? scopes.map(escapeHtml).join(" · ") : "everything (no chips selected)"}</span>` +
+      `<span class="dim">mode</span><span>${escapeHtml(currentMode())}</span>` +
+      `<span class="dim">grants</span><span>${scopes.length ? scopes.map(escapeHtml).join(" · ") : "everything"}</span>` +
       `<span class="dim">active skills</span><span>${skills.length ? skills.map(escapeHtml).join(" · ") : "none"}</span>` +
       `<span class="dim">risk gate</span><span>high-risk tools pause for approval</span>` +
       `</div>`;
@@ -198,7 +199,7 @@ function governanceHint(e) {
   const raw = e.detail || "";
   if (/AuthorityVoid/.test(raw)) {
     const tool = ((e.title || "").match(/for (\S+)/) || [])[1] || "that tool";
-    return `${tool} isn't granted for this chat. The runtime blocked it (nothing is broken) — toggle its grant chip in the left rail and ask again.`;
+    return `${tool} isn't allowed in ${currentMode()} mode. The runtime blocked it (nothing is broken) — switch the mode in the left rail (Auto allows everything; dangerous tools still ask first) and try again.`;
   }
   if (/PolicyDenied/.test(raw)) {
     return "policy denied this action — the decision is recorded in the run's audit trail.";
@@ -244,6 +245,50 @@ function savedScopes() {
   try { const a = JSON.parse(localStorage.getItem(GRANTS_KEY) || "null"); return Array.isArray(a) ? a : null; }
   catch (_) { return null; }
 }
+
+/* ---------- authority modes (Auto / Edit / Plan / Custom) ---------- */
+// The standard AI-tool posture, mapped onto real writ scopes: each mode is a
+// set of tools derived from the live registry's effect classes. Auto grants
+// everything (the risk gate still pauses dangerous tools for approval).
+const MODE_KEY = "thymos.authmode.v1";
+let toolsCache = []; // [{name, effect_class}] from the live registry
+// Offline fallbacks so modes work before the registry loads.
+const FALLBACK_READ = ["fs_read", "grep", "list_files", "repo_map", "kv_get", "memory_recall"];
+const FALLBACK_WRITE = ["fs_patch", "test_run", "kv_set", "memory_store"];
+function currentMode() {
+  try { return localStorage.getItem(MODE_KEY) || "auto"; } catch (_) { return "auto"; }
+}
+function setMode(m) {
+  try { localStorage.setItem(MODE_KEY, m); } catch (_) {}
+  renderModeUI();
+}
+function toolsByEffect(effects) {
+  if (!toolsCache.length) {
+    return effects.includes("write") ? FALLBACK_READ.concat(FALLBACK_WRITE) : FALLBACK_READ;
+  }
+  return toolsCache
+    .filter((t) => effects.includes(String(t.effect_class || "").toLowerCase()))
+    .map((t) => t.name);
+}
+// The writ scopes a new chat message will request, given the active mode.
+// Empty array = the server grants `*` (everything).
+function effectiveScopes() {
+  switch (currentMode()) {
+    case "auto": return [];
+    case "plan": return toolsByEffect(["read"]);
+    case "edit": return toolsByEffect(["read", "write"]);
+    default: return selectedScopes(); // custom = the chips
+  }
+}
+function renderModeUI() {
+  const m = currentMode();
+  document.querySelectorAll("#modeRow .mode-chip").forEach((b) =>
+    b.classList.toggle("on", b.dataset.mode === m));
+  const grants = $("grants");
+  if (grants) grants.hidden = m !== "custom";
+}
+document.querySelectorAll("#modeRow .mode-chip").forEach((b) =>
+  b.addEventListener("click", () => setMode(b.dataset.mode)));
 // Rebuild the grant chips from the LIVE tool registry, so every registered
 // tool is grantable — the static HTML chips are only an offline fallback.
 // (Previously the chips were a hardcoded subset: tools like repo_map existed
@@ -268,10 +313,10 @@ function renderGrantChips(names) {
     wrap.appendChild(b);
   });
 }
-// Does the current grant selection authorize a tool? Empty selection means
+// Does the current authority mode authorize a tool? Empty scope list means
 // the server grants `*` (everything) — mirror the writ's prefix-glob match.
 function scopeAuthorizes(name) {
-  const scopes = selectedScopes();
+  const scopes = effectiveScopes();
   if (!scopes.length) return true;
   return scopes.some((s) =>
     s.endsWith("*") ? name.startsWith(s.slice(0, -1)) : name === s);
@@ -525,9 +570,9 @@ async function startRun(task) {
   if (!task || activeRunId) return;
   const welcome = feed.querySelector(".welcome");
   if (welcome) welcome.remove();
-  // Authority comes from the active skills + grants in the left rail.
+  // Authority comes from the active skills + the authority mode (left rail).
   const skills = selectedSkills();
-  const scopes = selectedScopes();
+  const scopes = effectiveScopes();
   lastTask = task;
   pushBubble(task);
   addMessage("user", task);
@@ -873,7 +918,8 @@ async function loadTools() {
     const tools = res.tools || (Array.isArray(res) ? res : []);
     el.innerHTML = "";
     if (!tools.length) { el.innerHTML = "<div class='hint'>no tools registered</div>"; return; }
-    // Keep the grant chips in sync with the real registry.
+    // Keep the grant chips + mode→scope mapping in sync with the registry.
+    toolsCache = tools.map((t) => ({ name: t.name, effect_class: t.effect_class }));
     renderGrantChips(tools.map((t) => t.name).filter(Boolean));
     tools
       .sort((a, b) => (EFFECT_RANK[a.effect_class] ?? 0) - (EFFECT_RANK[b.effect_class] ?? 0))
@@ -1262,10 +1308,15 @@ function escapeHtml(s) {
   restoreDefaults();
   if (chats.length) openChat(chats[0].id); else newChatSession(false);
   loadSkills().catch(() => {}); // fills the skill chips + restores the active set
-  // Grant chips come from the live registry (every registered tool grantable).
+  // Grant chips + mode→scope mapping come from the live registry.
   getJSON("/tools")
-    .then((r) => renderGrantChips((r.tools || []).map((t) => t.name).filter(Boolean)))
+    .then((r) => {
+      const tools = r.tools || [];
+      toolsCache = tools.map((t) => ({ name: t.name, effect_class: t.effect_class }));
+      renderGrantChips(tools.map((t) => t.name).filter(Boolean));
+    })
     .catch(() => {}); // offline: the static fallback chips stay
+  renderModeUI();
   // Seed the model menu from the configured provider so chat/skill Model fields
   // suggest real models from the start (Discover replaces with the live list).
   if (invoke) {

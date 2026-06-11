@@ -58,6 +58,19 @@
               <!-- Active skill chips — appear only when in use, keeping the
                    rail clean. The per-chat model override lives in Advanced. -->
               <div id="skillChips" class="skill-chips" title="Active skills — combine any; they only narrow authority."></div>
+              <!-- Authority mode: how much the agent may do. Maps to real writ
+                   scopes derived from each tool's effect class. Dangerous
+                   (high-risk) tools always pause for approval regardless. -->
+              <div class="mode-row" id="modeRow">
+                <button type="button" class="mode-chip" data-mode="auto"
+                  title="Everything granted. Dangerous tools (shell, http) still pause and ask you first.">Auto</button>
+                <button type="button" class="mode-chip" data-mode="edit"
+                  title="Read + local edits: inspect files, apply patches, run tests, keep memory. No shell/network.">Edit</button>
+                <button type="button" class="mode-chip" data-mode="plan"
+                  title="Read-only: inspect, search, map the repo. Proposes changes but cannot make them.">Plan</button>
+                <button type="button" class="mode-chip" data-mode="custom"
+                  title="Pick exact tools with the grant chips below.">Custom</button>
+              </div>
               <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted. No selection = everything granted.">
                 <span class="grant-label">grant</span>
                 <!-- Chips are built from the live tool registry once the
