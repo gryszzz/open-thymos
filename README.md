@@ -43,6 +43,8 @@ Terminal, scriptable, server. No Rust, no clone, no compile.
 </table>
 </div>
 
+<sub>All downloads come from the <a href="https://github.com/gryszzz/open-thymos/releases/latest"><b>latest stable release</b></a> — the single official production download source (release notes + checksums there). Nightly dev builds are separate and clearly marked.</sub>
+
 </div>
 
 <details>
