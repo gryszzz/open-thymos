@@ -61,8 +61,11 @@
                    appear only when in use, keeping the rail clean. -->
               <input id="chatModel" class="adv-only" list="modelList" autocomplete="off" placeholder="model override (blank = default)" />
               <div id="skillChips" class="skill-chips" title="Active skills — combine any; they only narrow authority."></div>
-              <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted.">
+              <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted. No selection = everything granted.">
                 <span class="grant-label">grant</span>
+                <!-- Chips are built from the live tool registry once the
+                     runtime is up (see renderGrantChips). These are the
+                     offline fallback. -->
                 <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
                 <button type="button" class="chip on" data-scope="grep">grep</button>
                 <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
@@ -126,6 +129,7 @@
           <button type="button" class="lg cyan" data-type="intent">◆ intent</button>
           <button type="button" class="lg violet" data-type="proposal">▸ proposal</button>
           <button type="button" class="lg amber" data-type="grant">⏸ grant</button>
+          <button type="button" class="lg orange" data-type="rejected">⊘ rejected</button>
           <button type="button" class="lg blue" data-type="execution">▣ execution</button>
           <button type="button" class="lg green" data-type="commit">✓ commit</button>
           <button type="button" class="lg red" data-type="error">✕ error</button>

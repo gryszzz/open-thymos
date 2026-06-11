@@ -164,6 +164,42 @@ document.querySelectorAll("#grants .chip").forEach((chip) =>
 function selectedScopes() {
   return [...document.querySelectorAll("#grants .chip.on")].map((c) => c.dataset.scope);
 }
+function savedScopes() {
+  try { const a = JSON.parse(localStorage.getItem(GRANTS_KEY) || "null"); return Array.isArray(a) ? a : null; }
+  catch (_) { return null; }
+}
+// Rebuild the grant chips from the LIVE tool registry, so every registered
+// tool is grantable — the static HTML chips are only an offline fallback.
+// (Previously the chips were a hardcoded subset: tools like repo_map existed
+// and showed as registered, but could never be granted — runs rejected them
+// with AuthorityVoid and the tool looked broken instead of ungranted.)
+function renderGrantChips(names) {
+  const wrap = $("grants");
+  if (!wrap || !names.length) return;
+  const saved = savedScopes();
+  const on = new Set(saved ?? selectedScopes());
+  [...wrap.querySelectorAll(".chip")].forEach((c) => c.remove());
+  names.forEach((n) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (on.has(n) ? " on" : "");
+    b.dataset.scope = n;
+    b.textContent = n;
+    b.addEventListener("click", () => {
+      b.classList.toggle("on");
+      try { localStorage.setItem(GRANTS_KEY, JSON.stringify(selectedScopes())); } catch (_) {}
+    });
+    wrap.appendChild(b);
+  });
+}
+// Does the current grant selection authorize a tool? Empty selection means
+// the server grants `*` (everything) — mirror the writ's prefix-glob match.
+function scopeAuthorizes(name) {
+  const scopes = selectedScopes();
+  if (!scopes.length) return true;
+  return scopes.some((s) =>
+    s.endsWith("*") ? name.startsWith(s.slice(0, -1)) : name === s);
+}
 // Active skills for the chat — multiple can be on at once; they combine (the
 // runtime unions their tools and ANDs their limits, so authority only narrows).
 function selectedSkills() {
@@ -229,6 +265,20 @@ function renderSnapshot(s) {
     let detail = e.detail ? `  ${e.detail}` : "";
     if (detail.length > 300) detail = detail.slice(0, 300) + "…";
     pushLine(cls, `${g} ${e.title}${detail}`);
+    // Governance refusals are the runtime working, not the tool breaking —
+    // say so in plain English, with the action that unblocks it.
+    const raw = e.detail || "";
+    if (/AuthorityVoid/.test(raw)) {
+      const tool = (e.title.match(/for (\S+)/) || [])[1] || "that tool";
+      pushLine("sys",
+        `   ↳ ${tool} isn't granted for this chat. The runtime blocked it (nothing is broken) — toggle its grant chip in the left rail and ask again.`);
+    } else if (/PolicyDenied/.test(raw)) {
+      pushLine("sys",
+        "   ↳ policy denied this action — the decision is recorded in the run's audit trail.");
+    } else if (/BudgetExhausted|budget/.test(raw) && e.level === "error") {
+      pushLine("sys",
+        "   ↳ this run's budget (tokens / tool calls / time) ran out — start a fresh message to continue.");
+    }
   });
   if (s.status === "waiting_approval") showApproval(s.run_id, s.pending_channel);
   if (["completed", "failed", "cancelled"].includes(s.status)) {
@@ -759,10 +809,15 @@ async function loadTools() {
     const tools = res.tools || (Array.isArray(res) ? res : []);
     el.innerHTML = "";
     if (!tools.length) { el.innerHTML = "<div class='hint'>no tools registered</div>"; return; }
+    // Keep the grant chips in sync with the real registry.
+    renderGrantChips(tools.map((t) => t.name).filter(Boolean));
     tools
       .sort((a, b) => (EFFECT_RANK[a.effect_class] ?? 0) - (EFFECT_RANK[b.effect_class] ?? 0))
       .forEach((t) => {
         const eff = effectClassName(t.effect_class);
+        // Registered ≠ usable: show whether YOUR current grants authorize it,
+        // so a writ rejection never reads as "the tool is broken".
+        const granted = scopeAuthorizes(t.name || "");
         const div = document.createElement("div");
         div.className = "item tool-item";
         div.innerHTML =
@@ -770,6 +825,7 @@ async function loadTools() {
           `<b>${escapeHtml(t.name || "")}</b>` +
           `<span class="effect eff-${eff}" title="effect ceiling enforced by the governor">${eff}</span>` +
           (t.risk_class ? `<span class="risk risk-${escapeHtml(t.risk_class)}">${escapeHtml(t.risk_class)} risk</span>` : "") +
+          `<span class="badge ${granted ? "ok" : ""}" title="${granted ? "your current grant chips authorize this tool" : "not in your grant chips — runs will reject it until you grant it (Chat → left rail)"}">${granted ? "granted" : "not granted"}</span>` +
           `<span class="meta">v${escapeHtml(t.version || "1")}</span>`;
         el.appendChild(div);
       });
@@ -1103,6 +1159,10 @@ function escapeHtml(s) {
   restoreDefaults();
   if (chats.length) openChat(chats[0].id); else newChatSession(false);
   loadSkills().catch(() => {}); // fills the skill chips + restores the active set
+  // Grant chips come from the live registry (every registered tool grantable).
+  getJSON("/tools")
+    .then((r) => renderGrantChips((r.tools || []).map((t) => t.name).filter(Boolean)))
+    .catch(() => {}); // offline: the static fallback chips stay
   // Seed the model menu from the configured provider so chat/skill Model fields
   // suggest real models from the start (Discover replaces with the live list).
   if (invoke) {

@@ -311,6 +311,7 @@ code {
 .lg.red { color: var(--red); }
 .lg.amber { color: var(--amber); }
 .lg.blue { color: #6ab0ff; }
+.lg.orange { color: #ff9d5c; }
 .lg.dim { color: var(--muted); }
 
 /* Provider catalog + status badges */
