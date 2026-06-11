@@ -1,11 +1,10 @@
-// Mind — an immersive 3D view of a run's active cognition: the OpenThymos
-// logo suspended in a rotating wireframe cage, orbited by the run's real
-// lifecycle — intents, proposals, grants, executions, commits, errors — plus a
-// context ring of what the run actually used (provider, tools, replay
-// verdict). Pure client: reads the runtime's own endpoints (`/runs/{id}/
-// execution`, `/audit/entries`, `/health`, `/runs/{id}/replay`); three.js is
-// vendored (no egress). Nothing here is decorative: every node carries the
-// runtime record it represents, and clicking it shows that record.
+// Mind — the runtime's neural map. A pure network: the conversation's run as
+// lifecycle lanes (intent → proposal → grant/rejected → execution → commit →
+// answer), with the provider, the tools actually used, and the replay verdict
+// wired to the events they touched. No logo, no cage, no decoration — every
+// node and edge is a real runtime record, read from the runtime's own
+// endpoints (`/runs/{id}/execution`, `/audit/entries`, `/health`,
+// `/runs/{id}/replay`); three.js is vendored (no egress).
 import * as THREE from "./vendor/three.module.js";
 
 const invoke = window.__TAURI__?.core?.invoke;
@@ -61,7 +60,7 @@ function classifyAudit(en) {
   return "system";
 }
 
-let renderer, scene, camera, world, cage, nodesGroup, glowTex;
+let renderer, scene, camera, world, nodesGroup, glowTex;
 let inited = false, running = false, raf = 0, loadedOnce = false;
 let targetRotY = 0, targetRotX = 0.25, curRotY = 0, curRotX = 0.25;
 let drag = null;
@@ -118,31 +117,14 @@ function init() {
   camera.position.set(0, 0, 13);
   glowTex = radialTexture("rgba(124,92,255,0.9)");
 
-  // World group (orbited by drag + slow auto-rotation): cage + nodes.
-  // Observability over ornament: no starfield, a single faint cage, a small
-  // core mark — the runtime data is the visual.
+  // World group (orbited by drag + slow auto-rotation). Pure network: no
+  // logo, no cage, no decoration — the only things on screen are the run's
+  // real events and what connects them.
   world = new THREE.Group();
   scene.add(world);
 
-  cage = new THREE.Group();
-  world.add(cage);
-  cage.add(new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.2, 0)),
-    new THREE.LineBasicMaterial({ color: VIOLET, transparent: true, opacity: 0.22 })));
-
   nodesGroup = new THREE.Group();
   world.add(nodesGroup);
-
-  // Small core mark — the run itself; context nodes tether to it.
-  const tex = new THREE.TextureLoader().load("logo.png");
-  if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
-  const logo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.9 }));
-  logo.scale.set(1.6, 1.6, 1);
-  scene.add(logo);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial(
-    { map: glowTex, color: VIOLET, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.5 }));
-  glow.scale.set(4.5, 4.5, 1);
-  scene.add(glow);
 
   // Interaction: drag to orbit, wheel to zoom, click a node to inspect it.
   raycaster = new THREE.Raycaster();
@@ -379,26 +361,40 @@ function buildGraph(timeline, ctx, newFromIdx) {
     });
   }
 
-  const RC = 7.6;
+  // Context sits on a ring around the conversation's network, each node wired
+  // to the lifecycle events it actually touched — the ledger connected to the
+  // convo, not to a decoration.
+  const RC = 6.4;
   ctxNodes.forEach((nd, i) => {
     const a = (i / Math.max(ctxNodes.length, 1)) * Math.PI * 2 + 0.5;
     nd.color = (TYPES[nd.type] || TYPES.system).color;
-    const p = new THREE.Vector3(Math.cos(a) * RC, ((i % 3) - 1) * 1.4, Math.sin(a) * RC);
+    const p = new THREE.Vector3(Math.cos(a) * RC, ((i % 3) - 1) * 1.4, Math.sin(a) * RC * 0.45);
     makeNodeMesh(nd, p, 0.26);
     const lbl = labelSprite(nd.title, hex(nd.color));
     lbl.position.set(p.x, p.y - 0.65, p.z);
     nodesGroup.add(lbl);
-    // Tether to the core (the run itself).
-    line(new THREE.Vector3(0, 0, 0), p, nd.color, 0.18);
-    // Tool nodes also connect to the lifecycle entries that used them.
     if (nd.type === "tool") {
+      // Tools connect to every event that invoked them.
       let edges = 0;
       visible.forEach((tnd, j) => {
         if (tnd.tool === nd.tool && edges < 14) {
-          line(p, pts[j], nd.color, 0.14);
+          line(p, pts[j], nd.color, 0.16);
           edges++;
         }
       });
+    } else if (nd.type === "provider" && pts.length) {
+      // The provider feeds cognition: wire it to each step's intent event.
+      let edges = 0;
+      visible.forEach((tnd, j) => {
+        if (tnd.type === "intent" && edges < 10) {
+          line(p, pts[j], nd.color, 0.12);
+          edges++;
+        }
+      });
+      if (!edges) line(p, pts[0], nd.color, 0.14);
+    } else if (nd.type === "replay" && pts.length) {
+      // Replay verifies the recorded chain: wire it to the final event.
+      line(p, pts[pts.length - 1], nd.color, 0.18);
     }
   });
 
@@ -508,7 +504,7 @@ async function loadRun(idRaw) {
     const el = document.getElementById("mindRunId");
     if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${timeline.length} events`;
     renderRunState(id, snap, health, replay);
-  } catch (_) { /* runtime not up yet — the cage still renders */ }
+  } catch (_) { /* runtime not up yet — the scene stays empty */ }
 }
 
 // The live strip above the canvas: the run's real status, the runtime's
@@ -553,8 +549,6 @@ function frame() {
   curRotX += (targetRotX - curRotX) * 0.08;
   world.rotation.y = curRotY;
   world.rotation.x = curRotX;
-  cage.rotation.y -= 0.0011;
-  cage.rotation.z += 0.0007;
 
   // Pulse each node halo on its own phase (neural firing). Errors burn hotter.
   for (const p of pulses) {
