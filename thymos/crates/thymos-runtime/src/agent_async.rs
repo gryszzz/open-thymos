@@ -42,7 +42,9 @@ fn parse_retry_after_hint(msg: &str) -> Option<u64> {
 /// some providers, embed request context). Unknown errors get a generic line.
 pub fn humanize_provider_error(msg: &str) -> String {
     let m = msg.to_lowercase();
-    if m.contains("429") || m.contains("rate limit") {
+    if m.contains("tool_use_failed") {
+        "The model fumbled a tool call (a provider-side formatting failure). Just ask again — smaller steps help, or switch models in Providers.".to_string()
+    } else if m.contains("429") || m.contains("rate limit") {
         "The provider is rate-limiting requests right now (token budget).".to_string()
     } else if m.contains("401") || m.contains("invalid api key") || m.contains("unauthorized") {
         "The provider rejected the API key. Check it in Settings.".to_string()
