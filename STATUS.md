@@ -25,8 +25,14 @@ services or API keys:
   parent-ceiling delegation checks), budget projected from the ledger, time
   windows, revocation with one-level cascade. Each has a dedicated test file
   (`revocation`, `cognition_budget`, `quorum`, `compensation`(+gate,
-  +cross-trajectory), `idempotency`, `redaction`, `replay_safety`,
+  +cross-trajectory), `risk_gate`, `idempotency`, `redaction`, `replay_safety`,
   `compiler_rejection`, `json_policy_e2e`).
+- **Risk gate (compiler stage 9c).** Tools at or above a configured `RiskClass`
+  pause for operator approval even on a bare policy permit — the HTTP server
+  defaults to `high` (so `shell` always asks; file edits/reads flow under their
+  writ grants). Tune or disable with `THYMOS_APPROVE_RISK`
+  (`off|low|medium|high|critical`). Desktop prefills the pending channel in its
+  approval UI; `thymos run --follow` prompts y/N inline on a TTY.
 - **The agent loop**, end to end, against the deterministic `MockCognition`
   (`submit → compile → govern → execute → ledger`).
 - **HTTP server surface**: `/runs`, `/routed-submit`, `/routing-outcomes`, auth

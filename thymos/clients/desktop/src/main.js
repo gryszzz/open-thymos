@@ -214,6 +214,11 @@ function setBusy(on) {
 }
 
 function renderSnapshot(s) {
+  // The busy indicator mirrors the runtime's actual state ("Planning step 2",
+  // "Executing fs_patch", "Awaiting approval on high-risk") instead of a
+  // static "governing…" that reads as frozen.
+  const wl = document.querySelector("#workingLine span:last-child");
+  if (wl && s.operator_state) wl.textContent = s.operator_state.toLowerCase() + "…";
   // Snapshot carries the full log; render only newly-arrived entries.
   (s.log || []).forEach((e) => {
     if (e.idx < renderedUpTo) return;
@@ -342,8 +347,20 @@ $("newChat")?.addEventListener("click", () => newChatSession());
 // Stop: cancel the in-flight run via the real cancel endpoint.
 $("chatStop")?.addEventListener("click", async () => {
   if (!activeRunId) return;
-  try { await postJSON(`/runs/${activeRunId}/cancel`, {}); pushLine("sys", "— cancel requested"); }
-  catch (e) { pushLine("deny", `✕ cancel failed: ${e}`); }
+  const runId = activeRunId;
+  try { await postJSON(`/runs/${runId}/cancel`, {}); pushLine("sys", "— cancel requested"); }
+  catch (e) {
+    const msg = String(e);
+    if (msg.includes("409") || msg.includes("404")) {
+      // The run already reached a terminal state — nothing to cancel. Sync
+      // the chat with reality instead of surfacing it as a failure.
+      pushLine("sys", "— run already finished");
+      try { renderSnapshot(await getJSON(`/runs/${runId}/execution`)); } catch (_) {}
+      if (activeRunId === runId) { activeRunId = null; setBusy(false); }
+    } else {
+      pushLine("deny", `✕ cancel failed: ${e}`);
+    }
+  }
 });
 
 function showApproval(runId, channel) {
@@ -362,7 +379,7 @@ function showApproval(runId, channel) {
   deny.className = "ghost";
   const act = async (decision) => {
     try {
-      await postJSON(`/runs/${runId}/approvals/${chan.value}`, { decision });
+      await postJSON(`/runs/${runId}/approvals/${chan.value}`, { approve: decision === "approve" });
       pushLine("sys", `— ${decision} (${chan.value})`);
       row.remove();
     } catch (e) { alert("Approval failed: " + e); }
@@ -409,19 +426,42 @@ async function startRun(task) {
     if (model) body.model = model; // per-chat model override (else server default)
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
+    window.thymosActiveRun = run_id; // Mind opens on the chat's current run
     pushLine("sys", `— run ${String(run_id).slice(0, 8)}`);
     if (currentStream) currentStream.close();
     renderedUpTo = 0;
-    currentStream = new EventSource(api(`/runs/${run_id}/execution/stream`));
-    currentStream.onmessage = (m) => {
-      try { renderSnapshot(JSON.parse(m.data)); } catch (_) {}
-    };
-    currentStream.onerror = () => { currentStream && currentStream.close(); };
+    openRunStream(run_id);
   } catch (e) {
     pushLine("deny", `✕ could not start run: ${e}. Is the runtime live?`);
     activeRunId = null;
     setBusy(false);
   }
+}
+
+// Attach the execution SSE stream for a run. If the stream drops mid-run
+// (sleep, runtime restart, proxy hiccup) the chat must never stick in "busy":
+// recover the snapshot over plain HTTP, render it, and re-attach while the
+// run is still going.
+function openRunStream(run_id) {
+  currentStream = new EventSource(api(`/runs/${run_id}/execution/stream`));
+  currentStream.onmessage = (m) => {
+    try { renderSnapshot(JSON.parse(m.data)); } catch (_) {}
+  };
+  currentStream.onerror = async () => {
+    if (currentStream) currentStream.close();
+    if (activeRunId !== run_id) return; // run already concluded
+    try {
+      const snap = await getJSON(`/runs/${run_id}/execution`);
+      renderSnapshot(snap); // clears busy state if the run is terminal
+      if (activeRunId === run_id) setTimeout(() => {
+        if (activeRunId === run_id) openRunStream(run_id);
+      }, 1000);
+    } catch (_) {
+      pushLine("deny", "✕ lost connection to the runtime");
+      activeRunId = null;
+      setBusy(false);
+    }
+  };
 }
 
 $("composer").addEventListener("submit", (ev) => {

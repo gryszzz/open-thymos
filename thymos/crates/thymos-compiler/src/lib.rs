@@ -38,7 +38,7 @@ use thymos_core::{
     writ::Writ,
 };
 use thymos_policy::PolicyEngine;
-use thymos_tools::{EffectClass, ToolInvocation, ToolRegistry};
+use thymos_tools::{EffectClass, RiskClass, ToolInvocation, ToolRegistry};
 
 pub enum Compiled {
     Staged(Proposal),
@@ -77,6 +77,12 @@ pub struct CompileContext {
     /// (preserves prior behavior); enable via
     /// `Runtime::with_require_compensation_for_irreversible`.
     pub require_compensation_for_irreversible: bool,
+    /// When set, any tool whose declared `RiskClass` is at or above this
+    /// threshold is escalated to `Suspended` (require approval) even if policy
+    /// permitted — the operator signs off on dangerous actions (e.g. `shell`)
+    /// instead of the writ alone authorizing them. `None` (the default)
+    /// preserves prior behavior.
+    pub approve_risk_at_or_above: Option<RiskClass>,
 }
 
 impl CompileContext {
@@ -88,6 +94,7 @@ impl CompileContext {
             budget_used: BudgetCost::default(),
             revoked: HashSet::new(),
             require_compensation_for_irreversible: false,
+            approve_risk_at_or_above: None,
         }
     }
 }
@@ -278,6 +285,29 @@ pub fn compile_with_context(
         )
     } else {
         (status, suspension)
+    };
+
+    // 9c. Risk gate. A tool at or above the configured risk threshold needs an
+    // explicit operator approval even on a bare permit — the writ grants the
+    // capability, the operator signs off on each dangerous use of it.
+    let (status, suspension) = match ctx.approve_risk_at_or_above {
+        Some(threshold) if suspension.is_none() && tool.meta().risk_class >= threshold => {
+            let channel = "high-risk".to_string();
+            let reason = format!(
+                "tool '{}' is {:?}-risk (threshold {:?}); operator approval required",
+                effective_tool,
+                tool.meta().risk_class,
+                threshold
+            );
+            (
+                ProposalStatus::Suspended {
+                    channel: channel.clone(),
+                    reason: reason.clone(),
+                },
+                Some((channel, reason)),
+            )
+        }
+        _ => (status, suspension),
     };
 
     // 10. Emit Proposal.
