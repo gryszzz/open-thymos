@@ -457,6 +457,63 @@ pub struct CreateRunRequest {
     /// server's configured ones.
     #[serde(default)]
     pub model: Option<String>,
+    /// Prior conversation turns for multi-turn chat. Composed (size-capped,
+    /// newest kept) into the agent's task context so the model can follow the
+    /// conversation; the run record itself keeps only `task`. Each run remains
+    /// its own governed trajectory — context never carries authority.
+    #[serde(default)]
+    pub history: Vec<HistoryTurn>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct HistoryTurn {
+    /// "user" or "assistant" (anything unrecognized is treated as "user").
+    pub role: String,
+    pub text: String,
+}
+
+/// Caps for composed conversation context: keep the newest turns, drop the
+/// oldest once over budget, clip any single turn. Bounds prompt size no matter
+/// what a client sends.
+pub const MAX_HISTORY_TURNS: usize = 24;
+pub const MAX_HISTORY_TURN_CHARS: usize = 1_500;
+pub const MAX_HISTORY_CHARS: usize = 8_000;
+
+/// Compose the agent-facing task: prior conversation (newest-biased, capped)
+/// followed by the current message. Returns the bare task when there is no
+/// history.
+fn compose_agent_task(task: &str, history: &[HistoryTurn]) -> String {
+    if history.is_empty() {
+        return task.to_string();
+    }
+    let mut turns: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    for t in history.iter().rev().take(MAX_HISTORY_TURNS) {
+        let role = if t.role.eq_ignore_ascii_case("assistant") {
+            "assistant"
+        } else {
+            "user"
+        };
+        let mut text: String = t.text.trim().chars().take(MAX_HISTORY_TURN_CHARS).collect();
+        if t.text.trim().chars().count() > MAX_HISTORY_TURN_CHARS {
+            text.push('…');
+        }
+        let line = format!("{role}: {text}");
+        if used + line.len() > MAX_HISTORY_CHARS {
+            break;
+        }
+        used += line.len();
+        turns.push(line);
+    }
+    if turns.is_empty() {
+        return task.to_string();
+    }
+    turns.reverse();
+    format!(
+        "## Conversation so far (context only — answer the current message)\n{}\n\n## Current message\n{}",
+        turns.join("\n"),
+        task
+    )
 }
 
 fn default_max_steps() -> u32 {
@@ -1648,14 +1705,26 @@ async fn create_run(
 
     let run_id = uuid::Uuid::new_v4().to_string();
     // Prepend every bound skill's instructions, then the task.
+    let instrs: Vec<String> = bound_skills
+        .iter()
+        .map(|s| s.render_instructions(&req.skill_params))
+        .collect();
     let task = if bound_skills.is_empty() {
         req.task.clone()
     } else {
-        let instrs: Vec<String> = bound_skills
-            .iter()
-            .map(|s| s.render_instructions(&req.skill_params))
-            .collect();
         format!("{}\n\n---\nTask: {}", instrs.join("\n\n"), req.task)
+    };
+    // The agent-facing task additionally carries the conversation context
+    // (multi-turn chat). The run record and execution session keep the clean
+    // `task`; the composed version reaches cognition and the trajectory, so
+    // the context the model saw is itself auditable.
+    let convo = compose_agent_task(&req.task, &req.history);
+    let agent_task = if req.history.is_empty() {
+        task.clone()
+    } else if bound_skills.is_empty() {
+        convo
+    } else {
+        format!("{}\n\n---\n{}", instrs.join("\n\n"), convo)
     };
 
     let user_id = if let Some(axum::Extension(claims)) = &jwt_claims {
@@ -1809,6 +1878,7 @@ async fn create_run(
     let state2 = state.clone();
     let run_id2 = run_id.clone();
     let task2 = task.clone();
+    let agent_task2 = agent_task.clone();
     let bound_skills2 = bound_skills.clone();
     // Effective model: per-run override (chat) > a bound skill's preferred model
     // > the server default. Only the model id is swapped — the provider/key are
@@ -1903,7 +1973,7 @@ async fn create_run(
         let agent_fut = thymos_runtime::run_agent_streaming(
             &runtime,
             &mut streaming,
-            &task2,
+            &agent_task2,
             &writ,
             AgentRunOptions {
                 max_steps: req.max_steps,
@@ -2985,6 +3055,50 @@ fn entry_to_dto(e: &thymos_ledger::Entry) -> EntryDto {
         id: e.id.short().to_string(),
         detail,
         commit_id,
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::{compose_agent_task, HistoryTurn, MAX_HISTORY_CHARS};
+
+    fn turn(role: &str, text: &str) -> HistoryTurn {
+        HistoryTurn { role: role.into(), text: text.into() }
+    }
+
+    #[test]
+    fn no_history_returns_bare_task() {
+        assert_eq!(compose_agent_task("do x", &[]), "do x");
+    }
+
+    #[test]
+    fn history_composes_in_order_with_current_message_last() {
+        let h = vec![turn("user", "hello"), turn("assistant", "hi there")];
+        let out = compose_agent_task("now do x", &h);
+        let hello = out.find("user: hello").unwrap();
+        let hi = out.find("assistant: hi there").unwrap();
+        let cur = out.find("## Current message\nnow do x").unwrap();
+        assert!(hello < hi && hi < cur);
+    }
+
+    #[test]
+    fn history_is_capped_keeping_newest() {
+        // 40 long turns blow the budget; the newest must survive.
+        let h: Vec<HistoryTurn> = (0..40)
+            .map(|i| turn("user", &format!("turn-{i} {}", "x".repeat(900))))
+            .collect();
+        let out = compose_agent_task("t", &h);
+        assert!(out.len() < MAX_HISTORY_CHARS + 200);
+        assert!(out.contains("turn-39"));
+        assert!(!out.contains("turn-0 "));
+    }
+
+    #[test]
+    fn single_turn_is_clipped_on_char_boundary() {
+        let h = vec![turn("user", &"é".repeat(5_000))];
+        let out = compose_agent_task("t", &h);
+        assert!(out.contains('…'));
+        assert!(out.len() < 10_000);
     }
 }
 

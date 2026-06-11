@@ -3288,7 +3288,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-desktop"
-version = "0.7.7"
+version = "0.7.8"
 dependencies = [
  "serde",
  "serde_json",
