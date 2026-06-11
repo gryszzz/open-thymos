@@ -473,3 +473,4 @@ body.advanced .adv-only { display: revert; }
   color: var(--violet); padding: 7px 0; cursor: pointer; font: inherit; font-size: 12.5px;
 }
 .mi-audit:hover { border-color: var(--violet); }
+.lg.lavender { color: #d9bcff; }

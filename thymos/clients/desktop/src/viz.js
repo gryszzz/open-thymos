@@ -22,6 +22,7 @@ const TYPES = {
   proposal:  { color: VIOLET, label: "Proposal",   sum: "Compiler + policy checks resolved authority, budget, and risk." },
   grant:     { color: AMBER,  label: "Grant",      sum: "Suspended — waiting for (or resolved by) an operator approval." },
   rejected:  { color: ORANGE, label: "Rejected",   sum: "The runtime refused this proposal — authority or policy said no. Governed, not broken: grant the tool (or change policy) and retry." },
+  answer:    { color: 0xd9bcff, label: "Answer",   sum: "The model's final reply for this run, recorded once the governed loop finished." },
   execution: { color: BLUE,   label: "Execution",  sum: "The runtime executed a governed tool contract." },
   commit:    { color: GREEN,  label: "Commit",     sum: "An authorized action mutated world state — appended to the ledger." },
   error:     { color: RED,    label: "Error",      sum: "Something failed here. The raw detail is preserved below." },
@@ -73,7 +74,10 @@ let spawnQueue = [];           // meshes animating in
 let activeMesh = null;         // newest lifecycle node while the run is live
 let runStatus = "";            // running | waiting_approval | completed | failed
 let searchQ = "";
-const filters = { intent: true, proposal: true, grant: true, rejected: true, execution: true, commit: true, error: true, system: false };
+const filters = { intent: true, proposal: true, grant: true, rejected: true, execution: true, commit: true, answer: true, error: true, system: false };
+// When the operator types a run id, Mind pins to it; otherwise it follows
+// whatever the chat is currently doing.
+let pinnedRun = false;
 
 function radialTexture(inner) {
   const c = document.createElement("canvas");
@@ -453,10 +457,27 @@ async function loadRun(idRaw) {
         seq: en.seq, id: en.commit_id || en.id, run: id, color: 0,
       }));
     }
+    runStatus = snap?.status || "";
+
+    // The model's reply is part of the story — give it a node, so a plain
+    // chat (no tools) is more than "step 1": Intent → … → Answer.
+    if (snap?.final_answer && ["completed", "failed", "cancelled"].includes(runStatus)) {
+      const lastIdx = timeline.length ? (timeline[timeline.length - 1].idx ?? 0) : 0;
+      const lastStep = [...timeline].reverse().find((n) => n.step != null)?.step ?? null;
+      timeline.push({
+        idx: lastIdx + 1,
+        type: runStatus === "completed" ? "answer" : "error",
+        title: runStatus === "completed" ? "Answer" : "Run " + runStatus,
+        detail: snap.final_answer,
+        time: snap.updated_at_ms,
+        step: lastStep,
+        run: id,
+        color: 0,
+      });
+    }
+
     timeline = timeline.slice(-MAX_TIMELINE);
     timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
-
-    runStatus = snap?.status || "";
 
     // Context: provider/mode, the tools this run actually used, replay verdict.
     let health = null, replay = null;
@@ -573,11 +594,18 @@ function frame() {
 }
 function start() {
   if (!running) { running = true; frame(); }
-  // Live growth: while visible, re-poll the current run so streamed entries
-  // appear in the graph. Cleared on stop to avoid background work.
+  // Always-on: while visible, follow the chat's current run (switching when a
+  // new message starts a new run), unless the operator pinned a run id.
   if (!refreshTimer) {
     refreshTimer = setInterval(() => {
-      if (currentRunId) loadRun(currentRunId);
+      const live = window.thymosActiveRun;
+      if (!pinnedRun && live && live !== currentRunId) {
+        loadRun(live);
+      } else if (currentRunId) {
+        loadRun(currentRunId);
+      } else {
+        loadRun("");
+      }
     }, 1500);
   }
 }
@@ -598,8 +626,14 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelectorAll('.tab:not([data-tab="mind"])').forEach((t) =>
     t.addEventListener("click", stop));
-  document.getElementById("mindLoad")?.addEventListener("click", () =>
-    loadRun(document.getElementById("mindRunId")?.value));
+  // No "Visualize" button — Mind is always on. Typing a run id pins to it;
+  // clearing the field resumes following the current chat.
+  const runInput = document.getElementById("mindRunId");
+  runInput?.addEventListener("change", () => {
+    const v = runInput.value.trim();
+    pinnedRun = !!v;
+    loadRun(v);
+  });
 
   // Legend doubles as a filter bar — click a type to hide/show it.
   document.querySelectorAll(".mind-legend .lg[data-type]").forEach((b) => {
