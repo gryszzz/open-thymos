@@ -492,3 +492,4 @@ body.advanced .adv-only { display: revert; }
   border-radius: 8px; color: var(--muted); font-size: 12px;
   font-family: ui-monospace, Menlo, monospace; word-break: break-word;
 }
+.kind-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }

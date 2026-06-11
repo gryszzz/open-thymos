@@ -717,6 +717,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/usage", get(get_usage))
         .route("/audit/entries", get(audit::get_audit_entries))
         .route("/audit/entries/count", get(audit::count_audit_entries))
+        .route("/search", get(search))
         .route("/skills", get(list_skills).post(create_skill))
         .route("/skills/{id}", get(get_skill));
 
@@ -2377,6 +2378,106 @@ fn event_type(evt: &CognitionEvent) -> &'static str {
         CognitionEvent::TurnComplete { .. } => "turn_complete",
         CognitionEvent::Error { .. } => "error",
     }
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: usize,
+}
+fn default_search_limit() -> usize {
+    50
+}
+
+/// A short window of text around the first match, so results read in context.
+fn snippet_around(text: &str, q: &str) -> String {
+    let lower = text.to_lowercase();
+    let Some(pos) = lower.find(q) else {
+        return text.chars().take(120).collect();
+    };
+    let start = text[..pos]
+        .char_indices()
+        .rev()
+        .nth(40)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let out: String = text[start..].chars().take(160).collect();
+    if start > 0 { format!("…{out}") } else { out }
+}
+
+/// GET /search?q= — lexical search across everything the runtime records for
+/// its runs: tasks, final answers, and execution-narrative entries (titles,
+/// details, tools). Case-insensitive substring match; results carry the run
+/// they came from so a client can jump straight to its audit trail. (Semantic
+/// search is deliberately absent until a local embedding store exists.)
+async fn search(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<SearchQuery>,
+) -> impl IntoResponse {
+    let q = query.q.trim().to_lowercase();
+    if q.len() < 2 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "query must be at least 2 characters" })),
+        )
+            .into_response();
+    }
+    let limit = query.limit.clamp(1, 200);
+    let mut hits: Vec<serde_json::Value> = Vec::new();
+
+    {
+        let runs = state.runs.lock().unwrap();
+        for (run_id, rec) in runs.iter() {
+            if hits.len() >= limit {
+                break;
+            }
+            if rec.task.to_lowercase().contains(&q) {
+                hits.push(serde_json::json!({
+                    "run_id": run_id, "field": "task", "status": status_str(&rec.status),
+                    "task": rec.task, "snippet": snippet_around(&rec.task, &q),
+                }));
+            }
+            if let Some(ans) = rec.summary.as_ref().and_then(|s| s.final_answer.as_deref()) {
+                if ans.to_lowercase().contains(&q) {
+                    hits.push(serde_json::json!({
+                        "run_id": run_id, "field": "answer", "status": status_str(&rec.status),
+                        "task": rec.task, "snippet": snippet_around(ans, &q),
+                    }));
+                }
+            }
+        }
+    }
+    {
+        let sessions = state.execution_sessions.lock().unwrap();
+        'outer: for (run_id, session) in sessions.iter() {
+            let mut per_run = 0;
+            for e in &session.log {
+                if hits.len() >= limit {
+                    break 'outer;
+                }
+                if per_run >= 3 {
+                    break;
+                }
+                let hay = format!("{} {} {}", e.title, e.detail, e.tool.as_deref().unwrap_or(""));
+                if hay.to_lowercase().contains(&q) {
+                    hits.push(serde_json::json!({
+                        "run_id": run_id, "field": "event",
+                        "task": session.task, "title": e.title,
+                        "snippet": snippet_around(&e.detail, &q),
+                        "time": e.timestamp_ms,
+                    }));
+                    per_run += 1;
+                }
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "query": query.q, "count": hits.len(), "hits": hits })),
+    )
+        .into_response()
 }
 
 /// GET /runs/:id/world — current world projection.
