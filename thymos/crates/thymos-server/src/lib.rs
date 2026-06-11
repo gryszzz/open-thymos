@@ -1145,6 +1145,9 @@ fn run_record_for_access(
 async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
+        // Lets clients (the desktop supervisor in particular) detect a stale
+        // runtime from an older install and replace it instead of adopting it.
+        "version": env!("CARGO_PKG_VERSION"),
         "mode": match state.runtime_mode {
             RuntimeMode::Reference => "reference",
             RuntimeMode::Production => "production",

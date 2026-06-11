@@ -389,7 +389,13 @@ function renderSnapshot(s) {
     const hint = governanceHint(e);
     if (hint) pushLine("sys", `   ↳ ${hint}`);
   });
-  if (s.status === "waiting_approval") showApproval(s.run_id, s.pending_channel);
+  if (s.status === "waiting_approval") {
+    // Show WHAT is being approved: the latest approval request's reason
+    // carries the tool + a compact args preview from the compiler.
+    const req = [...(s.log || [])].reverse()
+      .find((e) => (e.title || "").startsWith("Approval requested"));
+    showApproval(s.run_id, s.pending_channel, req?.detail || "");
+  }
   if (["completed", "failed", "cancelled"].includes(s.status)) {
     if (s.final_answer) {
       pushAnswer(s.status, s.final_answer);
@@ -522,12 +528,18 @@ $("chatStop")?.addEventListener("click", async () => {
   }
 });
 
-function showApproval(runId, channel) {
+function showApproval(runId, channel, why) {
   if (document.querySelector(`.approval-row[data-run="${runId}"]`)) return;
   const row = document.createElement("div");
   row.className = "approval-row";
   row.dataset.run = runId;
   row.innerHTML = `<span class="q">⏸ approval required — channel</span>`;
+  if (why) {
+    const w = document.createElement("div");
+    w.className = "approval-why";
+    w.textContent = String(why).slice(0, 400);
+    row.appendChild(w);
+  }
   const chan = document.createElement("input");
   chan.value = channel || "ops"; // prefilled with the actual pending channel
   chan.style.maxWidth = "120px";

@@ -172,21 +172,6 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
         }
     }
 
-    // If a Thymos server is already listening on 3001 — one you started in the
-    // terminal, or a prior session — adopt it instead of spawning a conflicting
-    // one. This is what lets the CLI and the desktop share a single runtime +
-    // ledger: whoever owns the port owns the truth, and both surfaces are clients
-    // of it. We only kill servers we ourselves spawned (window-close handler); an
-    // adopted one is left running.
-    if std::net::TcpStream::connect_timeout(
-        &([127, 0, 0, 1], 3001).into(),
-        std::time::Duration::from_millis(300),
-    )
-    .is_ok()
-    {
-        return Ok("adopted-existing".into());
-    }
-
     // Pin a durable, per-user ledger so runs, audit trails, and backups persist
     // across restarts — this is what makes the app a real client of a real,
     // permanent Thymos ledger rather than an ephemeral session. The hash-chained
@@ -198,6 +183,36 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("create app data dir {}: {e}", data_dir.display()))?;
     let ledger_path = data_dir.join("ledger.db");
+    let pid_file = data_dir.join("runtime.pid");
+
+    // If a Thymos server is already listening on 3001 — one you started in the
+    // terminal, or a prior session — adopt it instead of spawning a conflicting
+    // one, BUT only if it speaks this app's version. After an upgrade, an
+    // orphaned older runtime would otherwise keep answering with old behavior
+    // (this bit real users twice). A version-mismatched server that WE spawned
+    // (its pid is in runtime.pid) is terminated and replaced; one we didn't
+    // spawn is adopted with a warning rather than killed.
+    if std::net::TcpStream::connect_timeout(
+        &([127, 0, 0, 1], 3001).into(),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
+    {
+        let running = runtime_version();
+        if running.as_deref() == Some(env!("CARGO_PKG_VERSION")) {
+            return Ok("adopted-existing".into());
+        }
+        if kill_previous_runtime(&pid_file) {
+            // Freed the port — fall through and spawn the bundled version.
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        } else {
+            return Ok(format!(
+                "adopted-existing (version {} != app {}; not spawned by this app — restart it manually)",
+                running.unwrap_or_else(|| "unknown".into()),
+                env!("CARGO_PKG_VERSION"),
+            ));
+        }
+    }
 
     // User-defined governed tools: the runtime loads JSON manifests from this
     // dir (`ToolManifest`), registering each as a first-class tool bound by its
@@ -213,8 +228,43 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     let child = cmd
         .spawn()
         .map_err(|e| format!("failed to start {}: {e}", bin.display()))?;
+    // Record the child's pid so a future session (e.g. after an app upgrade)
+    // can terminate a stale runtime it finds still holding the port.
+    let _ = std::fs::write(&pid_file, child.id().to_string());
     *guard = Some(child);
     Ok("started".into())
+}
+
+/// Version reported by whatever answers /health on the runtime port, if any.
+fn runtime_version() -> Option<String> {
+    let resp = ureq::get("http://127.0.0.1:3001/health")
+        .timeout(std::time::Duration::from_secs(2))
+        .call()
+        .ok()?;
+    let v: serde_json::Value = resp.into_json().ok()?;
+    v.get("version").and_then(|s| s.as_str()).map(String::from)
+}
+
+/// Terminate the runtime recorded in `runtime.pid` — a process THIS app (a
+/// previous session of it) spawned. Returns true if the pid existed and a
+/// kill was issued. Never touches processes we didn't record.
+fn kill_previous_runtime(pid_file: &std::path::Path) -> bool {
+    let Ok(pid) = std::fs::read_to_string(pid_file).map(|s| s.trim().to_string()) else {
+        return false;
+    };
+    if pid.is_empty() || !pid.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    #[cfg(unix)]
+    let ok = Command::new("kill").arg(&pid).status().map(|s| s.success()).unwrap_or(false);
+    #[cfg(windows)]
+    let ok = Command::new("taskkill")
+        .args(["/PID", &pid, "/F"])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let _ = std::fs::remove_file(pid_file);
+    ok
 }
 
 /// Build the `/models` request for a provider — the host makes this call
