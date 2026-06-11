@@ -305,6 +305,32 @@ async fn usage_endpoint_works_without_gateway() {
 }
 
 #[tokio::test]
+async fn search_rejects_short_queries() {
+    let server = test_server(test_state());
+    let resp = server.get("/search?q=x").await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn search_returns_empty_hits_when_nothing_matches() {
+    let server = test_server(test_state());
+    let resp = server.get("/search?q=nothing-matches-this").await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    assert_eq!(body["count"], 0);
+}
+
+#[tokio::test]
+async fn audit_entries_work_without_run_id() {
+    // The cross-run explorer path: no run_id = all trajectories.
+    let server = test_server(test_state());
+    let resp = server.get("/audit/entries?limit=10").await;
+    resp.assert_status_ok();
+    let body: Value = resp.json();
+    assert!(body["entries"].is_array());
+}
+
+#[tokio::test]
 async fn approval_on_nonexistent_run_returns_404() {
     let server = test_server(test_state());
     let resp = server

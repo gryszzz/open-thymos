@@ -46,6 +46,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     if (btn.dataset.tab === "tools") loadTools();
     if (btn.dataset.tab === "backups") loadBackups();
     if (btn.dataset.tab === "advanced") loadAdvanced();
+    if (btn.dataset.tab === "audit" && !$("auditRunId").value.trim()) loadExplorer();
   });
 });
 
@@ -1303,9 +1304,105 @@ async function loadAudit(runId) {
 window.thymosOpenAudit = openAudit;
 $("auditForm").addEventListener("submit", (ev) => {
   ev.preventDefault();
+  const q = $("auditSearch")?.value.trim();
   const id = $("auditRunId").value.trim();
-  if (id) loadAudit(id);
+  if (q) loadSearch(q);
+  else if (id) loadAudit(id);
+  else loadExplorer();
 });
+// Kind chips re-filter the all-activity view in place.
+document.querySelectorAll("#auditKinds .chip").forEach((c) =>
+  c.addEventListener("click", () => {
+    c.classList.toggle("on");
+    if (!$("auditRunId").value.trim() && !$("auditSearch")?.value.trim()) loadExplorer();
+  }));
+
+/* ---------- Ledger Explorer: all activity, grouped by day ---------- */
+// The cross-run timeline (RFC: mind-cognitive-graph, stage 1). Every entry is
+// a real ledger record; clicking one drills into that run's full trail.
+async function loadExplorer() {
+  const trail = $("auditTrail");
+  const badge = $("replayBadge");
+  badge.innerHTML = "";
+  trail.innerHTML = "<div class='hint'>loading all activity…</div>";
+  try {
+    const [entriesRes, runsRes] = await Promise.all([
+      getJSON("/audit/entries?limit=300"),
+      getJSON("/runs?limit=200"),
+    ]);
+    const entries = entriesRes.entries || [];
+    const runs = runsRes.runs || [];
+    const byTraj = {};
+    runs.forEach((r) => { if (r.trajectory_id) byTraj[r.trajectory_id] = r; });
+    const kinds = new Set([...document.querySelectorAll("#auditKinds .chip.on")]
+      .map((c) => c.dataset.kind));
+    const shown = entries.filter((e) =>
+      [...kinds].some((k) => (e.kind || "").toLowerCase().includes(k)));
+    trail.innerHTML = "";
+    if (!shown.length) {
+      trail.innerHTML = "<div class='hint'>no ledger activity yet — chat with the agent and every governed action lands here</div>";
+      return;
+    }
+    // Newest first, grouped by day.
+    shown.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    let lastDay = "";
+    shown.forEach((e) => {
+      const ts = (e.created_at || 0) > 1e12 ? e.created_at : e.created_at * 1000;
+      const day = ts ? new Date(ts).toLocaleDateString() : "unknown date";
+      if (day !== lastDay) {
+        lastDay = day;
+        const h = document.createElement("div");
+        h.className = "audit-subhead";
+        h.innerHTML = `<b>${escapeHtml(day)}</b>`;
+        trail.appendChild(h);
+      }
+      const run = byTraj[e.trajectory_id];
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML =
+        `<span class="meta">#${e.seq}</span><b>${escapeHtml(e.kind || "")}</b>` +
+        (run ? `<span class="meta">${escapeHtml(String(run.task || "").slice(0, 60))}</span>` : "") +
+        `<span class="meta">${ts ? new Date(ts).toLocaleTimeString() : ""}</span>`;
+      if (run) {
+        div.style.cursor = "pointer";
+        div.title = "open this run's full trail";
+        div.onclick = () => { $("auditRunId").value = run.run_id; loadAudit(run.run_id); };
+      }
+      trail.appendChild(div);
+    });
+    badge.innerHTML = `<span class="meta">${shown.length} entries · click any to open its run · clear filters with the chips above</span>`;
+  } catch (e) { trail.innerHTML = `<div class='hint'>could not load activity: ${e}</div>`; }
+}
+
+/* ---------- global search (lexical, over everything recorded) ---------- */
+async function loadSearch(q) {
+  const trail = $("auditTrail");
+  const badge = $("replayBadge");
+  badge.innerHTML = "";
+  trail.innerHTML = "<div class='hint'>searching…</div>";
+  try {
+    const res = await getJSON(`/search?q=${encodeURIComponent(q)}`);
+    const hits = res.hits || [];
+    trail.innerHTML = "";
+    if (!hits.length) {
+      trail.innerHTML = `<div class='hint'>no matches for “${escapeHtml(q)}”</div>`;
+      return;
+    }
+    hits.forEach((h) => {
+      const div = document.createElement("div");
+      div.className = "item audit-narrative";
+      div.innerHTML =
+        `<span class="badge">${escapeHtml(h.field || "")}</span>` +
+        `<b>${escapeHtml(String(h.task || h.title || "").slice(0, 60))}</b>` +
+        (h.snippet ? `<div class="audit-detail">${escapeHtml(h.snippet)}</div>` : "");
+      div.style.cursor = "pointer";
+      div.title = "open this run's full trail";
+      div.onclick = () => { $("auditRunId").value = h.run_id; $("auditSearch").value = ""; loadAudit(h.run_id); };
+      trail.appendChild(div);
+    });
+    badge.innerHTML = `<span class="meta">${hits.length} matches for “${escapeHtml(q)}” · click any to open its run</span>`;
+  } catch (e) { trail.innerHTML = `<div class='hint'>search failed: ${e}</div>`; }
+}
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>

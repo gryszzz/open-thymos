@@ -373,9 +373,18 @@
           prove it's intact (it never re-runs a tool or calls the model).
         </p>
         <form id="auditForm" class="inline-form">
-          <input id="auditRunId" placeholder="run id (blank = latest)" />
-          <button type="submit">Load trail</button>
+          <input id="auditSearch" placeholder="search everything — tasks, answers, events…" />
+          <input id="auditRunId" placeholder="run id (blank = all activity)" />
+          <button type="submit">Load</button>
         </form>
+        <div id="auditKinds" class="kind-chips">
+          <button type="button" class="chip on" data-kind="commit">✓ commits</button>
+          <button type="button" class="chip on" data-kind="rejection">⊘ rejections</button>
+          <button type="button" class="chip on" data-kind="pending_approval">⏸ approvals</button>
+          <button type="button" class="chip on" data-kind="delegation">⇄ delegations</button>
+          <button type="button" class="chip on" data-kind="skill">✦ skills</button>
+          <button type="button" class="chip on" data-kind="root">◆ roots</button>
+        </div>
         <div id="replayBadge"></div>
         <div id="auditTrail" class="list"></div>
       </section>
