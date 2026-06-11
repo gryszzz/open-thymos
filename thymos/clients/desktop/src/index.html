@@ -27,9 +27,6 @@
         <span id="ledger" class="pill">ledger: —</span>
       </div>
       <div class="controls">
-        <label class="adv-toggle" title="Show developer internals — raw ledger data, schemas, writs/commits. Off by default.">
-          <input type="checkbox" id="advToggle" /> Advanced
-        </label>
         <button id="startBtn">Start runtime</button>
         <button id="stopBtn" class="ghost">Stop</button>
       </div>
@@ -44,6 +41,7 @@
       <button class="tab" data-tab="tools">▣ Tools</button>
       <button class="tab" data-tab="audit">≡ Audit</button>
       <button class="tab adv-only" data-tab="backups">↧ Backups</button>
+      <button class="tab" data-tab="advanced">⚙ Advanced</button>
     </nav>
 
     <main>
@@ -57,9 +55,8 @@
             <!-- Authority is configured ONCE here and saved to this model, not
                  chosen per message. -->
             <div class="chat-defaults">
-              <!-- Per-chat model override (advanced) + active skill chips — both
-                   appear only when in use, keeping the rail clean. -->
-              <input id="chatModel" class="adv-only" list="modelList" autocomplete="off" placeholder="model override (blank = default)" />
+              <!-- Active skill chips — appear only when in use, keeping the
+                   rail clean. The per-chat model override lives in Advanced. -->
               <div id="skillChips" class="skill-chips" title="Active skills — combine any; they only narrow authority."></div>
               <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted. No selection = everything granted.">
                 <span class="grant-label">grant</span>
@@ -397,6 +394,59 @@
             runtime at the copy. One-click backup/restore + a chain-head
             integrity report is tracked in <code>docs/rfcs/desktop-app.md §3</code>.
           </p>
+        </div>
+      </section>
+
+      <!-- ADVANCED: the runtime inspection + power-user surface. Everything
+           here reads real state — no placeholder controls. -->
+      <section class="panel" id="tab-advanced">
+        <div class="panel-head"><h2>Advanced — runtime inspection</h2>
+          <button type="button" class="ghost" id="refreshAdvanced">Refresh</button></div>
+        <p class="tab-intro">
+          The deeper controls and live truth of the runtime under this app.
+          Normal chat never needs this tab; it's here when you want to see —
+          or steer — exactly what the runtime is doing.
+        </p>
+
+        <div class="adv-grid">
+          <div class="card">
+            <h3>Runtime</h3>
+            <div id="advRuntime" class="state-card"></div>
+            <label class="adv-toggle" title="Reveal developer internals across the app — raw ledger data, schemas, the Backups tab.">
+              <input type="checkbox" id="advToggle" /> Advanced Mode (show internals everywhere)
+            </label>
+          </div>
+
+          <div class="card">
+            <h3>Model &amp; routing</h3>
+            <div id="advProvider" class="state-card"></div>
+            <label class="adv-label" for="chatModel">Per-chat model override</label>
+            <input id="chatModel" list="modelList" autocomplete="off" placeholder="model override (blank = provider default)" />
+            <p class="note">Applies to new chat messages. Provider, key, and base URL are managed in the <b>Providers</b> tab.</p>
+          </div>
+
+          <div class="card">
+            <h3>Authority</h3>
+            <div id="advAuthority" class="state-card"></div>
+            <p class="note">
+              Grants are the writ scope for new chats (left rail chips). Tools at
+              <b>high</b> risk (e.g. <code>shell</code>) always pause for your
+              approval — tune with <code>THYMOS_APPROVE_RISK</code>.
+            </p>
+          </div>
+
+          <div class="card">
+            <h3>Ledger &amp; debug</h3>
+            <div class="ledger-path-row">
+              <span class="dim">ledger file</span>
+              <code id="advLedgerPath" class="path">—</code>
+            </div>
+            <p class="note">
+              The single hash-chained file holding every governed action.
+              Inspect any run in <b>Audit</b> (now with the full narrative:
+              retries, rejections, grants, errors); verify with replay.
+            </p>
+          </div>
         </div>
       </section>
     </main>
