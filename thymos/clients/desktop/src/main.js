@@ -45,8 +45,66 @@ document.querySelectorAll(".tab").forEach((btn) => {
     if (btn.dataset.tab === "skills") loadSkills();
     if (btn.dataset.tab === "tools") loadTools();
     if (btn.dataset.tab === "backups") loadBackups();
+    if (btn.dataset.tab === "advanced") loadAdvanced();
   });
 });
+
+/* ---------- Advanced tab: live runtime inspection (all real state) ---------- */
+async function loadAdvanced() {
+  // Runtime card: health truth + where this app is pointed.
+  const rt = $("advRuntime");
+  if (rt) {
+    let health = null;
+    try { health = await getJSON("/health"); } catch (_) {}
+    let appVer = "";
+    try { appVer = await window.__TAURI__?.app?.getVersion?.(); } catch (_) {}
+    rt.innerHTML = health
+      ? `<div class="state-grid">` +
+        `<span class="dim">runtime</span><span><span class="badge ok">live</span> <span class="dim">${escapeHtml(BASE)}</span></span>` +
+        `<span class="dim">mode</span><span>${escapeHtml(health.mode || "?")}</span>` +
+        `<span class="dim">ledger</span><span>${escapeHtml(health.ledger || "?")}</span>` +
+        (appVer ? `<span class="dim">app version</span><span>v${escapeHtml(appVer)}</span>` : "") +
+        `</div>`
+      : `<div class="hint">Runtime not running — press <b>Start runtime</b> (top right).</div>`;
+  }
+  // Model & routing card: the provider this runtime answers with.
+  const pv = $("advProvider");
+  if (pv) {
+    let cfg = null, health = null;
+    try { if (invoke) cfg = await invoke("get_provider_config"); } catch (_) {}
+    try { health = await getJSON("/health"); } catch (_) {}
+    const provider = cfg?.provider || health?.default_provider || "—";
+    const live = !!health?.cognition_live;
+    pv.innerHTML =
+      `<div class="state-grid">` +
+      `<span class="dim">provider</span><span>${escapeHtml(provider)} ` +
+      `<span class="badge ${live ? "ok" : "bad"}">${live ? "live model" : "mock"}</span></span>` +
+      `<span class="dim">default model</span><span>${escapeHtml(cfg?.model || "(provider default)")}</span>` +
+      (cfg?.base_url ? `<span class="dim">base url</span><span>${escapeHtml(cfg.base_url)}</span>` : "") +
+      (cfg ? `<span class="dim">api key</span><span>${cfg.key_set ? "stored locally" : "not set"}</span>` : "") +
+      `</div>`;
+    if (cfg?.provider) fillModelList(cfg.provider);
+  }
+  // Authority card: what new chats are allowed to do, right now.
+  const au = $("advAuthority");
+  if (au) {
+    const scopes = selectedScopes();
+    const skills = selectedSkills();
+    au.innerHTML =
+      `<div class="state-grid">` +
+      `<span class="dim">grants</span><span>${scopes.length ? scopes.map(escapeHtml).join(" · ") : "everything (no chips selected)"}</span>` +
+      `<span class="dim">active skills</span><span>${skills.length ? skills.map(escapeHtml).join(" · ") : "none"}</span>` +
+      `<span class="dim">risk gate</span><span>high-risk tools pause for approval</span>` +
+      `</div>`;
+  }
+  // Ledger card: the real on-disk chain this runtime writes.
+  const lp = $("advLedgerPath");
+  if (lp && invoke) {
+    try { lp.textContent = (await invoke("ledger_path")) || "(runtime not started yet)"; }
+    catch (_) { lp.textContent = "—"; }
+  }
+}
+$("refreshAdvanced")?.addEventListener("click", loadAdvanced);
 
 /* ---------- Advanced Mode ---------- */
 // Off by default: normal users never see raw runtime data, schemas, writs, or
@@ -131,6 +189,24 @@ function pushLine(cls, text) {
   feed.appendChild(div);
   feed.scrollTop = feed.scrollHeight;
   return div;
+}
+
+// Governance refusals are the runtime working, not the tool breaking — turn
+// the raw reason into plain English with the action that unblocks it. Shared
+// by the chat feed and the Audit narrative.
+function governanceHint(e) {
+  const raw = e.detail || "";
+  if (/AuthorityVoid/.test(raw)) {
+    const tool = ((e.title || "").match(/for (\S+)/) || [])[1] || "that tool";
+    return `${tool} isn't granted for this chat. The runtime blocked it (nothing is broken) — toggle its grant chip in the left rail and ask again.`;
+  }
+  if (/PolicyDenied/.test(raw)) {
+    return "policy denied this action — the decision is recorded in the run's audit trail.";
+  }
+  if (/BudgetExhausted|budget/.test(raw) && e.level === "error") {
+    return "this run's budget (tokens / tool calls / time) ran out — start a fresh message to continue.";
+  }
+  return "";
 }
 
 // Map a runtime log entry to a glyph + css class (the shared visual language).
@@ -265,20 +341,8 @@ function renderSnapshot(s) {
     let detail = e.detail ? `  ${e.detail}` : "";
     if (detail.length > 300) detail = detail.slice(0, 300) + "…";
     pushLine(cls, `${g} ${e.title}${detail}`);
-    // Governance refusals are the runtime working, not the tool breaking —
-    // say so in plain English, with the action that unblocks it.
-    const raw = e.detail || "";
-    if (/AuthorityVoid/.test(raw)) {
-      const tool = (e.title.match(/for (\S+)/) || [])[1] || "that tool";
-      pushLine("sys",
-        `   ↳ ${tool} isn't granted for this chat. The runtime blocked it (nothing is broken) — toggle its grant chip in the left rail and ask again.`);
-    } else if (/PolicyDenied/.test(raw)) {
-      pushLine("sys",
-        "   ↳ policy denied this action — the decision is recorded in the run's audit trail.");
-    } else if (/BudgetExhausted|budget/.test(raw) && e.level === "error") {
-      pushLine("sys",
-        "   ↳ this run's budget (tokens / tool calls / time) ran out — start a fresh message to continue.");
-    }
+    const hint = governanceHint(e);
+    if (hint) pushLine("sys", `   ↳ ${hint}`);
   });
   if (s.status === "waiting_approval") showApproval(s.run_id, s.pending_channel);
   if (["completed", "failed", "cancelled"].includes(s.status)) {
@@ -1108,6 +1172,43 @@ async function loadAudit(runId) {
     const entries = await getJSON(`/audit/entries?run_id=${encodeURIComponent(runId)}`);
     const list = Array.isArray(entries) ? entries : entries.entries || [];
     trail.innerHTML = "";
+
+    // --- What happened: the run's narrative, from the execution session log.
+    // Provider retries, grant requests, rejections, executions, errors — with
+    // the same plain-English hints the chat shows.
+    try {
+      const snap = await getJSON(`/runs/${encodeURIComponent(runId)}/execution`);
+      const log = snap?.log || [];
+      if (log.length) {
+        const head = document.createElement("div");
+        head.className = "audit-subhead";
+        head.innerHTML = `<b>What happened</b><span class="meta"> · the run's live narrative (status: ${escapeHtml(snap.status || "?")})</span>`;
+        trail.appendChild(head);
+        log.forEach((e) => {
+          const [g, cls] = glyphFor(e);
+          const when = e.timestamp_ms ? new Date(e.timestamp_ms).toLocaleTimeString() : "";
+          const div = document.createElement("div");
+          div.className = "item audit-narrative";
+          let detail = e.detail || "";
+          if (detail.length > 220) detail = detail.slice(0, 220) + "…";
+          div.innerHTML =
+            `<span class="glyph ${cls}">${g}</span>` +
+            `<b>${escapeHtml(e.title || "")}</b>` +
+            (e.tool ? `<span class="meta">${escapeHtml(e.tool)}</span>` : "") +
+            `<span class="meta">${escapeHtml(when)}</span>` +
+            (detail ? `<div class="audit-detail">${escapeHtml(detail)}</div>` : "");
+          const hint = governanceHint(e);
+          if (hint) div.innerHTML += `<div class="audit-hint">↳ ${escapeHtml(hint)}</div>`;
+          trail.appendChild(div);
+        });
+      }
+    } catch (_) { /* restored runs may have no live session — ledger below */ }
+
+    // --- Ledger chain: the authoritative, hash-chained record.
+    const head2 = document.createElement("div");
+    head2.className = "audit-subhead";
+    head2.innerHTML = `<b>Ledger chain</b><span class="meta"> · authoritative, content-addressed, replay-verified</span>`;
+    trail.appendChild(head2);
     list.forEach((e) => {
       const div = document.createElement("div");
       div.className = "item";
@@ -1128,6 +1229,8 @@ async function loadAudit(runId) {
     }
   } catch (e) { trail.innerHTML = `<div class='hint'>could not load trail: ${e}</div>`; }
 }
+// Mind's inspector links here ("open in Audit").
+window.thymosOpenAudit = openAudit;
 $("auditForm").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const id = $("auditRunId").value.trim();

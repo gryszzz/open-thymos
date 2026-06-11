@@ -114,39 +114,30 @@ function init() {
   camera.position.set(0, 0, 13);
   glowTex = radialTexture("rgba(124,92,255,0.9)");
 
-  // Starfield.
-  const N = 1100, pos = new Float32Array(N * 3);
-  for (let i = 0; i < N * 3; i++) pos[i] = (Math.random() - 0.5) * 130;
-  const starGeo = new THREE.BufferGeometry();
-  starGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  scene.add(new THREE.Points(starGeo,
-    new THREE.PointsMaterial({ color: 0x6a5fd0, size: 0.13, transparent: true, opacity: 0.75 })));
-
   // World group (orbited by drag + slow auto-rotation): cage + nodes.
+  // Observability over ornament: no starfield, a single faint cage, a small
+  // core mark — the runtime data is the visual.
   world = new THREE.Group();
   scene.add(world);
 
   cage = new THREE.Group();
   world.add(cage);
   cage.add(new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(3.0, 0)),
-    new THREE.LineBasicMaterial({ color: VIOLET, transparent: true, opacity: 0.6 })));
-  cage.add(new THREE.LineSegments(
-    new THREE.WireframeGeometry(new THREE.DodecahedronGeometry(4.2, 0)),
-    new THREE.LineBasicMaterial({ color: CYAN, transparent: true, opacity: 0.28 })));
+    new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(2.2, 0)),
+    new THREE.LineBasicMaterial({ color: VIOLET, transparent: true, opacity: 0.22 })));
 
   nodesGroup = new THREE.Group();
   world.add(nodesGroup);
 
-  // Logo suspended in the cage — a sprite so it always faces the camera.
+  // Small core mark — the run itself; context nodes tether to it.
   const tex = new THREE.TextureLoader().load("logo.png");
   if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
-  const logo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-  logo.scale.set(2.6, 2.6, 1);
+  const logo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.9 }));
+  logo.scale.set(1.6, 1.6, 1);
   scene.add(logo);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial(
-    { map: glowTex, color: VIOLET, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.85 }));
-  glow.scale.set(8, 8, 1);
+    { map: glowTex, color: VIOLET, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.5 }));
+  glow.scale.set(4.5, 4.5, 1);
   scene.add(glow);
 
   // Interaction: drag to orbit, wheel to zoom, click a node to inspect it.
@@ -258,8 +249,12 @@ function inspectNode(nd) {
     (nd.title ? `<div class="mi-title">${escHtml(nd.title)}</div>` : "") +
     `<div class="mi-sum">${escHtml(nd.sum || t.sum)}</div>` +
     `<dl class="mi-fields">${rows.join("")}</dl>` +
-    (detail ? `<pre class="mi-detail">${escHtml(detail).slice(0, 1200)}</pre>` : "");
+    (detail ? `<pre class="mi-detail">${escHtml(detail).slice(0, 1200)}</pre>` : "") +
+    (nd.run ? `<button class="mi-audit" type="button">Open in Audit →</button>` : "");
   box.querySelector(".mi-close").onclick = () => { box.hidden = true; };
+  // Cross-link to the Audit narrative for this run (main.js exposes the hook).
+  const a = box.querySelector(".mi-audit");
+  if (a) a.onclick = () => { window.thymosOpenAudit?.(nd.run); };
 }
 
 let tipEl = null;
@@ -310,16 +305,34 @@ function line(a, b, color, opacity) {
 function buildGraph(timeline, ctx, newFromIdx) {
   clearNodes();
 
-  // ---- lifecycle helix ----
+  // ---- lifecycle lanes: one row per step, events flowing left → right ----
+  // This is the runtime map: Intent → Proposal → (Grant/Rejected) →
+  // Execution → Commit reads as a horizontal path; steps stack downward.
   const visible = timeline.filter((nd) => filters[nd.type] !== false);
-  const n = visible.length || 1;
-  const R = 5.4, step = Math.min(0.6, 9 / n);
+  // Assign each event to its step's lane (system/preamble entries stick to
+  // the lane in progress).
+  let lane = 0;
+  const lanes = [];
+  visible.forEach((nd) => {
+    if (nd.step != null) lane = nd.step;
+    nd._lane = lane;
+    (lanes[lane] = lanes[lane] || []).push(nd);
+  });
+  const laneIds = lanes.map((l, i) => l ? i : -1).filter((i) => i >= 0);
+  const laneCount = laneIds.length || 1;
+  const rowGap = Math.min(1.9, 11 / laneCount);
   const pts = [];
-  visible.forEach((nd, i) => {
-    const a = i * 0.7;
-    const p = new THREE.Vector3(Math.cos(a) * R, (i - (n - 1) / 2) * step, Math.sin(a) * R);
+  const meshAt = new Map(); // timeline order → mesh position for chain/edges
+  visible.forEach((nd) => {
+    const row = laneIds.indexOf(nd._lane);
+    const mates = lanes[nd._lane];
+    const col = mates.indexOf(nd);
+    const x = (col - (mates.length - 1) / 2) * 1.55;
+    const y = ((laneCount - 1) / 2 - row) * rowGap;
+    const p = new THREE.Vector3(x, y, 0);
     pts.push(p);
-    const mesh = makeNodeMesh(nd, p, nd.type === "commit" || nd.type === "error" ? 0.2 : 0.16);
+    const mesh = makeNodeMesh(nd, p, nd.type === "commit" || nd.type === "error" || nd.type === "rejected" ? 0.2 : 0.15);
+    meshAt.set(nd, p);
     if (nd.idx != null && newFromIdx != null && nd.idx >= newFromIdx) {
       mesh.scale.set(0.01, 0.01, 0.01);
       spawnQueue.push({ mesh, t0: clock });

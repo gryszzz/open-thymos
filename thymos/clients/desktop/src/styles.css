@@ -443,3 +443,33 @@ body.advanced .adv-only { display: revert; }
 .state-grid { display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px; font-size: 13px; align-items: center; }
 .state-grid .dim { color: var(--muted); }
 .state-asof { margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+
+/* ---------- Audit: narrative + ledger chain in one trail ---------- */
+.audit-subhead {
+  margin: 18px 0 8px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.audit-subhead:first-child { margin-top: 4px; }
+.audit-narrative { display: block; }
+.audit-detail {
+  margin: 4px 0 0 1.6em; color: var(--muted); font-size: 12px;
+  font-family: ui-monospace, Menlo, monospace; word-break: break-word;
+}
+.audit-hint { margin: 4px 0 0 1.6em; color: var(--green); font-size: 12.5px; }
+
+/* ---------- Advanced tab: runtime inspection cards ---------- */
+.adv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.adv-grid .card h3 { margin: 0 0 10px; font-size: 15px; }
+.adv-grid .state-card { margin-bottom: 12px; }
+.adv-label { display: block; margin: 10px 0 6px; font-size: 12.5px; color: var(--muted); }
+#tab-advanced .adv-toggle { margin-top: 12px; display: inline-flex; }
+@media (max-width: 900px) { .adv-grid { grid-template-columns: 1fr; } }
+
+/* Mind inspector → Audit cross-link */
+.mi-audit {
+  margin-top: 10px; width: 100%;
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--violet); padding: 7px 0; cursor: pointer; font: inherit; font-size: 12.5px;
+}
+.mi-audit:hover { border-color: var(--violet); }
