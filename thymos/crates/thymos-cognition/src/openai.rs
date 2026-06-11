@@ -230,6 +230,28 @@ impl Cognition for OpenAiCognition {
             .json()
             .map_err(|e| Error::Other(format!("openai response parse: {e}")))?;
         if !status.is_success() {
+            // Groq's `tool_use_failed`: the model emitted a malformed tool
+            // call and the API rejected the whole generation with a 400 —
+            // but the text the model was trying to produce is preserved in
+            // `error.failed_generation`. Recover it as a plain assistant
+            // turn instead of failing the run: no tool executes (a call that
+            // can't parse never reaches the runtime), the model just "spoke".
+            if status.as_u16() == 400 {
+                if let Some(failed) = resp_json
+                    .pointer("/error/failed_generation")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    let text = failed.to_string();
+                    self.messages
+                        .push(json!({ "role": "assistant", "content": text }));
+                    return Ok(CognitionStep {
+                        intents: vec![],
+                        final_answer: Some(text),
+                        usage: crate::CognitionUsage::default(),
+                    });
+                }
+            }
             // Prefer the standard header; fall back to providers that put the
             // precise wait only in the JSON body ("Please try again in 9.62s").
             let hint_ms = retry_after_header
