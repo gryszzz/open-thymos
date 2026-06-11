@@ -474,3 +474,15 @@ body.advanced .adv-only { display: revert; }
 }
 .mi-audit:hover { border-color: var(--violet); }
 .lg.lavender { color: #d9bcff; }
+
+/* Authority mode selector — the standard AI-tool posture (Auto/Edit/Plan/Custom) */
+.mode-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.mode-chip {
+  flex: 1; padding: 6px 0; font: inherit; font-size: 12.5px; font-weight: 600;
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--muted); cursor: pointer;
+}
+.mode-chip:hover { border-color: var(--violet); color: var(--text); }
+.mode-chip.on {
+  background: rgba(124,92,255,.16); border-color: var(--violet); color: var(--text);
+}
