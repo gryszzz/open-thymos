@@ -293,11 +293,20 @@ pub fn compile_with_context(
     let (status, suspension) = match ctx.approve_risk_at_or_above {
         Some(threshold) if suspension.is_none() && tool.meta().risk_class >= threshold => {
             let channel = "high-risk".to_string();
+            // Include a compact args preview so the operator approves a
+            // concrete action ("run `rm -rf …`"), not an abstract tool name.
+            // The full args are in the proposal/ledger regardless.
+            let args_preview: String = serde_json::to_string(&intent.body.args)
+                .unwrap_or_default()
+                .chars()
+                .take(220)
+                .collect();
             let reason = format!(
-                "tool '{}' is {:?}-risk (threshold {:?}); operator approval required",
+                "tool '{}' is {:?}-risk (threshold {:?}); operator approval required. args: {}",
                 effective_tool,
                 tool.meta().risk_class,
-                threshold
+                threshold,
+                args_preview
             );
             (
                 ProposalStatus::Suspended {

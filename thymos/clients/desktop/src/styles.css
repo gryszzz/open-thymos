@@ -151,7 +151,7 @@ h2 { margin: 4px 0 14px; letter-spacing: .3px; }
 .deny { color: var(--red); }
 .suspend { color: var(--amber); }
 .sys { color: var(--muted); font-style: italic; }
-.approval-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; padding: 8px 10px; border: 1px solid rgba(255, 194, 75, .35); border-radius: var(--radius-sm); background: rgba(255, 194, 75, .06); }
+.approval-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; padding: 8px 10px; border: 1px solid rgba(255, 194, 75, .35); border-radius: var(--radius-sm); background: rgba(255, 194, 75, .06); }
 .approval-row .q { color: var(--amber); }
 
 /* User message bubble */
@@ -485,4 +485,10 @@ body.advanced .adv-only { display: revert; }
 .mode-chip:hover { border-color: var(--violet); color: var(--text); }
 .mode-chip.on {
   background: rgba(124,92,255,.16); border-color: var(--violet); color: var(--text);
+}
+.approval-why {
+  flex-basis: 100%; margin: 6px 0 2px; padding: 8px 10px;
+  background: var(--bg-2, rgba(0,0,0,.25)); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--muted); font-size: 12px;
+  font-family: ui-monospace, Menlo, monospace; word-break: break-word;
 }
