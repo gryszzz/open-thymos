@@ -583,6 +583,18 @@ async function startRun(task) {
     if (scopes.length) body.tool_scopes = scopes;
     const model = $("chatModel")?.value.trim();
     if (model) body.model = model; // per-chat model override (else server default)
+    // Multi-turn memory: send this chat's recent transcript (minus the
+    // message we just appended) so the model can follow the conversation.
+    // The server caps and composes it; each run stays its own trajectory.
+    const hist = (curChat()?.messages || [])
+      .slice(0, -1)
+      .filter((m) => m.role === "user" || m.role === "agent")
+      .slice(-12)
+      .map((m) => ({
+        role: m.role === "agent" ? "assistant" : "user",
+        text: String(m.text || "").slice(0, 1500),
+      }));
+    if (hist.length) body.history = hist;
     const { run_id } = await postJSON("/runs", body);
     activeRunId = run_id;
     window.thymosActiveRun = run_id; // Mind opens on the chat's current run
