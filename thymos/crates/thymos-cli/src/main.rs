@@ -123,9 +123,17 @@ enum Commands {
         json: bool,
     },
     /// List supported cognition providers / models (presets + how to start).
-    Providers,
+    Providers {
+        /// Print the preset registry as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// List the real-world actions (tools) the agent can take, by effect class.
-    Tools,
+    Tools {
+        /// Print the live runtime's registered tools as JSON (queries the server).
+        #[arg(long)]
+        json: bool,
+    },
     /// Show API gateway usage stats.
     Usage,
     /// Health check.
@@ -189,6 +197,9 @@ enum RunsAction {
         /// Offset for pagination.
         #[arg(long, default_value = "0")]
         offset: u32,
+        /// Print the raw JSON page instead of the table.
+        #[arg(long)]
+        json: bool,
     },
     /// Show full record + ledger entries for one run.
     Show {
@@ -328,8 +339,8 @@ async fn main() {
         Commands::Audit { run_id, json } => {
             cmd_audit(&client, &cli.url, cli.api_key.as_deref(), &run_id, json).await
         }
-        Commands::Providers => cmd_providers(),
-        Commands::Tools => cmd_tools(),
+        Commands::Providers { json } => cmd_providers(json),
+        Commands::Tools { json } => cmd_tools(&client, &cli.url, json).await,
         Commands::Usage => cmd_usage(&client, &cli.url, cli.api_key.as_deref()).await,
         Commands::Health => cmd_health(&client, &cli.url).await,
         Commands::Doctor => cmd_doctor(&client, &cli.url, cli.api_key.as_deref()).await,
@@ -364,6 +375,7 @@ async fn main() {
                 status,
                 limit,
                 offset,
+                json,
             } => {
                 cmd_runs_ls(
                     &client,
@@ -372,6 +384,7 @@ async fn main() {
                     status.as_deref(),
                     limit,
                     offset,
+                    json,
                 )
                 .await
             }
@@ -705,7 +718,19 @@ fn cmd_setup(init: bool) -> Result<(), String> {
 
 /// `thymos tools` — the catalog of real-world actions the agent can take,
 /// grouped by effect class. Pure print; mirrors the built-in tool registry.
-fn cmd_tools() -> Result<(), String> {
+async fn cmd_tools(client: &reqwest::Client, url: &str, json: bool) -> Result<(), String> {
+    if json {
+        // The live registry (built-ins + manifest + MCP tools), not the static
+        // overview table — query the running server.
+        let resp = client
+            .get(format!("{url}/tools"))
+            .send()
+            .await
+            .map_err(|e| format!("could not reach the runtime at {url}: {e}"))?;
+        let body = json_body_or_error(resp).await?;
+        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+        return Ok(());
+    }
     brand_banner();
     println!("  {}", paint(C_VIOLET_B, "Real-world actions the agent can take"));
     println!(
@@ -881,6 +906,70 @@ fn mask_secret(value: Option<&str>) -> String {
         Some(v) if v.len() > 8 => format!("{}...{}", &v[..4], &v[v.len() - 4..]),
         Some(_) => "(set)".into(),
         None => "(not set)".into(),
+    }
+}
+
+/// Probe the active provider's `/models` endpoint with locally-resolved
+/// credentials — the same check the desktop's "Test connection" runs. Returns
+/// (reachable, human detail). Never prints or returns key material.
+async fn probe_provider(provider: &str) -> (bool, String) {
+    use thymos_cognition::presets;
+    let p = provider.trim().to_ascii_lowercase();
+    if p == "mock" || p.is_empty() {
+        return (true, "mock — offline, nothing to probe".into());
+    }
+
+    let (base_url, headers): (String, Vec<(String, String)>) = if p == "anthropic" {
+        let base = std::env::var("ANTHROPIC_BASE_URL")
+            .unwrap_or_else(|_| "https://api.anthropic.com/v1".into());
+        let mut hs = vec![("anthropic-version".to_string(), "2023-06-01".to_string())];
+        if let Ok(k) = std::env::var("ANTHROPIC_API_KEY") {
+            hs.push(("x-api-key".to_string(), k));
+        }
+        (base, hs)
+    } else {
+        // openai + every OpenAI-compatible preset share one shape.
+        let preset = presets::resolve(&p);
+        let base = std::env::var("OPENAI_BASE_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| preset.map(|pr| pr.base_url.to_string()))
+            .unwrap_or_else(|| "https://api.openai.com/v1".into());
+        let key = preset
+            .into_iter()
+            .flat_map(|pr| pr.api_key_envs.iter())
+            .find_map(|e| std::env::var(e).ok())
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+        let hs = key
+            .map(|k| vec![("Authorization".to_string(), format!("Bearer {k}"))])
+            .unwrap_or_default();
+        (base.trim_end_matches('/').to_string(), hs)
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return (false, format!("probe client failed: {e}")),
+    };
+    let mut req = client.get(format!("{base_url}/models"));
+    for (k, v) in headers {
+        req = req.header(&k, &v);
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body: Value = resp.json().await.unwrap_or(Value::Null);
+            let n = body["data"].as_array().map(|a| a.len()).unwrap_or(0);
+            (true, format!("reachable — {n} models"))
+        }
+        Ok(resp) => (
+            false,
+            format!("HTTP {} — check the key / base URL", resp.status().as_u16()),
+        ),
+        Err(e) if e.is_timeout() => (false, "timed out after 10s".into()),
+        Err(e) if e.is_connect() => (false, "not reachable (connection failed)".into()),
+        Err(_) => (false, "not reachable".into()),
     }
 }
 
@@ -1263,6 +1352,9 @@ pub(crate) async fn cmd_stream(url: &str, run_id: &str) -> Result<(), String> {
     let mut last_log_idx = 0u64;
     let mut last_status = String::new();
     let mut last_operator_state = String::new();
+    // Channels we've already prompted (or hinted) for, so repeated snapshots
+    // of the same suspension don't re-prompt.
+    let mut handled_approvals: std::collections::HashSet<String> = Default::default();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| e.to_string())?;
@@ -1303,6 +1395,18 @@ pub(crate) async fn cmd_stream(url: &str, run_id: &str) -> Result<(), String> {
                             }
                         }
 
+                        // A suspended proposal: resolve it right here in the
+                        // terminal (TTY), or print the exact command to run.
+                        if status == "waiting_approval" {
+                            let channel = snapshot["pending_channel"]
+                                .as_str()
+                                .unwrap_or("ops")
+                                .to_string();
+                            if handled_approvals.insert(channel.clone()) {
+                                prompt_approval(url, run_id, &channel).await;
+                            }
+                        }
+
                         if matches!(status, "completed" | "failed" | "cancelled") {
                             if let Some(answer) = snapshot["final_answer"].as_str() {
                                 println!("\n{}", paint(C_VIOLET_B, "── final answer ──"));
@@ -1316,6 +1420,57 @@ pub(crate) async fn cmd_stream(url: &str, run_id: &str) -> Result<(), String> {
     }
     println!();
     Ok(())
+}
+
+/// Resolve a pending approval from the stream: interactive y/n on a TTY,
+/// otherwise print the exact `thymos approve` command and leave it pending.
+async fn prompt_approval(url: &str, run_id: &str, channel: &str) {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        println!(
+            "{}",
+            paint(
+                C_DIM,
+                format!(
+                    "resolve with:  thymos approve {run_id} {channel}   (add --deny to reject)"
+                ),
+            )
+        );
+        return;
+    }
+    print!(
+        "{} ",
+        paint("1;33", format!("⏸ approve '{channel}'? [y/N]"))
+    );
+    use std::io::Write as _;
+    let _ = std::io::stdout().flush();
+    let line = tokio::task::spawn_blocking(|| {
+        let mut s = String::new();
+        let _ = std::io::stdin().read_line(&mut s);
+        s
+    })
+    .await
+    .unwrap_or_default();
+    let approve = matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes");
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{url}/runs/{run_id}/approvals/{channel}"))
+        .json(&serde_json::json!({ "approve": approve }))
+        .send()
+        .await;
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            println!(
+                "{}",
+                paint(C_DIM, if approve { "— approved" } else { "— denied" })
+            );
+        }
+        Ok(r) => println!(
+            "{}",
+            paint(C_DIM, format!("approval not accepted (HTTP {})", r.status()))
+        ),
+        Err(e) => println!("{}", paint(C_DIM, format!("approval failed: {e}"))),
+    }
 }
 
 fn print_execution_entry(entry: &Value) {
@@ -1760,8 +1915,31 @@ pub(crate) async fn cmd_health(client: &reqwest::Client, url: &str) -> Result<()
 // Literal args are deliberate: this is a width-aligned table, so inlining them
 // into the format string would break the column layout.
 #[allow(clippy::print_literal)]
-pub(crate) fn cmd_providers() -> Result<(), String> {
+pub(crate) fn cmd_providers(json: bool) -> Result<(), String> {
     use thymos_cognition::presets;
+
+    if json {
+        let entries: Vec<Value> = presets::all()
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "id": p.id,
+                    "label": p.label,
+                    "base_url": p.base_url,
+                    "default_model": p.default_model,
+                    "api_key_envs": p.api_key_envs,
+                    "native_tools": p.native_tools,
+                    "local": p.local,
+                })
+            })
+            .collect();
+        let out = serde_json::json!({
+            "native": ["anthropic", "openai", "mock"],
+            "presets": entries,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return Ok(());
+    }
 
     brand_banner();
     println!("{}", paint("1", "Cognition providers — drive (almost) any model"));
@@ -1823,6 +2001,7 @@ pub(crate) async fn cmd_doctor(
     }
 
     println!();
+    let mut active_provider: Option<String> = None;
     match client.get(format!("{url}/health")).send().await {
         Ok(resp) => {
             let status = resp.status();
@@ -1839,6 +2018,7 @@ pub(crate) async fn cmd_doctor(
             // The single most common first-run footgun: not knowing whether the
             // server is answering with a real model or the deterministic mock.
             let provider = body["default_provider"].as_str().unwrap_or("unknown");
+            active_provider = Some(provider.to_string());
             let live = body["cognition_live"].as_bool().unwrap_or(false);
             status_line(
                 "cognition",
@@ -1903,6 +2083,15 @@ pub(crate) async fn cmd_doctor(
         std::env::var_os("OPENAI_BASE_URL").is_some(),
         std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "(not set)".into()),
     );
+
+    // Live connection test against the active provider's /models endpoint —
+    // the same probe the desktop's "Test connection" button runs. Keys stay
+    // local; only reachability and a model count are printed.
+    if let Some(provider) = active_provider.as_deref() {
+        println!();
+        let (ok, detail) = probe_provider(provider).await;
+        status_line("provider connection", ok, format!("{provider}: {detail}"));
+    }
 
     println!();
     println!("{}", paint("38;2;199;125;255;1", "Next moves"));
@@ -1983,6 +2172,7 @@ pub(crate) async fn cmd_runs_ls(
     status: Option<&str>,
     limit: u32,
     offset: u32,
+    json: bool,
 ) -> Result<(), String> {
     let mut endpoint = format!("{url}/runs?limit={limit}&offset={offset}");
     if let Some(s) = status {
@@ -1994,6 +2184,11 @@ pub(crate) async fn cmd_runs_ls(
     }
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let body = json_body_or_error(resp).await?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+        return Ok(());
+    }
 
     let runs = body["runs"].as_array().cloned().unwrap_or_default();
     let total = body["total"].as_u64().unwrap_or(0);

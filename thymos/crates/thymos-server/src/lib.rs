@@ -471,8 +471,22 @@ pub const MAX_CONCURRENT_RUNS_GLOBAL: u32 = 100;
 
 #[derive(Deserialize)]
 pub struct ApprovalRequest {
-    pub approve: bool,
+    /// Canonical form: `{"approve": true|false}`.
+    pub approve: Option<bool>,
+    /// Compatibility form sent by older desktop builds: `"approve"|"deny"`.
+    pub decision: Option<String>,
     pub proposal_id: Option<String>,
+}
+
+impl ApprovalRequest {
+    /// Resolve the operator's verdict from either accepted shape.
+    pub fn verdict(&self) -> Option<bool> {
+        self.approve.or_else(|| {
+            self.decision
+                .as_deref()
+                .map(|d| d.eq_ignore_ascii_case("approve"))
+        })
+    }
 }
 
 /// Build a runtime with a file-backed ledger.
@@ -536,7 +550,31 @@ fn build_runtime(
     load_mcp_servers(&mut tools);
 
     let policy = PolicyEngine::new().with(WritAuthorityPolicy);
-    Arc::new(Runtime::new(ledger, tools, policy))
+    Arc::new(
+        Runtime::new(ledger, tools, policy)
+            .with_approve_risk_at_or_above(approve_risk_from_env()),
+    )
+}
+
+/// Risk threshold above which proposals pause for operator approval
+/// (compiler stage 9c). `THYMOS_APPROVE_RISK` = `off` | `low` | `medium` |
+/// `high` | `critical`; default `high`, so dangerous tools (e.g. `shell`)
+/// always require an explicit sign-off while file edits and reads flow
+/// under their writ grants.
+fn approve_risk_from_env() -> Option<thymos_tools::RiskClass> {
+    use thymos_tools::RiskClass;
+    match std::env::var("THYMOS_APPROVE_RISK")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" | "none" => None,
+        "low" => Some(RiskClass::Low),
+        "medium" => Some(RiskClass::Medium),
+        "critical" => Some(RiskClass::Critical),
+        _ => Some(RiskClass::High),
+    }
 }
 
 fn load_programmable_capabilities(tools: &mut ToolRegistry, tool_manifest_dirs: &[String]) {
@@ -1264,7 +1302,29 @@ async fn resume_run(
         let cognition = match tokio::task::spawn_blocking(move || build_cognition(&config)).await {
             Ok(c) => c,
             Err(e) => {
+                // Same as create_run: never leave the run in `Running` with no
+                // terminal snapshot — the UI would show "governing…" forever.
                 eprintln!("cognition construction panicked: {e}");
+                let mut runs = state2.runs.lock().unwrap();
+                if let Some(rec) = runs.get_mut(&run_id) {
+                    rec.status = RunStatus::Failed;
+                    rec.summary = Some(RunSummaryDto {
+                        steps_executed: 0,
+                        intents_submitted: 0,
+                        commits: 0,
+                        rejections: 0,
+                        failures: 1,
+                        final_answer: Some(
+                            "The model provider failed to initialize. Check the provider settings."
+                                .into(),
+                        ),
+                        terminated_by: "Error".into(),
+                    });
+                }
+                drop(runs);
+                with_execution_session(&state2, &run_id, &task, req.max_steps, |session| {
+                    session.mark_failed(format!("cognition construction panicked: {e}"));
+                });
                 return;
             }
         };
@@ -1778,7 +1838,37 @@ async fn create_run(
         let cognition = match tokio::task::spawn_blocking(move || build_cognition(&config)).await {
             Ok(c) => c,
             Err(e) => {
+                // A bare return here would leave the run in `Running` forever
+                // (the UI shows "governing…" indefinitely) and leak the
+                // concurrency slot. Mark it failed so every surface sees a
+                // terminal state.
                 eprintln!("cognition construction panicked: {e}");
+                let err_dto = RunSummaryDto {
+                    steps_executed: 0,
+                    intents_submitted: 0,
+                    commits: 0,
+                    rejections: 0,
+                    failures: 1,
+                    final_answer: Some(
+                        "The model provider failed to initialize. Check the provider settings."
+                            .into(),
+                    ),
+                    terminated_by: "Error".into(),
+                };
+                {
+                    let mut runs = state2.runs.lock().unwrap();
+                    if let Some(rec) = runs.get_mut(&run_id2) {
+                        rec.status = RunStatus::Failed;
+                        rec.summary = Some(err_dto.clone());
+                    }
+                }
+                with_execution_session(&state2, &run_id2, &task2, req.max_steps, |session| {
+                    session.mark_failed(format!("cognition construction panicked: {e}"));
+                });
+                if let Some(store) = &state2.run_store {
+                    let _ = store.update(&run_id2, "", "failed", Some(&err_dto));
+                }
+                state2.active_runs.fetch_sub(1, Ordering::Relaxed);
                 return;
             }
         };
@@ -2498,6 +2588,15 @@ async fn post_approval(
     Path((id, channel)): Path<(String, String)>,
     Json(req): Json<ApprovalRequest>,
 ) -> impl IntoResponse {
+    let Some(approve) = req.verdict() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "missing verdict: send {\"approve\": true|false} (or {\"decision\": \"approve\"|\"deny\"})",
+            })),
+        )
+            .into_response();
+    };
     let key = (id.clone(), channel.clone());
     let sender = {
         let mut pending = state.pending_approvals.lock().unwrap();
@@ -2506,16 +2605,14 @@ async fn post_approval(
 
     match sender {
         Some(tx) => {
-            let decision = ApprovalDecision {
-                approve: req.approve,
-            };
+            let decision = ApprovalDecision { approve };
             match tx.send(decision) {
                 Ok(()) => (
                     StatusCode::OK,
                     Json(serde_json::json!({
                         "run_id": id,
                         "channel": channel,
-                        "approved": req.approve,
+                        "approved": approve,
                     })),
                 )
                     .into_response(),
@@ -2888,6 +2985,26 @@ fn entry_to_dto(e: &thymos_ledger::Entry) -> EntryDto {
         id: e.id.short().to_string(),
         detail,
         commit_id,
+    }
+}
+
+#[cfg(test)]
+mod approval_request_tests {
+    use super::ApprovalRequest;
+
+    #[test]
+    fn verdict_accepts_both_wire_shapes() {
+        let canonical: ApprovalRequest =
+            serde_json::from_str(r#"{"approve": true}"#).unwrap();
+        assert_eq!(canonical.verdict(), Some(true));
+        let legacy_approve: ApprovalRequest =
+            serde_json::from_str(r#"{"decision": "approve"}"#).unwrap();
+        assert_eq!(legacy_approve.verdict(), Some(true));
+        let legacy_deny: ApprovalRequest =
+            serde_json::from_str(r#"{"decision": "deny"}"#).unwrap();
+        assert_eq!(legacy_deny.verdict(), Some(false));
+        let empty: ApprovalRequest = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(empty.verdict(), None);
     }
 }
 

@@ -345,7 +345,7 @@ async fn dispatch(
             match sub {
                 "ls" => {
                     let (status_flag, limit, offset) = parse_runs_ls(&args[1..])?;
-                    cmd_runs_ls(client, url, api_key, status_flag.as_deref(), limit, offset)
+                    cmd_runs_ls(client, url, api_key, status_flag.as_deref(), limit, offset, false)
                         .await?;
                 }
                 "show" => {

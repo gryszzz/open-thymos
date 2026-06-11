@@ -315,6 +315,28 @@ async fn approval_on_nonexistent_run_returns_404() {
 }
 
 #[tokio::test]
+async fn approval_accepts_legacy_decision_shape() {
+    // Older desktop builds sent {"decision": "approve"} — must deserialize
+    // (404 here because the run doesn't exist, NOT 422 on the body shape).
+    let server = test_server(test_state());
+    let resp = server
+        .post("/runs/nonexistent/approvals/test-channel")
+        .json(&json!({ "decision": "approve" }))
+        .await;
+    resp.assert_status(axum::http::StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn approval_without_verdict_is_a_clear_400() {
+    let server = test_server(test_state());
+    let resp = server
+        .post("/runs/nonexistent/approvals/test-channel")
+        .json(&json!({}))
+        .await;
+    resp.assert_status(axum::http::StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn world_on_nonexistent_run_returns_404() {
     let server = test_server(test_state());
     let resp = server.get("/runs/nonexistent/world").await;

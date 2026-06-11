@@ -248,6 +248,11 @@ async function loadRun(idRaw) {
   let id = (idRaw || "").trim();
   try {
     if (!id) {
+      // Prefer the chat's current run (set by main.js) over "latest overall",
+      // so Mind opens on what the user is actually doing.
+      id = window.thymosActiveRun || "";
+    }
+    if (!id) {
       const runs = await (await fetch(`${BASE}/runs`)).json();
       const list = Array.isArray(runs) ? runs : runs.runs || [];
       id = list[0]?.run_id || list[0]?.trajectory_id || "";
@@ -265,7 +270,48 @@ async function loadRun(idRaw) {
     }
     const el = document.getElementById("mindRunId");
     if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${entries.length} entries`;
+    await renderRunState(id);
   } catch (_) { /* runtime not up yet — the cage still renders */ }
+}
+
+// The live strip above the canvas: the run's real status, the runtime's
+// current operator state, provider/model, governed counters, and the replay
+// verdict — every field read from the runtime, none decorative.
+async function renderRunState(id) {
+  const box = document.getElementById("mindState");
+  if (!box) return;
+  let snap = null, health = null, replay = null;
+  try { snap = await (await fetch(`${BASE}/runs/${id}/execution`)).json(); } catch (_) {}
+  try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
+  try {
+    const r = await fetch(`${BASE}/runs/${id}/replay`);
+    if (r.ok) replay = await r.json();
+  } catch (_) {}
+  if (!snap) { box.hidden = true; return; }
+  const st = snap.status || "?";
+  const stCls = st === "completed" ? "ok" : (st === "failed" ? "bad" : "warn");
+  const c = snap.counters || {};
+  const pieces = [
+    `<span><span class="ms-label">run</span><code>${escHtml(String(id).slice(0, 8))}</code></span>`,
+    `<span><span class="ms-label">status</span><span class="badge ${stCls}">${escHtml(st)}</span></span>`,
+    snap.operator_state
+      ? `<span><span class="ms-label">now</span><span class="ms-val">${escHtml(snap.operator_state)}</span></span>`
+      : "",
+    health
+      ? `<span><span class="ms-label">provider</span><span class="ms-val">${escHtml(health.default_provider || "?")}</span>` +
+        ` <span class="badge ${health.cognition_live ? "ok" : "bad"}">${health.cognition_live ? "live" : "mock"}</span></span>`
+      : "",
+    `<span><span class="ms-label">commits</span><span class="ms-val">${c.commits ?? 0}</span></span>`,
+    `<span><span class="ms-label">rejections</span><span class="ms-val">${c.rejections ?? 0}</span></span>`,
+    (c.approvals_pending ?? 0) > 0
+      ? `<span class="badge warn">⏸ ${c.approvals_pending} awaiting approval</span>`
+      : "",
+    replay
+      ? `<span><span class="ms-label">replay</span><span class="badge ok">verified · ${replay.commits_replayed ?? 0} commits</span></span>`
+      : "",
+  ];
+  box.innerHTML = pieces.filter(Boolean).join("");
+  box.hidden = false;
 }
 
 function frame() {

@@ -177,6 +177,11 @@ pub struct Runtime<L: LedgerStore = Ledger> {
     /// require approval (compiler stage 9b) instead of executing on a bare
     /// policy permit. Default `false`.
     pub require_compensation_for_irreversible: bool,
+    /// When set, tools at or above this risk class are escalated to require
+    /// operator approval (compiler stage 9c) even on a bare policy permit.
+    /// Default `None` (library embedders opt in; the HTTP server defaults to
+    /// `High` so e.g. `shell` always pauses for sign-off).
+    pub approve_risk_at_or_above: Option<thymos_tools::RiskClass>,
 }
 
 /// Thread-safe set of revoked writ ids, consulted by the compiler on every
@@ -274,6 +279,7 @@ impl<L: LedgerStore> Runtime<L> {
             redactor: thymos_core::Redactor::default_secrets(),
             revocations: Revocations::new(),
             require_compensation_for_irreversible: false,
+            approve_risk_at_or_above: None,
             clock: std::sync::Arc::new(SystemClock),
             approval_quorum: 1,
             quorum: QuorumTracker::new(),
@@ -291,6 +297,16 @@ impl<L: LedgerStore> Runtime<L> {
     /// (compiler stage 9b). Off by default.
     pub fn with_require_compensation_for_irreversible(mut self, on: bool) -> Self {
         self.require_compensation_for_irreversible = on;
+        self
+    }
+
+    /// Builder: require operator approval for tools at or above this risk
+    /// class (compiler stage 9c). Off by default.
+    pub fn with_approve_risk_at_or_above(
+        mut self,
+        threshold: Option<thymos_tools::RiskClass>,
+    ) -> Self {
+        self.approve_risk_at_or_above = threshold;
         self
     }
 
@@ -662,6 +678,7 @@ impl<'a, L: LedgerStore> Run<'a, L> {
             require_compensation_for_irreversible: self
                 .runtime
                 .require_compensation_for_irreversible,
+            approve_risk_at_or_above: self.runtime.approve_risk_at_or_above,
         };
 
         // Compile (with budget + time-window checks).
