@@ -21,6 +21,7 @@ const TYPES = {
   proposal:  { color: VIOLET, label: "Proposal",   sum: "Compiler + policy checks resolved authority, budget, and risk." },
   grant:     { color: AMBER,  label: "Grant",      sum: "Suspended — waiting for (or resolved by) an operator approval." },
   rejected:  { color: ORANGE, label: "Rejected",   sum: "The runtime refused this proposal — authority or policy said no. Governed, not broken: grant the tool (or change policy) and retry." },
+  message:   { color: 0x9aa6ff, label: "You",      sum: "A message you sent. Each one starts its own governed run." },
   answer:    { color: 0xd9bcff, label: "Answer",   sum: "The model's final reply for this run, recorded once the governed loop finished." },
   execution: { color: BLUE,   label: "Execution",  sum: "The runtime executed a governed tool contract." },
   commit:    { color: GREEN,  label: "Commit",     sum: "An authorized action mutated world state — appended to the ledger." },
@@ -73,7 +74,7 @@ let spawnQueue = [];           // meshes animating in
 let activeMesh = null;         // newest lifecycle node while the run is live
 let runStatus = "";            // running | waiting_approval | completed | failed
 let searchQ = "";
-const filters = { intent: true, proposal: true, grant: true, rejected: true, execution: true, commit: true, answer: true, error: true, system: false };
+const filters = { message: true, intent: true, proposal: true, grant: true, rejected: true, execution: true, commit: true, answer: true, error: true, system: false };
 // When the operator types a run id, Mind pins to it; otherwise it follows
 // whatever the chat is currently doing.
 let pinnedRun = false;
@@ -308,7 +309,7 @@ function buildGraph(timeline, ctx, newFromIdx) {
   const laneCount = laneIds.length || 1;
   const rowGap = Math.min(1.9, 11 / laneCount);
   const pts = [];
-  const meshAt = new Map(); // timeline order → mesh position for chain/edges
+  const laneStart = new Map(); // lane → first node position (the message spine)
   visible.forEach((nd) => {
     const row = laneIds.indexOf(nd._lane);
     const mates = lanes[nd._lane];
@@ -317,8 +318,10 @@ function buildGraph(timeline, ctx, newFromIdx) {
     const y = ((laneCount - 1) / 2 - row) * rowGap;
     const p = new THREE.Vector3(x, y, 0);
     pts.push(p);
-    const mesh = makeNodeMesh(nd, p, nd.type === "commit" || nd.type === "error" || nd.type === "rejected" ? 0.2 : 0.15);
-    meshAt.set(nd, p);
+    nd._p = p;
+    if (col === 0) laneStart.set(nd._lane, p);
+    const big = nd.type === "commit" || nd.type === "error" || nd.type === "rejected" || nd.type === "message";
+    const mesh = makeNodeMesh(nd, p, big ? 0.2 : 0.15);
     if (nd.idx != null && newFromIdx != null && nd.idx >= newFromIdx) {
       mesh.scale.set(0.01, 0.01, 0.01);
       spawnQueue.push({ mesh, t0: clock });
@@ -326,18 +329,22 @@ function buildGraph(timeline, ctx, newFromIdx) {
     activeMesh = mesh; // ends on the newest visible node
   });
 
-  if (pts.length > 1) {
-    // Synapse line along the governed chain + a signal that travels it.
-    nodesGroup.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: 0x8a7fe0, transparent: true, opacity: 0.5 })));
-    chainCurve = new THREE.CatmullRomCurve3(pts);
-    signal = new THREE.Sprite(new THREE.SpriteMaterial(
-      { map: glowTex, color: runStatus === "failed" ? RED : CYAN, transparent: true,
-        blending: THREE.AdditiveBlending, opacity: 0.95 }));
-    signal.scale.set(0.9, 0.9, 1);
-    nodesGroup.add(signal);
+  // Edges within each lane: the governed path of one message, left → right.
+  // No traveling "signal" sprite — static synapse lines only (calmer, clearer).
+  laneIds.forEach((lid) => {
+    const lane = lanes[lid];
+    for (let i = 1; i < lane.length; i++) {
+      if (lane[i - 1]._p && lane[i]._p) line(lane[i - 1]._p, lane[i]._p, 0x8a7fe0, 0.45);
+    }
+  });
+  // The conversation spine: each message connects to the next, top → bottom.
+  for (let i = 1; i < laneIds.length; i++) {
+    const a = laneStart.get(laneIds[i - 1]);
+    const b = laneStart.get(laneIds[i]);
+    if (a && b) line(a, b, 0x6a5fd0, 0.3);
   }
+  chainCurve = null;
+  signal = null;
 
   // ---- context ring: provider, tools actually used, replay verdict ----
   const ctxNodes = [];
@@ -414,97 +421,177 @@ function applySearchDim() {
 }
 
 /* ---------- data loading (the runtime's own endpoints) ---------- */
-let prevMaxIdx = -1;
+// How many recent messages get their full per-run lifecycle fetched. Older
+// messages still appear (message + answer nodes) but aren't re-fetched, so a
+// long conversation stays light.
+const SESSION_DETAIL_RUNS = 8;
 
-async function loadRun(idRaw) {
-  let id = (idRaw || "").trim();
-  try {
-    if (!id) {
-      // Prefer the chat's current run (set by main.js) over "latest overall",
-      // so Mind opens on what the user is actually doing.
-      id = window.thymosActiveRun || "";
-    }
-    if (!id) {
-      const runs = await (await fetch(`${BASE}/runs`)).json();
-      const list = Array.isArray(runs) ? runs : runs.runs || [];
-      id = list[0]?.run_id || list[0]?.trajectory_id || "";
-    }
-    if (!id) return;
-    const changedRun = id !== currentRunId;
-    if (changedRun) prevMaxIdx = -1;
-    currentRunId = id;
-
-    // Live session log (rich: phases, tools, errors, timestamps). Falls back
-    // to the ledger's audit entries for runs restored without a session.
-    let snap = null;
-    try { snap = await (await fetch(`${BASE}/runs/${id}/execution`)).json(); } catch (_) {}
-    let timeline = [];
-    if (snap?.log?.length > 1) {
-      timeline = snap.log.map((e) => ({
-        idx: e.idx, type: classifyLog(e), title: e.title, detail: e.detail,
-        time: e.timestamp_ms, step: e.step_index, tool: e.tool || null,
-        run: id, color: 0,
-      }));
-    } else {
-      const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
-      const entries = Array.isArray(data) ? data : data.entries || [];
-      timeline = entries.map((en, i) => ({
-        idx: i, type: classifyAudit(en), title: en.kind, detail: en.detail,
-        seq: en.seq, id: en.commit_id || en.id, run: id, color: 0,
-      }));
-    }
-    runStatus = snap?.status || "";
-
-    // The model's reply is part of the story — give it a node, so a plain
-    // chat (no tools) is more than "step 1": Intent → … → Answer.
-    if (snap?.final_answer && ["completed", "failed", "cancelled"].includes(runStatus)) {
-      const lastIdx = timeline.length ? (timeline[timeline.length - 1].idx ?? 0) : 0;
-      const lastStep = [...timeline].reverse().find((n) => n.step != null)?.step ?? null;
-      timeline.push({
-        idx: lastIdx + 1,
-        type: runStatus === "completed" ? "answer" : "error",
-        title: runStatus === "completed" ? "Answer" : "Run " + runStatus,
-        detail: snap.final_answer,
-        time: snap.updated_at_ms,
-        step: lastStep,
-        run: id,
-        color: 0,
+// Map one run's execution log → lifecycle nodes for conversation turn `turn`.
+function runNodes(snap, runId, turn) {
+  const out = [];
+  let base = turn * 1000;
+  if (snap?.log?.length) {
+    for (const e of snap.log) {
+      const ty = classifyLog(e);
+      if (ty === "system") continue; // housekeeping — keep the map clean
+      out.push({
+        idx: base++, type: ty, title: e.title, detail: e.detail,
+        time: e.timestamp_ms, step: turn, tool: e.tool || null, run: runId, color: 0,
       });
     }
+  }
+  return out;
+}
 
-    timeline = timeline.slice(-MAX_TIMELINE);
-    timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
-
-    // Context: provider/mode, the tools this run actually used, replay verdict.
-    let health = null, replay = null;
-    try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
-    try {
-      const r = await fetch(`${BASE}/runs/${id}/replay`);
-      if (r.ok) replay = await r.json();
-    } catch (_) {}
-    const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
-    const ctx = {
-      provider: health?.default_provider || "",
-      live: !!health?.cognition_live,
-      tools,
-      replayOk: !!replay,
-    };
-
-    // Rebuild when the run, entry count, or filters changed — live polling
-    // otherwise leaves the scene untouched so motion stays continuous.
-    const filterKey = JSON.stringify(filters);
-    const maxIdx = timeline.length ? timeline[timeline.length - 1].idx : -1;
-    if (changedRun || timeline.length !== lastCount || filterKey !== lastFilterKey) {
-      lastCount = timeline.length;
-      lastFilterKey = filterKey;
-      buildGraph(timeline, ctx, changedRun ? null : prevMaxIdx + 1);
-      prevMaxIdx = maxIdx;
-    }
-
-    const el = document.getElementById("mindRunId");
-    if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${timeline.length} events`;
-    renderRunState(id, snap, health, replay);
+async function loadRun(idRaw) {
+  const pinned = (idRaw || "").trim();
+  try {
+    // Pinned run id → single-run inspection. Otherwise render the whole
+    // conversation: every message and the governed actions each one produced.
+    if (pinned) return await renderSingleRun(pinned);
+    const session = window.thymosSession?.();
+    if (session && session.messages.length) return await renderSession(session);
+    // No active chat yet → newest run as a fallback so the tab isn't blank.
+    const runs = await (await fetch(`${BASE}/runs`)).json();
+    const list = Array.isArray(runs) ? runs : runs.runs || [];
+    const id = list[0]?.run_id;
+    if (id) return await renderSingleRun(id);
   } catch (_) { /* runtime not up yet — the scene stays empty */ }
+}
+
+// The full conversation as one network: each turn is a lane —
+// You → intent → proposal → (grant/rejected) → execution → commit → Answer.
+async function renderSession(session) {
+  const msgs = session.messages;
+  // Pair user messages with the following agent reply (its run).
+  const turns = [];
+  for (let i = 0; i < msgs.length; i++) {
+    if (msgs[i].role !== "user") continue;
+    const reply = msgs.slice(i + 1).find((m) => m.role === "agent");
+    turns.push({ user: msgs[i], reply: reply || null });
+  }
+  if (!turns.length) return;
+
+  // Fetch lifecycle only for the most recent turns that have a run.
+  const detailIdx = new Set();
+  let budget = SESSION_DETAIL_RUNS;
+  for (let i = turns.length - 1; i >= 0 && budget > 0; i--) {
+    if (turns[i].reply?.run_id) { detailIdx.add(i); budget--; }
+  }
+  const snaps = {};
+  await Promise.all([...detailIdx].map(async (i) => {
+    const rid = turns[i].reply.run_id;
+    try { snaps[i] = await (await fetch(`${BASE}/runs/${rid}/execution`)).json(); } catch (_) {}
+  }));
+
+  let timeline = [];
+  let liveStatus = "";
+  turns.forEach((t, i) => {
+    timeline.push({
+      idx: i * 1000 - 1, type: "message", title: "You",
+      detail: t.user.text, step: i, run: t.reply?.run_id || null, color: 0,
+    });
+    const snap = snaps[i];
+    if (snap) {
+      timeline = timeline.concat(runNodes(snap, t.reply.run_id, i));
+      if (i === turns.length - 1) liveStatus = snap.status || "";
+    }
+    if (t.reply) {
+      const st = t.reply.status || snap?.status || "completed";
+      timeline.push({
+        idx: i * 1000 + 900,
+        type: st === "failed" ? "error" : "answer",
+        title: st === "failed" ? "Run failed" : "Answer",
+        detail: t.reply.text || snap?.final_answer || "",
+        step: i, run: t.reply?.run_id || null, color: 0,
+      });
+    }
+  });
+  timeline = timeline.slice(-MAX_TIMELINE);
+  timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
+  runStatus = liveStatus;
+
+  let health = null;
+  try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
+  const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
+  const ctx = { provider: health?.default_provider || "", live: !!health?.cognition_live, tools, replayOk: false };
+
+  const sig = `${session.id}:${timeline.length}:${JSON.stringify(filters)}`;
+  if (sig !== lastFilterKey) {
+    const grew = sig.split(":")[0] === lastFilterKey.split(":")[0];
+    lastFilterKey = sig;
+    buildGraph(timeline, ctx, grew ? -1 : null); // new turns animate in
+  }
+  const el = document.getElementById("mindRunId");
+  if (el && !el.value) el.placeholder = `${turns.length} messages · ${timeline.length} nodes`;
+  renderSessionState(session, turns, health);
+}
+
+let prevMaxIdx = -1;
+async function renderSingleRun(id) {
+  const changedRun = id !== currentRunId;
+  if (changedRun) prevMaxIdx = -1;
+  currentRunId = id;
+  let snap = null;
+  try { snap = await (await fetch(`${BASE}/runs/${id}/execution`)).json(); } catch (_) {}
+  let timeline = [];
+  if (snap?.log?.length > 1) {
+    timeline = snap.log.map((e) => ({
+      idx: e.idx, type: classifyLog(e), title: e.title, detail: e.detail,
+      time: e.timestamp_ms, step: e.step_index, tool: e.tool || null, run: id, color: 0,
+    }));
+  } else {
+    const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
+    const entries = Array.isArray(data) ? data : data.entries || [];
+    timeline = entries.map((en, i) => ({
+      idx: i, type: classifyAudit(en), title: en.kind, detail: en.detail,
+      seq: en.seq, id: en.commit_id || en.id, run: id, color: 0,
+    }));
+  }
+  runStatus = snap?.status || "";
+  if (snap?.final_answer && ["completed", "failed", "cancelled"].includes(runStatus)) {
+    const lastIdx = timeline.length ? (timeline[timeline.length - 1].idx ?? 0) : 0;
+    const lastStep = [...timeline].reverse().find((n) => n.step != null)?.step ?? null;
+    timeline.push({
+      idx: lastIdx + 1, type: runStatus === "completed" ? "answer" : "error",
+      title: runStatus === "completed" ? "Answer" : "Run " + runStatus,
+      detail: snap.final_answer, time: snap.updated_at_ms, step: lastStep, run: id, color: 0,
+    });
+  }
+  timeline = timeline.slice(-MAX_TIMELINE);
+  timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
+  let health = null, replay = null;
+  try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
+  try { const r = await fetch(`${BASE}/runs/${id}/replay`); if (r.ok) replay = await r.json(); } catch (_) {}
+  const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
+  const ctx = { provider: health?.default_provider || "", live: !!health?.cognition_live, tools, replayOk: !!replay };
+  const filterKey = JSON.stringify(filters) + ":" + id;
+  const maxIdx = timeline.length ? timeline[timeline.length - 1].idx : -1;
+  if (changedRun || timeline.length !== lastCount || filterKey !== lastFilterKey) {
+    lastCount = timeline.length;
+    lastFilterKey = filterKey;
+    buildGraph(timeline, ctx, changedRun ? null : prevMaxIdx + 1);
+    prevMaxIdx = maxIdx;
+  }
+  renderRunState(id, snap, health, replay);
+}
+
+// Session-level state strip: how the conversation is doing as a whole.
+function renderSessionState(session, turns, health) {
+  const box = document.getElementById("mindState");
+  if (!box) return;
+  const last = turns[turns.length - 1];
+  const pieces = [
+    `<span><span class="ms-label">conversation</span><span class="ms-val">${escHtml(session.title || "untitled")}</span></span>`,
+    `<span><span class="ms-label">messages</span><span class="ms-val">${turns.length}</span></span>`,
+    health
+      ? `<span><span class="ms-label">provider</span><span class="ms-val">${escHtml(health.default_provider || "?")}</span>` +
+        ` <span class="badge ${health.cognition_live ? "ok" : "bad"}">${health.cognition_live ? "live" : "mock"}</span></span>`
+      : "",
+    last?.reply ? `<span><span class="ms-label">last</span><span class="badge ${last.reply.status === "failed" ? "bad" : "ok"}">${escHtml(last.reply.status || "completed")}</span></span>` : "",
+  ];
+  box.innerHTML = pieces.filter(Boolean).join("");
+  box.hidden = false;
 }
 
 // The live strip above the canvas: the run's real status, the runtime's
@@ -550,10 +637,11 @@ function frame() {
   world.rotation.y = curRotY;
   world.rotation.x = curRotX;
 
-  // Pulse each node halo on its own phase (neural firing). Errors burn hotter.
+  // Gentle, uniform halo breathing — a calm "alive" shimmer, not flashing.
+  // (Errors get a slightly stronger pulse so they read as needing attention.)
   for (const p of pulses) {
-    const amp = p.err ? 0.8 : 0.45;
-    const s = 1.1 + amp * (0.5 + 0.5 * Math.sin(clock * 2.4 + p.phase));
+    const amp = p.err ? 0.35 : 0.16;
+    const s = 1.05 + amp * (0.5 + 0.5 * Math.sin(clock * 1.6 + p.phase));
     p.halo.scale.set(s, s, 1);
   }
   // New nodes scale in — work appearing as it happens.
@@ -563,26 +651,10 @@ function frame() {
     sp.mesh.scale.set(e, e, e);
     return k < 1;
   });
-  // The newest node breathes while the run is live — "this is where I am".
+  // The newest node breathes a little while the run is live — "where I am".
   if (activeMesh && (runStatus === "running" || runStatus === "waiting_approval")) {
-    const s = 1 + 0.5 * (0.5 + 0.5 * Math.sin(clock * 5));
+    const s = 1 + 0.25 * (0.5 + 0.5 * Math.sin(clock * 3));
     activeMesh.scale.set(s, s, s);
-  }
-  // Propagate a signal along the chain: fast while thinking, calm when the
-  // run has stabilized, halted (red) on failure.
-  if (chainCurve && signal) {
-    const speed = runStatus === "running" || runStatus === "waiting_approval" ? 0.14
-      : runStatus === "failed" ? 0 : 0.05;
-    if (speed > 0) {
-      const t = (clock * speed) % 1;
-      chainCurve.getPointAt(t, signal.position);
-      const s = 0.7 + 0.5 * Math.sin(clock * 6);
-      signal.scale.set(s, s, 1);
-    } else {
-      // Failure: the signal parks on the last node, burning red.
-      chainCurve.getPointAt(1, signal.position);
-      signal.scale.set(1.2, 1.2, 1);
-    }
   }
   renderer.render(scene, camera);
 }
@@ -591,15 +663,10 @@ function start() {
   // Always-on: while visible, follow the chat's current run (switching when a
   // new message starts a new run), unless the operator pinned a run id.
   if (!refreshTimer) {
+    // Pinned → keep refreshing that run; otherwise re-render the whole
+    // conversation (picks up new messages + streaming actions live).
     refreshTimer = setInterval(() => {
-      const live = window.thymosActiveRun;
-      if (!pinnedRun && live && live !== currentRunId) {
-        loadRun(live);
-      } else if (currentRunId) {
-        loadRun(currentRunId);
-      } else {
-        loadRun("");
-      }
+      loadRun(pinnedRun ? (document.getElementById("mindRunId")?.value || "") : "");
     }, 1500);
   }
 }

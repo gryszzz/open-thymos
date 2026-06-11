@@ -493,3 +493,4 @@ body.advanced .adv-only { display: revert; }
   font-family: ui-monospace, Menlo, monospace; word-break: break-word;
 }
 .kind-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.lg.msg { color: #9aa6ff; }

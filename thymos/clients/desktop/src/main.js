@@ -445,6 +445,23 @@ function loadChats() {
 }
 function saveChats() { try { localStorage.setItem(CHATS_KEY, JSON.stringify(chats)); } catch (_) {} }
 function curChat() { return chats.find((c) => c.id === activeChat); }
+// Mind reads the whole conversation through this hook: every message in the
+// active chat, with the run each agent reply came from. Lets Mind render the
+// full session (messages + each run's governed actions), not one run.
+window.thymosSession = function () {
+  const c = curChat();
+  if (!c) return null;
+  return {
+    id: c.id,
+    title: c.title || "",
+    messages: (c.messages || []).map((m) => ({
+      role: m.role,
+      text: String(m.text || ""),
+      run_id: m.run_id || null,
+      status: m.status || null,
+    })),
+  };
+};
 
 function renderWelcome() { feed.innerHTML = WELCOME_HTML; }
 
