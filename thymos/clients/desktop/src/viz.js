@@ -1,34 +1,73 @@
-// Mind — an immersive 3D view of a run's reasoning: the OpenThymos logo
-// suspended in a rotating wireframe cage, with the governed ledger DAG (commits,
-// rejections, suspensions) as glowing nodes orbiting it. Pure client: reads
-// `/audit/entries` from the local runtime; three.js is vendored (no egress).
+// Mind — an immersive 3D view of a run's active cognition: the OpenThymos
+// logo suspended in a rotating wireframe cage, orbited by the run's real
+// lifecycle — intents, proposals, grants, executions, commits, errors — plus a
+// context ring of what the run actually used (provider, tools, replay
+// verdict). Pure client: reads the runtime's own endpoints (`/runs/{id}/
+// execution`, `/audit/entries`, `/health`, `/runs/{id}/replay`); three.js is
+// vendored (no egress). Nothing here is decorative: every node carries the
+// runtime record it represents, and clicking it shows that record.
 import * as THREE from "./vendor/three.module.js";
 
 const invoke = window.__TAURI__?.core?.invoke;
 let BASE = "http://127.0.0.1:3001";
 (async () => { try { if (invoke) BASE = await invoke("runtime_addr"); } catch (_) {} })();
 
-const VIOLET = 0x7c5cff, CYAN = 0x45e0ff, GREEN = 0x46d39a, RED = 0xff6b8a, AMBER = 0xffc24b;
-let nodeMeshes = [], raycaster, pointer, dragMoved = false;
-function colorFor(kind) {
-  const k = (kind || "").toLowerCase();
-  if (k.includes("commit")) return GREEN;
-  if (k.includes("reject")) return RED;
-  if (k.includes("approval") || k.includes("suspend")) return AMBER;
-  if (k.includes("delegation")) return VIOLET;
-  if (k.includes("root")) return CYAN;
-  return VIOLET;
+const VIOLET = 0x7c5cff, CYAN = 0x45e0ff, GREEN = 0x46d39a, RED = 0xff6b8a,
+      AMBER = 0xffc24b, BLUE = 0x6ab0ff, DIM = 0x8a7fe0;
+
+// Node taxonomy — the lifecycle types a run can produce, with the question
+// each answers for the operator.
+const TYPES = {
+  intent:    { color: CYAN,   label: "Intent",     sum: "Cognition declared what it wants to do — no side effects yet." },
+  proposal:  { color: VIOLET, label: "Proposal",   sum: "Compiler + policy checks resolved authority, budget, and risk." },
+  grant:     { color: AMBER,  label: "Grant",      sum: "Suspended — waiting for (or resolved by) an operator approval." },
+  execution: { color: BLUE,   label: "Execution",  sum: "The runtime executed a governed tool contract." },
+  commit:    { color: GREEN,  label: "Commit",     sum: "An authorized action mutated world state — appended to the ledger." },
+  error:     { color: RED,    label: "Error",      sum: "Something failed here. The raw detail is preserved below." },
+  system:    { color: DIM,    label: "System",     sum: "Runtime housekeeping for this run." },
+  provider:  { color: CYAN,   label: "Provider",   sum: "The cognition provider answering this run. It proposes; it never executes." },
+  tool:      { color: BLUE,   label: "Tool",       sum: "A governed capability this run actually invoked." },
+  replay:    { color: GREEN,  label: "Replay",     sum: "The ledger chain re-verified end-to-end — this outcome is reproducible." },
+};
+
+// Map a live execution-session log entry to a node type.
+function classifyLog(e) {
+  if (e.level === "error") return "error";
+  const p = e.phase || "";
+  if (p === "intent") return "intent";
+  if (p === "proposal") return e.level === "warning" ? "grant" : "proposal";
+  if (p === "execution") return "execution";
+  if (p === "result") return e.level === "success" ? "commit" : "system";
+  return "system";
+}
+
+// Map a ledger/audit entry kind to a node type (fallback source for runs
+// restored from disk whose live session log is gone).
+function classifyAudit(en) {
+  const k = (en.kind || "").toLowerCase();
+  if (k.includes("commit")) return "commit";
+  if (k.includes("reject")) return "error";
+  if (k.includes("approval") || k.includes("suspend")) return "grant";
+  if (k.includes("delegation")) return "proposal";
+  if (k.includes("skill")) return "proposal";
+  if (k.includes("root")) return "intent";
+  return "system";
 }
 
 let renderer, scene, camera, world, cage, nodesGroup, glowTex;
 let inited = false, running = false, raf = 0, loadedOnce = false;
 let targetRotY = 0, targetRotX = 0.25, curRotY = 0, curRotX = 0.25;
 let drag = null;
-// Neural animation state: per-node halos to pulse, the chain as a curve, a
-// signal that travels it, and a live-refresh timer so the graph grows as a run
-// streams.
+let nodeMeshes = [], raycaster, pointer, dragMoved = false;
+
+// Animation + graph state.
 let pulses = [], chainCurve = null, signal = null, clock = 0;
-let currentRunId = "", refreshTimer = 0, lastCount = -1;
+let currentRunId = "", refreshTimer = 0, lastCount = -1, lastFilterKey = "";
+let spawnQueue = [];           // meshes animating in
+let activeMesh = null;         // newest lifecycle node while the run is live
+let runStatus = "";            // running | waiting_approval | completed | failed
+let searchQ = "";
+const filters = { intent: true, proposal: true, grant: true, execution: true, commit: true, error: true, system: false };
 
 function radialTexture(inner) {
   const c = document.createElement("canvas");
@@ -41,6 +80,22 @@ function radialTexture(inner) {
   g.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(c);
 }
+
+// A small always-facing text label for context nodes.
+function labelSprite(text, cssColor) {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 56;
+  const g = c.getContext("2d");
+  g.font = "600 26px -apple-system, 'Segoe UI', sans-serif";
+  g.textAlign = "center";
+  g.fillStyle = cssColor;
+  g.fillText(String(text).slice(0, 18), 128, 38);
+  const tex = new THREE.CanvasTexture(c);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.9 }));
+  s.scale.set(2.4, 0.53, 1);
+  return s;
+}
+const hex = (n) => "#" + n.toString(16).padStart(6, "0");
 
 function init() {
   const container = document.getElementById("mindCanvas");
@@ -106,18 +161,18 @@ function init() {
     e.preventDefault();
     camera.position.z = Math.max(7, Math.min(26, camera.position.z + e.deltaY * 0.01));
   }, { passive: false });
-  // Click (not drag) on a node → open the inspector.
+  // Click (not drag) on a node → open the inspector + swing it to the front.
   el.addEventListener("click", (e) => {
     if (dragMoved) return;
     const hit = nodeAt(e);
-    if (hit) inspectNode(hit);
+    if (hit) { inspectNode(hit.userData); focusOn(hit); }
   });
   // Hover → quick tooltip + pointer cursor.
   el.addEventListener("pointermove", (e) => {
     if (drag) return;
     const hit = nodeAt(e);
     el.style.cursor = hit ? "pointer" : "grab";
-    if (hit) showTip(e, hit); else hideTip();
+    if (hit) showTip(e, hit.userData); else hideTip();
   });
   el.addEventListener("pointerleave", hideTip);
 
@@ -138,13 +193,18 @@ function clearNodes() {
   while (nodesGroup.children.length) {
     const o = nodesGroup.children.pop();
     o.geometry?.dispose?.();
+    o.material?.map?.dispose?.();
     o.material?.dispose?.();
   }
   nodeMeshes = [];
+  pulses = [];
+  chainCurve = null;
+  signal = null;
+  spawnQueue = [];
+  activeMesh = null;
 }
 
 /* ---------- inspectable nodes ---------- */
-// Raycast the pointer event against node meshes; return the hit entry or null.
 function nodeAt(e) {
   if (!raycaster || !nodeMeshes.length) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -152,45 +212,57 @@ function nodeAt(e) {
   pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(nodeMeshes, false);
-  return hits.length ? hits[0].object.userData : null;
+  return hits.length ? hits[0].object : null;
 }
 
-// Human-readable one-liner for an entry kind.
-function summaryFor(en) {
-  const k = (en.kind || "").toLowerCase();
-  if (k.includes("root")) return "Trajectory root — the run began.";
-  if (k.includes("commit")) return "Commit — an authorized action that mutated world state.";
-  if (k.includes("rejection") || k.includes("reject")) return "Rejected — a proposal the runtime refused.";
-  if (k.includes("approval") || k.includes("pending")) return "Suspended — waiting for human approval.";
-  if (k.includes("delegation") || k.includes("deleg")) return "Delegation — authority handed to a child run.";
-  if (k.includes("skill")) return "Skill bound — a skill narrowed this run's authority.";
-  return en.kind || "Ledger entry";
+// Smoothly rotate the world so the clicked node faces the camera.
+function focusOn(mesh) {
+  const p = mesh.position;
+  // Camera looks down -Z; a node at world angle a faces front when the world
+  // is rotated so the node lands near +Z.
+  const a = Math.atan2(p.x, p.z);
+  const want = -a;
+  // Take the shortest path from the current rotation.
+  let delta = (want - targetRotY) % (Math.PI * 2);
+  if (delta > Math.PI) delta -= Math.PI * 2;
+  if (delta < -Math.PI) delta += Math.PI * 2;
+  targetRotY += delta;
 }
 
-function inspectNode(en) {
+function inspectNode(nd) {
   const box = document.getElementById("mindInspector");
   if (!box) return;
-  const id = en.commit_id || en.id || "";
-  const detail = en.detail ? (typeof en.detail === "string" ? en.detail : JSON.stringify(en.detail, null, 2)) : "";
+  const t = TYPES[nd.type] || TYPES.system;
+  const when = nd.time ? new Date(nd.time).toLocaleTimeString() : "";
+  const detail = nd.detail
+    ? (typeof nd.detail === "string" ? nd.detail : JSON.stringify(nd.detail, null, 2))
+    : "";
+  const rows = [
+    when ? `<dt>time</dt><dd>${escHtml(when)}</dd>` : "",
+    nd.step != null ? `<dt>step</dt><dd>${nd.step + 1}</dd>` : "",
+    nd.tool ? `<dt>tool</dt><dd class="mono">${escHtml(nd.tool)}</dd>` : "",
+    nd.run ? `<dt>run</dt><dd class="mono">${escHtml(String(nd.run).slice(0, 12))}…</dd>` : "",
+    nd.id ? `<dt>id</dt><dd class="mono">${escHtml(String(nd.id).slice(0, 24))}…</dd>` : "",
+    nd.seq != null ? `<dt>seq</dt><dd>${nd.seq}</dd>` : "",
+  ];
   box.hidden = false;
   box.innerHTML =
-    `<div class="mi-head"><span class="mi-kind">${escHtml(en.kind || "entry")}</span>` +
+    `<div class="mi-head"><span class="mi-kind" style="color:${hex(t.color)}">${escHtml(t.label)}</span>` +
     `<button class="mi-close" title="close">×</button></div>` +
-    `<div class="mi-sum">${escHtml(summaryFor(en))}</div>` +
-    `<dl class="mi-fields">` +
-    (en.seq != null ? `<dt>seq</dt><dd>${en.seq}</dd>` : "") +
-    (id ? `<dt>id</dt><dd class="mono">${escHtml(String(id).slice(0, 24))}…</dd>` : "") +
-    `</dl>` +
+    (nd.title ? `<div class="mi-title">${escHtml(nd.title)}</div>` : "") +
+    `<div class="mi-sum">${escHtml(nd.sum || t.sum)}</div>` +
+    `<dl class="mi-fields">${rows.join("")}</dl>` +
     (detail ? `<pre class="mi-detail">${escHtml(detail).slice(0, 1200)}</pre>` : "");
   box.querySelector(".mi-close").onclick = () => { box.hidden = true; };
 }
 
 let tipEl = null;
-function showTip(e, en) {
+function showTip(e, nd) {
   if (!tipEl) tipEl = document.getElementById("mindTip");
   if (!tipEl) return;
+  const t = TYPES[nd.type] || TYPES.system;
   tipEl.hidden = false;
-  tipEl.textContent = `${en.kind || "entry"}${en.seq != null ? " · seq " + en.seq : ""} — click to inspect`;
+  tipEl.textContent = `${t.label}${nd.title ? " · " + nd.title : ""} — click to inspect`;
   const rect = renderer.domElement.getBoundingClientRect();
   tipEl.style.left = (e.clientX - rect.left + 12) + "px";
   tipEl.style.top = (e.clientY - rect.top + 12) + "px";
@@ -201,48 +273,129 @@ function escHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function placeNodes(entries) {
+/* ---------- graph construction (all real data) ---------- */
+const MAX_TIMELINE = 140; // newest entries win; keeps huge sessions smooth
+
+function makeNodeMesh(nd, p, size) {
+  const mat = new THREE.MeshBasicMaterial({ color: nd.color, transparent: true, opacity: 1 });
+  const node = new THREE.Mesh(new THREE.SphereGeometry(size, 16, 16), mat);
+  node.position.copy(p);
+  node.userData = nd;
+  nodesGroup.add(node);
+  nodeMeshes.push(node);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial(
+    { map: glowTex, color: nd.color, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.8 }));
+  halo.scale.set(1.1, 1.1, 1);
+  halo.position.copy(p);
+  nodesGroup.add(halo);
+  node.userData._halo = halo;
+  pulses.push({ halo, phase: nodeMeshes.length * 0.6, err: nd.type === "error" });
+  return node;
+}
+
+function line(a, b, color, opacity) {
+  nodesGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([a, b]),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity })));
+}
+
+// Build the whole graph: lifecycle helix + context ring + edges.
+// `timeline` = unified node records, `ctx` = { provider, live, tools, replayOk }.
+function buildGraph(timeline, ctx, newFromIdx) {
   clearNodes();
-  pulses = [];
-  chainCurve = null;
-  signal = null;
-  const n = entries.length || 1;
-  const R = 5.4, step = 0.6;
+
+  // ---- lifecycle helix ----
+  const visible = timeline.filter((nd) => filters[nd.type] !== false);
+  const n = visible.length || 1;
+  const R = 5.4, step = Math.min(0.6, 9 / n);
   const pts = [];
-  entries.forEach((e, i) => {
+  visible.forEach((nd, i) => {
     const a = i * 0.7;
-    const y = (i - (n - 1) / 2) * step;
-    const p = new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R);
+    const p = new THREE.Vector3(Math.cos(a) * R, (i - (n - 1) / 2) * step, Math.sin(a) * R);
     pts.push(p);
-    const col = colorFor(e.kind);
-    const node = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 16, 16),
-      new THREE.MeshBasicMaterial({ color: col }));
-    node.position.copy(p);
-    node.userData = e; // the ledger entry — makes the node inspectable
-    nodesGroup.add(node);
-    nodeMeshes.push(node);
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial(
-      { map: glowTex, color: col, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.8 }));
-    halo.scale.set(1.1, 1.1, 1);
-    halo.position.copy(p);
-    nodesGroup.add(halo);
-    // Each node fires on its own phase, so the graph pulses like a network.
-    pulses.push({ halo, phase: i * 0.6 });
+    const mesh = makeNodeMesh(nd, p, nd.type === "commit" || nd.type === "error" ? 0.2 : 0.16);
+    if (nd.idx != null && newFromIdx != null && nd.idx >= newFromIdx) {
+      mesh.scale.set(0.01, 0.01, 0.01);
+      spawnQueue.push({ mesh, t0: clock });
+    }
+    activeMesh = mesh; // ends on the newest visible node
   });
+
   if (pts.length > 1) {
-    // Synapse lines between consecutive entries (the governed chain).
+    // Synapse line along the governed chain + a signal that travels it.
     nodesGroup.add(new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color: 0x8a7fe0, transparent: true, opacity: 0.5 })));
-    // A signal that propagates along the chain — intent → proposal → commit.
     chainCurve = new THREE.CatmullRomCurve3(pts);
     signal = new THREE.Sprite(new THREE.SpriteMaterial(
-      { map: glowTex, color: CYAN, transparent: true, blending: THREE.AdditiveBlending, opacity: 0.95 }));
+      { map: glowTex, color: runStatus === "failed" ? RED : CYAN, transparent: true,
+        blending: THREE.AdditiveBlending, opacity: 0.95 }));
     signal.scale.set(0.9, 0.9, 1);
     nodesGroup.add(signal);
   }
+
+  // ---- context ring: provider, tools actually used, replay verdict ----
+  const ctxNodes = [];
+  if (ctx.provider) {
+    ctxNodes.push({
+      type: "provider", title: ctx.provider, run: currentRunId,
+      sum: `${TYPES.provider.sum} ${ctx.live ? "Answering with a real model." : "Mock — deterministic, offline."}`,
+      detail: `provider: ${ctx.provider}\nmode: ${ctx.live ? "live model" : "mock"}`,
+    });
+  }
+  for (const tool of ctx.tools) {
+    ctxNodes.push({
+      type: "tool", title: tool, tool, run: currentRunId,
+      detail: `tool: ${tool}\nEvery invocation was checked against the run's writ before executing.`,
+    });
+  }
+  if (ctx.replayOk) {
+    ctxNodes.push({
+      type: "replay", title: "replay verified", run: currentRunId,
+      detail: "verify: thymos replay " + currentRunId,
+    });
+  }
+
+  const RC = 7.6;
+  ctxNodes.forEach((nd, i) => {
+    const a = (i / Math.max(ctxNodes.length, 1)) * Math.PI * 2 + 0.5;
+    nd.color = (TYPES[nd.type] || TYPES.system).color;
+    const p = new THREE.Vector3(Math.cos(a) * RC, ((i % 3) - 1) * 1.4, Math.sin(a) * RC);
+    makeNodeMesh(nd, p, 0.26);
+    const lbl = labelSprite(nd.title, hex(nd.color));
+    lbl.position.set(p.x, p.y - 0.65, p.z);
+    nodesGroup.add(lbl);
+    // Tether to the core (the run itself).
+    line(new THREE.Vector3(0, 0, 0), p, nd.color, 0.18);
+    // Tool nodes also connect to the lifecycle entries that used them.
+    if (nd.type === "tool") {
+      let edges = 0;
+      visible.forEach((tnd, j) => {
+        if (tnd.tool === nd.tool && edges < 14) {
+          line(p, pts[j], nd.color, 0.14);
+          edges++;
+        }
+      });
+    }
+  });
+
+  applySearchDim();
 }
+
+// Search never rebuilds geometry — it just dims non-matching nodes in place.
+function applySearchDim() {
+  const q = searchQ.trim().toLowerCase();
+  for (const m of nodeMeshes) {
+    const nd = m.userData;
+    const hay = `${nd.type} ${nd.title || ""} ${nd.tool || ""} ${nd.detail || ""}`.toLowerCase();
+    const hit = !q || hay.includes(q);
+    m.material.opacity = hit ? 1 : 0.12;
+    if (nd._halo) nd._halo.material.opacity = hit ? 0.8 : 0.05;
+  }
+}
+
+/* ---------- data loading (the runtime's own endpoints) ---------- */
+let prevMaxIdx = -1;
 
 async function loadRun(idRaw) {
   let id = (idRaw || "").trim();
@@ -259,35 +412,72 @@ async function loadRun(idRaw) {
     }
     if (!id) return;
     const changedRun = id !== currentRunId;
+    if (changedRun) prevMaxIdx = -1;
     currentRunId = id;
-    const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
-    const entries = Array.isArray(data) ? data : data.entries || [];
-    // Rebuild when the run changed or its entry count grew, so live polling
-    // doesn't restart the animation every tick — new entries just grow the graph.
-    if (changedRun || entries.length !== lastCount) {
-      lastCount = entries.length;
-      placeNodes(entries);
+
+    // Live session log (rich: phases, tools, errors, timestamps). Falls back
+    // to the ledger's audit entries for runs restored without a session.
+    let snap = null;
+    try { snap = await (await fetch(`${BASE}/runs/${id}/execution`)).json(); } catch (_) {}
+    let timeline = [];
+    if (snap?.log?.length > 1) {
+      timeline = snap.log.map((e) => ({
+        idx: e.idx, type: classifyLog(e), title: e.title, detail: e.detail,
+        time: e.timestamp_ms, step: e.step_index, tool: e.tool || null,
+        run: id, color: 0,
+      }));
+    } else {
+      const data = await (await fetch(`${BASE}/audit/entries?run_id=${encodeURIComponent(id)}`)).json();
+      const entries = Array.isArray(data) ? data : data.entries || [];
+      timeline = entries.map((en, i) => ({
+        idx: i, type: classifyAudit(en), title: en.kind, detail: en.detail,
+        seq: en.seq, id: en.commit_id || en.id, run: id, color: 0,
+      }));
     }
+    timeline = timeline.slice(-MAX_TIMELINE);
+    timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
+
+    runStatus = snap?.status || "";
+
+    // Context: provider/mode, the tools this run actually used, replay verdict.
+    let health = null, replay = null;
+    try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
+    try {
+      const r = await fetch(`${BASE}/runs/${id}/replay`);
+      if (r.ok) replay = await r.json();
+    } catch (_) {}
+    const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
+    const ctx = {
+      provider: health?.default_provider || "",
+      live: !!health?.cognition_live,
+      tools,
+      replayOk: !!replay,
+    };
+
+    // Rebuild when the run, entry count, or filters changed — live polling
+    // otherwise leaves the scene untouched so motion stays continuous.
+    const filterKey = JSON.stringify(filters);
+    const maxIdx = timeline.length ? timeline[timeline.length - 1].idx : -1;
+    if (changedRun || timeline.length !== lastCount || filterKey !== lastFilterKey) {
+      lastCount = timeline.length;
+      lastFilterKey = filterKey;
+      buildGraph(timeline, ctx, changedRun ? null : prevMaxIdx + 1);
+      prevMaxIdx = maxIdx;
+    }
+
     const el = document.getElementById("mindRunId");
-    if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${entries.length} entries`;
-    await renderRunState(id);
+    if (el && !el.value) el.placeholder = `${id.slice(0, 8)} · ${timeline.length} events`;
+    renderRunState(id, snap, health, replay);
   } catch (_) { /* runtime not up yet — the cage still renders */ }
 }
 
 // The live strip above the canvas: the run's real status, the runtime's
 // current operator state, provider/model, governed counters, and the replay
 // verdict — every field read from the runtime, none decorative.
-async function renderRunState(id) {
+function renderRunState(id, snap, health, replay) {
   const box = document.getElementById("mindState");
   if (!box) return;
-  let snap = null, health = null, replay = null;
-  try { snap = await (await fetch(`${BASE}/runs/${id}/execution`)).json(); } catch (_) {}
-  try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
-  try {
-    const r = await fetch(`${BASE}/runs/${id}/replay`);
-    if (r.ok) replay = await r.json();
-  } catch (_) {}
-  if (!snap) { box.hidden = true; return; }
+  if (!snap || !snap.status) { box.hidden = true; return; }
   const st = snap.status || "?";
   const stCls = st === "completed" ? "ok" : (st === "failed" ? "bad" : "warn");
   const c = snap.counters || {};
@@ -314,6 +504,7 @@ async function renderRunState(id) {
   box.hidden = false;
 }
 
+/* ---------- animation ---------- */
 function frame() {
   raf = requestAnimationFrame(frame);
   clock += 0.016;
@@ -325,17 +516,39 @@ function frame() {
   cage.rotation.y -= 0.0011;
   cage.rotation.z += 0.0007;
 
-  // Pulse each node halo on its own phase (neural firing).
+  // Pulse each node halo on its own phase (neural firing). Errors burn hotter.
   for (const p of pulses) {
-    const s = 1.1 + 0.45 * (0.5 + 0.5 * Math.sin(clock * 2.4 + p.phase));
+    const amp = p.err ? 0.8 : 0.45;
+    const s = 1.1 + amp * (0.5 + 0.5 * Math.sin(clock * 2.4 + p.phase));
     p.halo.scale.set(s, s, 1);
   }
-  // Propagate a signal along the chain.
+  // New nodes scale in — work appearing as it happens.
+  spawnQueue = spawnQueue.filter((sp) => {
+    const k = Math.min((clock - sp.t0) / 0.45, 1);
+    const e = 1 - Math.pow(1 - k, 3); // ease-out
+    sp.mesh.scale.set(e, e, e);
+    return k < 1;
+  });
+  // The newest node breathes while the run is live — "this is where I am".
+  if (activeMesh && (runStatus === "running" || runStatus === "waiting_approval")) {
+    const s = 1 + 0.5 * (0.5 + 0.5 * Math.sin(clock * 5));
+    activeMesh.scale.set(s, s, s);
+  }
+  // Propagate a signal along the chain: fast while thinking, calm when the
+  // run has stabilized, halted (red) on failure.
   if (chainCurve && signal) {
-    const t = (clock * 0.07) % 1;
-    chainCurve.getPointAt(t, signal.position);
-    const s = 0.7 + 0.5 * Math.sin(clock * 6);
-    signal.scale.set(s, s, 1);
+    const speed = runStatus === "running" || runStatus === "waiting_approval" ? 0.14
+      : runStatus === "failed" ? 0 : 0.05;
+    if (speed > 0) {
+      const t = (clock * speed) % 1;
+      chainCurve.getPointAt(t, signal.position);
+      const s = 0.7 + 0.5 * Math.sin(clock * 6);
+      signal.scale.set(s, s, 1);
+    } else {
+      // Failure: the signal parks on the last node, burning red.
+      chainCurve.getPointAt(1, signal.position);
+      signal.scale.set(1.2, 1.2, 1);
+    }
   }
   renderer.render(scene, camera);
 }
@@ -355,7 +568,7 @@ function stop() {
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = 0; }
 }
 
-// Wire the Mind tab: lazy-init + render only while visible (saves CPU).
+/* ---------- wiring: tab, controls, filters, search ---------- */
 window.addEventListener("DOMContentLoaded", () => {
   const mindTab = document.querySelector('.tab[data-tab="mind"]');
   if (!mindTab) return;
@@ -368,4 +581,19 @@ window.addEventListener("DOMContentLoaded", () => {
     t.addEventListener("click", stop));
   document.getElementById("mindLoad")?.addEventListener("click", () =>
     loadRun(document.getElementById("mindRunId")?.value));
+
+  // Legend doubles as a filter bar — click a type to hide/show it.
+  document.querySelectorAll(".mind-legend .lg[data-type]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const ty = b.dataset.type;
+      filters[ty] = !filters[ty];
+      b.classList.toggle("off", !filters[ty]);
+      if (currentRunId) loadRun(currentRunId);
+    });
+  });
+  // Search dims non-matching nodes in place (no geometry rebuild).
+  document.getElementById("mindSearch")?.addEventListener("input", (e) => {
+    searchQ = e.target.value || "";
+    applySearchDim();
+  });
 });

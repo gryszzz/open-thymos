@@ -103,15 +103,17 @@
         <div class="panel-head">
           <h2>Mind — reasoning in 3D</h2>
           <div class="mind-controls">
-            <input id="mindRunId" placeholder="run id (blank = latest)" />
+            <input id="mindRunId" placeholder="run id (blank = current chat)" />
+            <input id="mindSearch" placeholder="search nodes…" />
             <button id="mindLoad" class="ghost">Visualize</button>
           </div>
         </div>
         <p class="tab-intro">
-          A live map of the run's reasoning — each node is a real ledger entry
-          (intent, proposal, commit, rejection, suspension), wired in the order
-          they happened. It's the <b>Intent → Proposal → Commit</b> spine made
-          visible; click any node to see exactly what it was.
+          The runtime's active mind — every node is a real runtime event
+          (intent, proposal, grant, execution, commit, error) plus the context
+          the run actually used (provider, tools, replay). It's the
+          <b>Intent → Proposal → Commit</b> spine made visible; click any node
+          to see exactly what it was, click a legend type to filter it.
         </p>
         <div id="mindState" class="mind-state" hidden></div>
         <div class="mind-stage">
@@ -119,13 +121,15 @@
           <div id="mindTip" class="mind-tip" hidden></div>
           <div id="mindInspector" class="mind-inspector" hidden></div>
         </div>
-        <p class="hint mind-hint">Click any node to inspect it — its kind, sequence, id, and what it represents in <b>Intent → Proposal → Commit</b>. Drag to orbit · scroll to zoom.</p>
+        <p class="hint mind-hint">Click any node to inspect it — what it was, when, with which tool, in which run. Drag to orbit · scroll to zoom · click a legend type to filter.</p>
         <div class="mind-legend">
-          <span class="lg cyan">◆ intent</span>
-          <span class="lg violet">▸ proposal</span>
-          <span class="lg green">✓ commit</span>
-          <span class="lg red">✕ rejected</span>
-          <span class="lg amber">⏸ suspended</span>
+          <button type="button" class="lg cyan" data-type="intent">◆ intent</button>
+          <button type="button" class="lg violet" data-type="proposal">▸ proposal</button>
+          <button type="button" class="lg amber" data-type="grant">⏸ grant</button>
+          <button type="button" class="lg blue" data-type="execution">▣ execution</button>
+          <button type="button" class="lg green" data-type="commit">✓ commit</button>
+          <button type="button" class="lg red" data-type="error">✕ error</button>
+          <button type="button" class="lg dim off" data-type="system">· system</button>
         </div>
       </section>
 
