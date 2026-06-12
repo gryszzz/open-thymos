@@ -523,3 +523,39 @@ body.advanced .adv-only { display: revert; }
 .ws-actions { display: flex; gap: 8px; margin-top: 10px; }
 .answer.streaming { opacity: 0.92; border-left: 2px solid var(--violet); }
 .answer.streaming::after { content: "▍"; animation: ma-blink 1s steps(1) infinite; color: var(--violet); }
+
+/* Claude-style composer: + button, slash palette, attachments, mode pill */
+.mode-row { display: none; } /* superseded by the composer mode pill + slash commands */
+.composer { position: relative; }
+.composer-plus {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px;
+  font-size: 20px; line-height: 1; background: var(--surface-2, #1b1230);
+  border: 1px solid var(--line); color: var(--muted); cursor: pointer;
+}
+.composer-plus:hover { color: var(--text); border-color: var(--violet); }
+.mode-pill {
+  flex: 0 0 auto; align-self: center; font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; text-transform: lowercase;
+  background: rgba(124,92,255,.16); color: var(--violet-soft, #b998ff);
+  border: 1px solid var(--violet); cursor: default;
+}
+.mode-pill.mode-plan { background: rgba(69,224,255,.14); color: var(--cyan); border-color: var(--cyan); }
+.mode-pill.mode-edit { background: rgba(106,176,255,.14); color: #6ab0ff; border-color: #6ab0ff; }
+.attach-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  padding: 4px 8px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line);
+}
+.attach-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0; }
+.slash-menu, .plus-menu {
+  position: absolute; bottom: 100%; left: 0; margin-bottom: 8px; z-index: 20;
+  background: rgba(17,13,34,.98); border: 1px solid var(--line-2, var(--line));
+  border-radius: 10px; box-shadow: 0 10px 34px rgba(0,0,0,.5); overflow: hidden; min-width: 280px;
+}
+.slash-menu button, .plus-menu button {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  background: none; border: none; color: var(--text); padding: 9px 13px; cursor: pointer; font: inherit;
+}
+.slash-menu button:hover, .plus-menu button:hover { background: rgba(255,255,255,.05); }
+.slash-menu b { color: var(--violet-soft, #b998ff); font-family: ui-monospace, Menlo, monospace; }
+.slash-menu span { color: var(--muted); font-size: 12px; }

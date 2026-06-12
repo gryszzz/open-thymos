@@ -143,6 +143,57 @@ fn streaming_enabled(app: &tauri::AppHandle) -> bool {
 fn get_streaming(app: tauri::AppHandle) -> bool {
     streaming_enabled(&app)
 }
+/// Pick a file and return {name, content} (text only, capped). The agent gets
+/// the content as message context — host-side read so the webview CSP isn't
+/// involved. Binary/oversized files are rejected with a clear message.
+#[tauri::command]
+fn attach_file() -> Result<serde_json::Value, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Attach a file as context")
+        .pick_file()
+    else {
+        return Ok(serde_json::json!(null)); // cancelled
+    };
+    const MAX: u64 = 512 * 1024;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("stat: {e}"))?;
+    if meta.len() > MAX {
+        return Err(format!("file is too large ({} KB; max 512 KB)", meta.len() / 1024));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("read: {e}"))?;
+    let content = String::from_utf8(bytes)
+        .map_err(|_| "file isn't UTF-8 text (binary files aren't supported)".to_string())?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(serde_json::json!({ "name": name, "content": content }))
+}
+
+/// Fetch a web page's text host-side (the webview CSP can't reach arbitrary
+/// URLs). Returns {url, content} with HTML stripped to readable text, capped.
+#[tauri::command]
+fn fetch_web(url: String) -> Result<serde_json::Value, String> {
+    let url = url.trim();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("enter a full URL starting with http:// or https://".into());
+    }
+    let resp = ureq::get(url)
+        .timeout(std::time::Duration::from_secs(15))
+        .call()
+        .map_err(|e| format!("couldn't fetch: {e}"))?;
+    let raw = resp.into_string().map_err(|e| format!("read body: {e}"))?;
+    // Crude tag strip → readable text, capped so it can't blow the prompt.
+    let mut text = String::with_capacity(raw.len() / 2);
+    let mut in_tag = false;
+    for c in raw.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(12_000).collect();
+    Ok(serde_json::json!({ "url": url, "content": text }))
+}
+
 #[tauri::command]
 fn set_streaming(app: tauri::AppHandle, on: bool) -> Result<(), String> {
     if let Some(p) = streaming_path(&app) {
@@ -530,7 +581,9 @@ pub fn run() {
             pick_workspace,
             clear_workspace,
             get_streaming,
-            set_streaming
+            set_streaming,
+            attach_file,
+            fetch_web
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.
