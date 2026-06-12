@@ -103,6 +103,9 @@ pub struct ExecutionSession {
     /// Cleared when the turn resolves into the final answer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partial_answer: Option<String>,
+    /// Provider-reported token usage accumulated across this run's steps.
+    pub tokens_in: u64,
+    pub tokens_out: u64,
     pub counters: ExecutionCounters,
     pub updated_at_ms: u64,
     pub log: Vec<ExecutionLogEntry>,
@@ -125,6 +128,8 @@ impl ExecutionSession {
             final_answer: None,
             pending_channel: None,
             partial_answer: None,
+            tokens_in: 0,
+            tokens_out: 0,
             counters: ExecutionCounters::default(),
             updated_at_ms: now_ms(),
             log: Vec::new(),
@@ -509,6 +514,17 @@ impl ExecutionSession {
                     None,
                     None,
                 );
+            }
+            AgentTraceEvent::UsageUpdated {
+                input_tokens,
+                output_tokens,
+                ..
+            } => {
+                // Accumulate provider-reported tokens; no log entry (it would
+                // be noise) — the live strip reads the totals.
+                self.tokens_in += input_tokens;
+                self.tokens_out += output_tokens;
+                self.updated_at_ms = now_ms();
             }
             AgentTraceEvent::RunFinished {
                 trajectory_id,

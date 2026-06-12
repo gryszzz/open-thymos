@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "thymos-desktop"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "rfd",
  "serde",

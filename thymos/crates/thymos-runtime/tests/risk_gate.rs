@@ -121,6 +121,21 @@ fn at_threshold_suspends() {
         }
         other => panic!("expected suspension, got {other:?}"),
     }
+    // The ledger's pending_approval entry must expose the full proposed plan
+    // at payload.PendingApproval.proposal.body.plan — the desktop's approval
+    // card reads exactly this path to render the concrete action (diff/cmd).
+    let entries = rt
+        .ledger
+        .query_entries(None, Some("pending_approval"), None, None, Some(10))
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    let v = serde_json::to_value(&entries[0].payload).unwrap();
+    assert_eq!(v["type"].as_str(), Some("pending_approval"));
+    assert_eq!(
+        v.pointer("/proposal/body/plan/tool").and_then(|t| t.as_str()),
+        Some("risky_write")
+    );
+    assert!(v.pointer("/proposal/body/plan/args").is_some());
 }
 
 #[test]

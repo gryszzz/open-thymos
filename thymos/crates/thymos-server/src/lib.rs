@@ -486,9 +486,7 @@ fn compose_agent_task(task: &str, history: &[HistoryTurn]) -> String {
     if history.is_empty() {
         return task.to_string();
     }
-    let mut turns: Vec<String> = Vec::new();
-    let mut used = 0usize;
-    for t in history.iter().rev().take(MAX_HISTORY_TURNS) {
+    let render = |t: &HistoryTurn| {
         let role = if t.role.eq_ignore_ascii_case("assistant") {
             "assistant"
         } else {
@@ -498,21 +496,35 @@ fn compose_agent_task(task: &str, history: &[HistoryTurn]) -> String {
         if t.text.trim().chars().count() > MAX_HISTORY_TURN_CHARS {
             text.push('…');
         }
-        let line = format!("{role}: {text}");
+        format!("{role}: {text}")
+    };
+    // Anchor + recency: the FIRST turn usually states what the conversation is
+    // about, so reserve it; then fill the remaining budget with the newest
+    // turns. Long conversations keep both their topic and their present.
+    let anchor = render(&history[0]);
+    let mut used = anchor.len();
+    let mut turns: Vec<String> = Vec::new();
+    for t in history.iter().skip(1).rev().take(MAX_HISTORY_TURNS) {
+        let line = render(t);
         if used + line.len() > MAX_HISTORY_CHARS {
             break;
         }
         used += line.len();
         turns.push(line);
     }
-    if turns.is_empty() {
-        return task.to_string();
-    }
     turns.reverse();
+    let gap = history.len() > turns.len() + 1;
+    let mut body = anchor;
+    if gap {
+        body.push_str("\n[… earlier turns omitted …]");
+    }
+    if !turns.is_empty() {
+        body.push('\n');
+        body.push_str(&turns.join("\n"));
+    }
     format!(
         "## Conversation so far (context only — answer the current message)\n{}\n\n## Current message\n{}",
-        turns.join("\n"),
-        task
+        body, task
     )
 }
 
@@ -3206,15 +3218,18 @@ mod history_tests {
     }
 
     #[test]
-    fn history_is_capped_keeping_newest() {
-        // 40 long turns blow the budget; the newest must survive.
+    fn history_is_capped_keeping_anchor_and_newest() {
+        // 40 long turns blow the budget; the FIRST (topic anchor) and the
+        // newest survive, the middle is dropped with an omission marker.
         let h: Vec<HistoryTurn> = (0..40)
             .map(|i| turn("user", &format!("turn-{i} {}", "x".repeat(900))))
             .collect();
         let out = compose_agent_task("t", &h);
-        assert!(out.len() < MAX_HISTORY_CHARS + 200);
-        assert!(out.contains("turn-39"));
-        assert!(!out.contains("turn-0 "));
+        assert!(out.len() < MAX_HISTORY_CHARS + 1200);
+        assert!(out.contains("turn-0 "), "anchor turn kept");
+        assert!(out.contains("turn-39"), "newest turn kept");
+        assert!(!out.contains("turn-5 "), "middle dropped");
+        assert!(out.contains("earlier turns omitted"));
     }
 
     #[test]

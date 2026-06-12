@@ -174,6 +174,36 @@ fn fetch_web(url: String) -> Result<serde_json::Value, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("enter a full URL starting with http:// or https://".into());
     }
+    // Basic SSRF guard: this fetch is user-initiated, but content it returns
+    // becomes model context — block loopback/private/link-local targets so a
+    // pasted link can't read the local runtime or LAN services.
+    let host = url
+        .split("://")
+        .nth(1)
+        .unwrap_or("")
+        .split(['/', ':', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let private = host == "localhost"
+        || host.ends_with(".local")
+        || host.starts_with("127.")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("169.254.")
+        || host == "0.0.0.0"
+        || host == "::1"
+        || host == "[::1]"
+        || (host.starts_with("172.")
+            && host
+                .split('.')
+                .nth(1)
+                .and_then(|o| o.parse::<u8>().ok())
+                .map(|o| (16..=31).contains(&o))
+                .unwrap_or(false));
+    if private {
+        return Err("local/private addresses can't be attached as web context".into());
+    }
     let resp = ureq::get(url)
         .timeout(std::time::Duration::from_secs(15))
         .call()

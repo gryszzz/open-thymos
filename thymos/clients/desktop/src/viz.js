@@ -109,6 +109,7 @@ function labelSprite(text, cssColor) {
   return s;
 }
 const hex = (n) => "#" + n.toString(16).padStart(6, "0");
+const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n || 0));
 
 function init() {
   const container = document.getElementById("mindCanvas");
@@ -681,6 +682,9 @@ function renderRunState(id, snap, health, replay) {
       : "",
     `<span><span class="ms-label">commits</span><span class="ms-val">${c.commits ?? 0}</span></span>`,
     `<span><span class="ms-label">rejections</span><span class="ms-val">${c.rejections ?? 0}</span></span>`,
+    (snap.tokens_in || snap.tokens_out)
+      ? `<span><span class="ms-label">tokens</span><span class="ms-val">${fmtK(snap.tokens_in)}↑ ${fmtK(snap.tokens_out)}↓</span></span>`
+      : "",
     (c.approvals_pending ?? 0) > 0
       ? `<span class="badge warn">⏸ ${c.approvals_pending} awaiting approval</span>`
       : "",

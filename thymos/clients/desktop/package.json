@@ -1,6 +1,6 @@
 {
   "name": "thymos-desktop",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "description": "OpenThymos Desktop — governed-cognition runtime, install once.",
   "scripts": {
