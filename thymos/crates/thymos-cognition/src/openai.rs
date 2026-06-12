@@ -471,9 +471,18 @@ impl OpenAiCognition {
         // tool_calls accumulated by index: (id, name, arguments-string).
         let mut tcs: Vec<(String, String, String)> = Vec::new();
 
+        // Hard cap so a runaway/never-terminating stream can't pin memory —
+        // generous (~4MB of streamed text) but bounded; tripping it aborts the
+        // stream and the caller falls back to the sync path.
+        const MAX_STREAM_BYTES: usize = 4 * 1024 * 1024;
+        let mut seen_bytes = 0usize;
         let reader = std::io::BufReader::new(resp);
         for line in reader.lines() {
             let line = line.map_err(|e| Error::Other(format!("stream read: {e}")))?;
+            seen_bytes += line.len();
+            if seen_bytes > MAX_STREAM_BYTES {
+                return Err(Error::Other("openai stream exceeded size cap".into()));
+            }
             let data = match line.strip_prefix("data:") {
                 Some(d) => d.trim(),
                 None => continue,
