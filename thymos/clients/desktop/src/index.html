@@ -465,6 +465,22 @@
           </div>
 
           <div class="card">
+            <h3>Working folder</h3>
+            <p class="note">
+              The folder the agent may read, search, and edit. Without one, its
+              file tools have nowhere to work. Changing it applies on the next
+              runtime restart.
+            </p>
+            <div class="ledger-path-row">
+              <code id="advWorkspace" class="path">— none chosen —</code>
+            </div>
+            <div class="ws-actions">
+              <button type="button" id="pickWorkspace">Choose folder…</button>
+              <button type="button" id="clearWorkspace" class="ghost">Clear</button>
+            </div>
+          </div>
+
+          <div class="card">
             <h3>Ledger &amp; debug</h3>
             <div class="ledger-path-row">
               <span class="dim">ledger file</span>

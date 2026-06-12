@@ -1460,6 +1460,25 @@ pub struct SandboxConfig {
     pub isolate_home: bool,
 }
 
+/// The directory file/shell tools are confined to. Prefers an explicit
+/// `THYMOS_WORKSPACE` (the folder the operator chose — e.g. via the desktop's
+/// "working folder" picker) so the agent can actually act on the user's
+/// project; falls back to the process cwd. This is what makes the coding tools
+/// useful instead of confined to wherever the runtime happened to launch.
+pub fn workspace_roots() -> Vec<String> {
+    if let Some(ws) = std::env::var("THYMOS_WORKSPACE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        return vec![ws];
+    }
+    std::env::current_dir()
+        .ok()
+        .map(|p| vec![p.display().to_string()])
+        .unwrap_or_default()
+}
+
 impl Default for SandboxConfig {
     fn default() -> Self {
         SandboxConfig {
@@ -1475,10 +1494,7 @@ impl Default for SandboxConfig {
                 ":(){".into(), // fork bomb
             ],
             worker_bin: std::env::var("THYMOS_WORKER_BIN").ok(),
-            allowed_roots: std::env::current_dir()
-                .ok()
-                .map(|p| vec![p.display().to_string()])
-                .unwrap_or_default(),
+            allowed_roots: workspace_roots(),
             isolate_home: true,
         }
     }
@@ -2455,6 +2471,17 @@ impl ToolRegistry {
 #[cfg(test)]
 mod secure_tool_fabric_tests {
     use super::*;
+
+    #[test]
+    fn workspace_roots_prefers_env_then_cwd() {
+        // Serialized via a unique value; env is process-global so just set+clear.
+        std::env::set_var("THYMOS_WORKSPACE", "/tmp/thymos-ws-test");
+        assert_eq!(workspace_roots(), vec!["/tmp/thymos-ws-test".to_string()]);
+        std::env::set_var("THYMOS_WORKSPACE", "  ");
+        // Blank/whitespace is ignored → falls back to cwd (non-empty here).
+        assert!(!workspace_roots().is_empty());
+        std::env::remove_var("THYMOS_WORKSPACE");
+    }
 
     #[test]
     fn shell_rejects_forbidden_sequence() {

@@ -105,8 +105,36 @@ async function loadAdvanced() {
     try { lp.textContent = (await invoke("ledger_path")) || "(runtime not started yet)"; }
     catch (_) { lp.textContent = "—"; }
   }
+  // Working folder: the agent's sandbox root.
+  const ws = $("advWorkspace");
+  if (ws && invoke) {
+    try { const w = await invoke("get_workspace"); ws.textContent = w || "— none chosen —"; }
+    catch (_) { ws.textContent = "—"; }
+  }
 }
 $("refreshAdvanced")?.addEventListener("click", loadAdvanced);
+$("pickWorkspace")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  try {
+    const chosen = await invoke("pick_workspace");
+    if (chosen) {
+      $("advWorkspace").textContent = chosen;
+      // Restart the runtime so the new root takes effect, then resync.
+      try { await invoke("stop_runtime"); } catch (_) {}
+      try { await invoke("start_runtime"); } catch (_) {}
+      setTimeout(() => { refreshStatus(); loadAdvanced(); }, 1500);
+    }
+  } catch (e) { alert("Could not set folder: " + e); }
+});
+$("clearWorkspace")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  try {
+    await invoke("clear_workspace");
+    $("advWorkspace").textContent = "— none chosen —";
+    try { await invoke("stop_runtime"); await invoke("start_runtime"); } catch (_) {}
+    setTimeout(() => refreshStatus(), 1500);
+  } catch (_) {}
+});
 
 /* ---------- Advanced Mode ---------- */
 // Off by default: normal users never see raw runtime data, schemas, writs, or

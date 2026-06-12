@@ -87,6 +87,50 @@ fn load_provider_config(app: &tauri::AppHandle) -> ProviderConfig {
         .unwrap_or_default()
 }
 
+/// File holding the operator-chosen working folder (the agent's sandbox root).
+fn workspace_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("workspace.txt"))
+}
+fn load_workspace(app: &tauri::AppHandle) -> Option<String> {
+    workspace_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && std::path::Path::new(s).is_dir())
+}
+
+/// Current working folder the agent is allowed to read/edit (empty = none yet).
+#[tauri::command]
+fn get_workspace(app: tauri::AppHandle) -> String {
+    load_workspace(&app).unwrap_or_default()
+}
+
+/// Open a native folder picker; persist + return the chosen path (empty if the
+/// user cancelled). Changing it takes effect on the next runtime (re)start.
+#[tauri::command]
+fn pick_workspace(app: tauri::AppHandle) -> Result<String, String> {
+    let Some(dir) = rfd::FileDialog::new()
+        .set_title("Choose the folder OpenThymos may read and edit")
+        .pick_folder()
+    else {
+        return Ok(String::new()); // cancelled
+    };
+    let path = dir.display().to_string();
+    if let Some(p) = workspace_path(&app) {
+        let _ = std::fs::create_dir_all(p.parent().unwrap());
+        std::fs::write(&p, &path).map_err(|e| format!("save workspace: {e}"))?;
+    }
+    Ok(path)
+}
+
+/// Forget the working folder (the agent falls back to no project root).
+#[tauri::command]
+fn clear_workspace(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(p) = workspace_path(&app) {
+        let _ = std::fs::remove_file(p);
+    }
+    Ok(())
+}
+
 /// Inject the stored provider as env vars on the runtime child. Anthropic uses
 /// its dedicated key/base-URL vars; everything else (native `openai` plus every
 /// OpenAI-compatible preset) resolves the generic `OPENAI_API_KEY` /
@@ -224,6 +268,12 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     let mut cmd = Command::new(&bin);
     cmd.env("THYMOS_LEDGER_PATH", &ledger_path);
     cmd.env("THYMOS_TOOL_MANIFEST_DIRS", &tools_dir);
+    // The agent's working folder: file/shell tools are confined to it. Without
+    // one the tools fall back to the runtime's cwd (not useful), so a chosen
+    // folder is what makes "read/edit my project" actually work.
+    if let Some(ws) = load_workspace(&app) {
+        cmd.env("THYMOS_WORKSPACE", ws);
+    }
     apply_provider_env(&mut cmd, &load_provider_config(&app));
     let child = cmd
         .spawn()
@@ -447,7 +497,10 @@ pub fn run() {
             discover_models,
             save_tool,
             list_tool_manifests,
-            delete_tool_manifest
+            delete_tool_manifest,
+            get_workspace,
+            pick_workspace,
+            clear_workspace
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.

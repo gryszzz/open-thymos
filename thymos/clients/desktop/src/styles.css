@@ -520,3 +520,4 @@ body.advanced .adv-only { display: revert; }
 .ma-pulse { background: var(--violet); animation: ma-blink 1.1s ease-in-out infinite; }
 @keyframes ma-blink { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
 @media (max-width: 760px) { .mind-activity { display: none; } }
+.ws-actions { display: flex; gap: 8px; margin-top: 10px; }
