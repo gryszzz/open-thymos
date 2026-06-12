@@ -100,9 +100,21 @@
                 </p>
               </div>
             </div>
+            <!-- Attached context (files / web pages) as removable chips -->
+            <div id="attachChips" class="attach-chips" hidden></div>
+            <!-- Slash-command palette (appears when the message starts with /) -->
+            <div id="slashMenu" class="slash-menu" hidden></div>
+            <!-- "+" add-content menu -->
+            <div id="plusMenu" class="plus-menu" hidden>
+              <button type="button" data-add="file">📎 Attach file from computer</button>
+              <button type="button" data-add="web">🌐 Add a web page</button>
+              <button type="button" data-add="folder">📁 Set working folder</button>
+            </div>
             <form class="composer" id="composer">
+              <button type="button" id="plusBtn" class="composer-plus" title="Add content">＋</button>
               <textarea id="taskInput" rows="1" autocomplete="off"
-                placeholder="Message OpenThymos…   (Enter to send · Shift+Enter for a new line)"></textarea>
+                placeholder="Message OpenThymos…   ( / for commands · ＋ to attach · Enter to send )"></textarea>
+              <span id="modePill" class="mode-pill" title="Authority — type /auto, /edit, /plan to change">auto</span>
               <button type="button" id="regenBtn" class="ghost" disabled title="Re-run the last task on a fresh trajectory">↻</button>
               <button type="submit" id="sendBtn">Send</button>
               <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>

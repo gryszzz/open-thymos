@@ -328,6 +328,10 @@ function renderModeUI() {
     b.classList.toggle("on", b.dataset.mode === m));
   const grants = $("grants");
   if (grants) grants.hidden = m !== "custom";
+  // The composer pill mirrors the active mode (the chat-rail mode row is now
+  // superseded by this + slash commands).
+  const pill = $("modePill");
+  if (pill) { pill.textContent = m; pill.className = "mode-pill mode-" + m; }
 }
 document.querySelectorAll("#modeRow .mode-chip").forEach((b) =>
   b.addEventListener("click", () => setMode(b.dataset.mode)));
@@ -655,7 +659,7 @@ function pushBubble(text) {
 }
 
 // Start a governed run from a task string. Shared by Send and Regenerate.
-async function startRun(task) {
+async function startRun(task, display) {
   if (!task || activeRunId) return;
   const welcome = feed.querySelector(".welcome");
   if (welcome) welcome.remove();
@@ -663,8 +667,11 @@ async function startRun(task) {
   const skills = selectedSkills();
   const scopes = effectiveScopes();
   lastTask = task;
-  pushBubble(task);
-  addMessage("user", task);
+  // Show the user's typed message (not the attachment-expanded task) in the
+  // bubble + history; the model still receives the full `task`.
+  const shown = display || task;
+  pushBubble(shown);
+  addMessage("user", shown);
   setBusy(true);
   try {
     const body = { task };
@@ -724,13 +731,117 @@ function openRunStream(run_id) {
   };
 }
 
+/* ---------- slash commands + attachments (Claude-style composer) ---------- */
+// Attached context (files / web pages) prepended to the next message.
+let attachments = []; // [{kind, label, content}]
+function renderAttachChips() {
+  const box = $("attachChips");
+  if (!box) return;
+  box.innerHTML = "";
+  box.hidden = attachments.length === 0;
+  attachments.forEach((a, i) => {
+    const chip = document.createElement("span");
+    chip.className = "attach-chip";
+    chip.innerHTML = `${a.kind === "web" ? "🌐" : "📎"} ${escapeHtml(a.label)} <button title="remove">×</button>`;
+    chip.querySelector("button").onclick = () => { attachments.splice(i, 1); renderAttachChips(); };
+    box.appendChild(chip);
+  });
+}
+// Prepend attached context to the task so the model sees it (recorded in the
+// run like any task text — auditable).
+function withAttachments(task) {
+  if (!attachments.length) return task;
+  const ctx = attachments
+    .map((a) => `### ${a.kind === "web" ? "Web page" : "File"}: ${a.label}\n${a.content}`)
+    .join("\n\n");
+  return `${ctx}\n\n---\n${task}`;
+}
+
+// Thymos-tuned slash commands. Each: name, hint, run(arg).
+const SLASH = [
+  { cmd: "/auto", hint: "Full authority (dangerous tools still ask)", run: () => setMode("auto") },
+  { cmd: "/edit", hint: "Read + local edits, no shell/network", run: () => setMode("edit") },
+  { cmd: "/plan", hint: "Read-only: inspect & propose, never change", run: () => setMode("plan") },
+  { cmd: "/grant", hint: "Pick exact tools (custom authority)", run: () => { setMode("custom"); document.querySelector('.tab[data-tab="chat"]')?.click(); } },
+  { cmd: "/model", hint: "Set model override — /model <name>", run: (a) => { const cm = $("chatModel"); if (cm) { cm.value = a || ""; cm.onchange?.(); } pushLine("sys", `— model: ${a || "(default)"}`); } },
+  { cmd: "/web", hint: "Attach a web page — /web <url>", run: (a) => addWeb(a) },
+  { cmd: "/audit", hint: "Open the Audit / ledger explorer", run: () => document.querySelector('.tab[data-tab="audit"]')?.click() },
+  { cmd: "/mind", hint: "Open the Mind graph", run: () => document.querySelector('.tab[data-tab="mind"]')?.click() },
+  { cmd: "/clear", hint: "Start a new chat", run: () => newChatSession() },
+  { cmd: "/help", hint: "List commands", run: () => pushLine("sys", "commands: " + SLASH.map((s) => s.cmd).join("  ")) },
+];
+function renderSlashMenu(q) {
+  const menu = $("slashMenu");
+  if (!menu) return;
+  const matches = SLASH.filter((s) => s.cmd.startsWith(q.split(" ")[0]));
+  if (!q.startsWith("/") || !matches.length) { menu.hidden = true; return; }
+  menu.innerHTML = matches.map((s) =>
+    `<button type="button" data-cmd="${s.cmd}"><b>${s.cmd}</b><span>${escapeHtml(s.hint)}</span></button>`).join("");
+  menu.hidden = false;
+  menu.querySelectorAll("button").forEach((b) => b.onclick = () => {
+    $("taskInput").value = b.dataset.cmd + " ";
+    menu.hidden = true; $("taskInput").focus();
+  });
+}
+// Returns true if the input was a handled command (don't start a run).
+function tryRunSlash(text) {
+  if (!text.startsWith("/")) return false;
+  const [cmd, ...rest] = text.split(/\s+/);
+  const entry = SLASH.find((s) => s.cmd === cmd);
+  if (!entry) { pushLine("deny", `✕ unknown command ${escapeHtml(cmd)} — /help`); return true; }
+  entry.run(rest.join(" ").trim());
+  return true;
+}
+async function addWeb(url) {
+  if (!url) { pushLine("sys", "— usage: /web https://example.com"); return; }
+  if (!invoke) { pushLine("deny", "✕ web fetch needs the desktop app"); return; }
+  pushLine("sys", `— fetching ${url}…`);
+  try {
+    const r = await invoke("fetch_web", { url });
+    attachments.push({ kind: "web", label: url, content: r.content });
+    renderAttachChips();
+    pushLine("sys", `— attached ${url} (${r.content.length} chars of context)`);
+  } catch (e) { pushLine("deny", `✕ ${e}`); }
+}
+
+// "+" menu.
+$("plusBtn")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const m = $("plusMenu");
+  if (m) m.hidden = !m.hidden;
+});
+document.addEventListener("click", () => { const m = $("plusMenu"); if (m) m.hidden = true; });
+$("plusMenu")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-add]");
+  if (!btn) return;
+  $("plusMenu").hidden = true;
+  if (btn.dataset.add === "folder") { $("pickWorkspace") ? null : null; document.querySelector('.tab[data-tab="advanced"]')?.click(); setTimeout(() => $("pickWorkspace")?.click(), 200); return; }
+  if (btn.dataset.add === "web") { const u = prompt("Web page URL:"); if (u) addWeb(u.trim()); return; }
+  if (btn.dataset.add === "file") {
+    if (!invoke) { pushLine("deny", "✕ file attach needs the desktop app"); return; }
+    try {
+      const r = await invoke("attach_file");
+      if (r) { attachments.push({ kind: "file", label: r.name, content: r.content }); renderAttachChips(); }
+    } catch (e) { pushLine("deny", `✕ ${e}`); }
+  }
+});
+
 $("composer").addEventListener("submit", (ev) => {
   ev.preventDefault();
-  const task = $("taskInput").value.trim();
-  if (!task || activeRunId) return;
+  $("slashMenu").hidden = true;
+  const raw = $("taskInput").value.trim();
+  if (!raw || activeRunId) return;
+  // A slash command (alone) runs locally and never starts a governed run.
+  if (raw.startsWith("/") && tryRunSlash(raw)) {
+    $("taskInput").value = ""; autoGrow($("taskInput"));
+    return;
+  }
   $("taskInput").value = "";
   autoGrow($("taskInput"));
-  startRun(task);
+  const task = withAttachments(raw);
+  const note = attachments.length ? ` (+${attachments.length} attached)` : "";
+  attachments = []; renderAttachChips();
+  startRun(task, raw + note);
 });
 
 // Enter sends; Shift+Enter inserts a newline (ChatGPT/Claude convention).
@@ -745,7 +856,10 @@ $("taskInput").addEventListener("keydown", (e) => {
     $("composer").requestSubmit();
   }
 });
-$("taskInput").addEventListener("input", () => autoGrow($("taskInput")));
+$("taskInput").addEventListener("input", (e) => {
+  autoGrow($("taskInput"));
+  renderSlashMenu(e.target.value);
+});
 
 // Regenerate: re-run the last task (new trajectory, fresh writ).
 $("regenBtn")?.addEventListener("click", () => {
