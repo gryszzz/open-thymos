@@ -66,6 +66,7 @@ let inited = false, running = false, raf = 0, loadedOnce = false;
 // Stable 2D navigation: the graph is planar (z=0), so we pan + zoom instead of
 // orbiting. Nothing auto-moves — nodes stay put so they're easy to click.
 let panX = 0, panY = 0, targetPanX = 0, targetPanY = 0;
+let lastSessionMsgCount = -1, hasRenderedOnce = false;
 let drag = null;
 let nodeMeshes = [], raycaster, pointer, dragMoved = false;
 
@@ -426,6 +427,18 @@ function applySearchDim() {
 // long conversation stays light.
 const SESSION_DETAIL_RUNS = 8;
 
+// Caches so the 1.5s refresh isn't a fetch storm. A finished run's execution
+// log never changes — fetch it once and reuse forever. /health is near-static
+// — refetch at most every 30s.
+const snapCache = new Map(); // run_id → snapshot (only cached when terminal)
+let healthCache = null, healthAt = 0;
+async function fetchHealthCached() {
+  if (healthCache && Date.now() - healthAt < 30_000) return healthCache;
+  try { healthCache = await (await fetch(`${BASE}/health`)).json(); healthAt = Date.now(); } catch (_) {}
+  return healthCache;
+}
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+
 // Map one run's execution log → lifecycle nodes for conversation turn `turn`.
 function runNodes(snap, runId, turn) {
   const out = [];
@@ -490,7 +503,14 @@ async function renderSession(session) {
   const snaps = {};
   await Promise.all([...detailIdx].map(async (i) => {
     const rid = turns[i].reply.run_id;
-    try { snaps[i] = await (await fetch(`${BASE}/runs/${rid}/execution`)).json(); } catch (_) {}
+    // Reuse a finished run's snapshot — its log is immutable. Only in-flight
+    // runs (and uncached ones) actually hit the network each tick.
+    if (snapCache.has(rid)) { snaps[i] = snapCache.get(rid); return; }
+    try {
+      const s = await (await fetch(`${BASE}/runs/${rid}/execution`)).json();
+      snaps[i] = s;
+      if (TERMINAL.has(s?.status)) snapCache.set(rid, s);
+    } catch (_) {}
   }));
 
   let timeline = [];
@@ -523,8 +543,7 @@ async function renderSession(session) {
   timeline.forEach((nd) => { nd.color = (TYPES[nd.type] || TYPES.system).color; });
   runStatus = liveStatus;
 
-  let health = null;
-  try { health = await (await fetch(`${BASE}/health`)).json(); } catch (_) {}
+  const health = await fetchHealthCached();
   const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
   const ctx = { provider: health?.default_provider || "", live: !!health?.cognition_live, tools, replayOk: false };
 
@@ -709,9 +728,17 @@ function start() {
   // new message starts a new run), unless the operator pinned a run id.
   if (!refreshTimer) {
     // Pinned → keep refreshing that run; otherwise re-render the whole
-    // conversation (picks up new messages + streaming actions live).
+    // conversation. Idle gate: when nothing is in flight and the conversation
+    // hasn't grown, skip the refresh entirely (the frame loop keeps the gentle
+    // shimmer) — no fetch storm while you're just reading.
     refreshTimer = setInterval(() => {
-      loadRun(pinnedRun ? (document.getElementById("mindRunId")?.value || "") : "");
+      if (pinnedRun) { loadRun(document.getElementById("mindRunId")?.value || ""); return; }
+      const live = !!window.thymosActiveRun;
+      const n = window.thymosSession?.()?.messages?.length ?? 0;
+      if (!live && n === lastSessionMsgCount && hasRenderedOnce) return;
+      lastSessionMsgCount = n;
+      hasRenderedOnce = true;
+      loadRun("");
     }, 1500);
   }
 }
