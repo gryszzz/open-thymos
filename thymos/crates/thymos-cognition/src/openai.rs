@@ -72,16 +72,36 @@ fn parse_retry_after_header(v: &str) -> Option<u64> {
     v.trim().parse::<f64>().ok().map(|s| (s * 1000.0) as u64)
 }
 
-/// Some providers (e.g. Groq) put the precise wait only in the JSON error body:
-/// `"Please try again in 9.62s"`. Extract that as milliseconds.
+/// Some providers (e.g. Groq) put the precise wait only in the JSON error
+/// body: `"Please try again in 9.62s"` (per-minute limit) or
+/// `"Please try again in 1h16m43.392s"` (per-day limit). Parse the compound
+/// `<h>h<m>m<s>s` / `<s>s` form into milliseconds. This is the *accurate*
+/// reset; the `Retry-After` header is often a coarse generic value.
 fn parse_retry_after_body(body: &str) -> Option<u64> {
     const MARKER: &str = "try again in ";
     let start = body.find(MARKER)? + MARKER.len();
-    let num: String = body[start..]
+    let dur: String = body[start..]
         .chars()
-        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || matches!(c, 'h' | 'm' | 's'))
         .collect();
-    num.parse::<f64>().ok().map(|s| (s * 1000.0) as u64)
+    if dur.is_empty() {
+        return None;
+    }
+    let mut total_ms = 0f64;
+    let mut num = String::new();
+    for c in dur.chars() {
+        match c {
+            'h' => { total_ms += num.parse::<f64>().unwrap_or(0.0) * 3_600_000.0; num.clear(); }
+            'm' => { total_ms += num.parse::<f64>().unwrap_or(0.0) * 60_000.0; num.clear(); }
+            's' => { total_ms += num.parse::<f64>().unwrap_or(0.0) * 1_000.0; num.clear(); }
+            _ => num.push(c),
+        }
+    }
+    // Bare number (no unit) → seconds, matching the simple "9.62" case.
+    if !num.is_empty() {
+        total_ms += num.parse::<f64>().unwrap_or(0.0) * 1_000.0;
+    }
+    (total_ms > 0.0).then_some(total_ms as u64)
 }
 
 impl OpenAiCognition {
@@ -252,12 +272,13 @@ impl Cognition for OpenAiCognition {
                     });
                 }
             }
-            // Prefer the standard header; fall back to providers that put the
-            // precise wait only in the JSON body ("Please try again in 9.62s").
-            let hint_ms = retry_after_header
-                .as_deref()
-                .and_then(parse_retry_after_header)
-                .or_else(|| parse_retry_after_body(&resp_json.to_string()));
+            // Prefer the body's precise reset ("try again in 1h16m43s" /
+            // "9.62s") — it reflects the actual limit; the Retry-After header is
+            // often a coarse generic value (e.g. a flat 60s) that hides a much
+            // longer daily-limit reset. Fall back to the header when no body
+            // hint is present.
+            let hint_ms = parse_retry_after_body(&resp_json.to_string())
+                .or_else(|| retry_after_header.as_deref().and_then(parse_retry_after_header));
             let suffix = hint_ms
                 .map(|ms| format!(" [retry_after_ms={ms}]"))
                 .unwrap_or_default();
@@ -939,6 +960,17 @@ mod tests {
         let body = r#"{"error":{"message":"Rate limit reached ... Please try again in 9.62s. Need more tokens?","code":"rate_limit_exceeded"}}"#;
         assert_eq!(parse_retry_after_body(body), Some(9_620));
         assert_eq!(parse_retry_after_body("no hint here"), None);
+    }
+
+    #[test]
+    fn retry_after_body_parses_compound_daily_limit() {
+        // Per-day limit resets are reported as h/m/s — must parse to the full
+        // duration so the runtime fails fast instead of retrying into a wall.
+        let body = r#"{"error":{"message":"...tokens per day (TPD)... Please try again in 1h16m43.392s."}}"#;
+        let ms = parse_retry_after_body(body).unwrap();
+        // 1h16m43.392s = 4603392 ms (±1s for float).
+        assert!((4_603_000..=4_604_000).contains(&ms), "got {ms}");
+        assert_eq!(parse_retry_after_body("try again in 2m30s."), Some(150_000));
     }
 
     #[test]
