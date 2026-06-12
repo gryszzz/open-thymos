@@ -132,8 +132,14 @@
           <div id="mindCanvas" class="mind-canvas"></div>
           <div id="mindTip" class="mind-tip" hidden></div>
           <div id="mindInspector" class="mind-inspector" hidden></div>
+          <!-- Always-on activity stream: the current turn's events read top to
+               bottom, live, so you follow the agent without clicking nodes. -->
+          <aside id="mindActivity" class="mind-activity">
+            <div class="ma-head">Live activity</div>
+            <div id="mindActivityList" class="ma-list"></div>
+          </aside>
         </div>
-        <p class="hint mind-hint">Click any node to inspect it — what it was, when, with which tool, in which run. Drag to orbit · scroll to zoom · click a legend type to filter.</p>
+        <p class="hint mind-hint">The graph streams live as the agent works; the side panel reads the current turn top-to-bottom. Click a node (or a panel row) for details · drag to pan · scroll to zoom · double-click empty space to reset · click a legend type to filter.</p>
         <div class="mind-legend">
           <button type="button" class="lg msg" data-type="message">● you</button>
           <button type="button" class="lg cyan" data-type="intent">◆ intent</button>

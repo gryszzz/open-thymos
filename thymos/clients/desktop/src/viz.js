@@ -63,7 +63,9 @@ function classifyAudit(en) {
 
 let renderer, scene, camera, world, nodesGroup, glowTex;
 let inited = false, running = false, raf = 0, loadedOnce = false;
-let targetRotY = 0, targetRotX = 0.25, curRotY = 0, curRotX = 0.25;
+// Stable 2D navigation: the graph is planar (z=0), so we pan + zoom instead of
+// orbiting. Nothing auto-moves — nodes stay put so they're easy to click.
+let panX = 0, panY = 0, targetPanX = 0, targetPanY = 0;
 let drag = null;
 let nodeMeshes = [], raycaster, pointer, dragMoved = false;
 
@@ -118,16 +120,16 @@ function init() {
   camera.position.set(0, 0, 13);
   glowTex = radialTexture("rgba(124,92,255,0.9)");
 
-  // World group (orbited by drag + slow auto-rotation). Pure network: no
-  // logo, no cage, no decoration — the only things on screen are the run's
-  // real events and what connects them.
+  // Flat, front-facing graph. Pure network: no logo, no cage, no decoration —
+  // only the run's real events and what connects them, held still.
   world = new THREE.Group();
   scene.add(world);
 
   nodesGroup = new THREE.Group();
   world.add(nodesGroup);
 
-  // Interaction: drag to orbit, wheel to zoom, click a node to inspect it.
+  // Interaction: drag to PAN, wheel to zoom, click a node to inspect it.
+  // No rotation, no auto-motion — clicking is precise.
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
   const el = renderer.domElement;
@@ -136,20 +138,26 @@ function init() {
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
     if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) dragMoved = true;
-    targetRotY += (e.clientX - drag.x) * 0.006;
-    targetRotX += (e.clientY - drag.y) * 0.006;
-    targetRotX = Math.max(-1.2, Math.min(1.2, targetRotX));
+    // Pan in the view plane; scale by zoom so it tracks the cursor 1:1.
+    const k = camera.position.z / 520;
+    targetPanX += (e.clientX - drag.x) * k;
+    targetPanY -= (e.clientY - drag.y) * k;
     drag = { x: e.clientX, y: e.clientY };
   });
   el.addEventListener("wheel", (e) => {
     e.preventDefault();
-    camera.position.z = Math.max(7, Math.min(26, camera.position.z + e.deltaY * 0.01));
+    camera.position.z = Math.max(6, Math.min(30, camera.position.z + e.deltaY * 0.012));
   }, { passive: false });
-  // Click (not drag) on a node → open the inspector + swing it to the front.
+  // Click (not drag) on a node → open the inspector + center it.
   el.addEventListener("click", (e) => {
     if (dragMoved) return;
     const hit = nodeAt(e);
     if (hit) { inspectNode(hit.userData); focusOn(hit); }
+  });
+  // Double-click empty space → reset the view to fit.
+  el.addEventListener("dblclick", (e) => {
+    if (nodeAt(e)) return;
+    targetPanX = 0; targetPanY = 0; camera.position.z = 13;
   });
   // Hover → quick tooltip + pointer cursor.
   el.addEventListener("pointermove", (e) => {
@@ -199,18 +207,10 @@ function nodeAt(e) {
   return hits.length ? hits[0].object : null;
 }
 
-// Smoothly rotate the world so the clicked node faces the camera.
+// Smoothly pan the clicked node to the center of the view.
 function focusOn(mesh) {
-  const p = mesh.position;
-  // Camera looks down -Z; a node at world angle a faces front when the world
-  // is rotated so the node lands near +Z.
-  const a = Math.atan2(p.x, p.z);
-  const want = -a;
-  // Take the shortest path from the current rotation.
-  let delta = (want - targetRotY) % (Math.PI * 2);
-  if (delta > Math.PI) delta -= Math.PI * 2;
-  if (delta < -Math.PI) delta += Math.PI * 2;
-  targetRotY += delta;
+  targetPanX = -mesh.position.x;
+  targetPanY = -mesh.position.y;
 }
 
 function inspectNode(nd) {
@@ -468,9 +468,18 @@ async function renderSession(session) {
   for (let i = 0; i < msgs.length; i++) {
     if (msgs[i].role !== "user") continue;
     const reply = msgs.slice(i + 1).find((m) => m.role === "agent");
-    turns.push({ user: msgs[i], reply: reply || null });
+    turns.push({ user: msgs[i], reply: reply ? { ...reply } : null });
   }
   if (!turns.length) return;
+
+  // Live follow: if a run is in flight (its reply isn't in the chat yet), the
+  // newest unreplied turn IS that run — attach it so the graph streams the
+  // agent's actions as they happen, not just finished turns.
+  const liveRun = window.thymosActiveRun;
+  if (liveRun) {
+    const open = [...turns].reverse().find((t) => !t.reply);
+    if (open) open.reply = { run_id: liveRun, status: "running", text: "" };
+  }
 
   // Fetch lifecycle only for the most recent turns that have a run.
   const detailIdx = new Set();
@@ -496,8 +505,11 @@ async function renderSession(session) {
       timeline = timeline.concat(runNodes(snap, t.reply.run_id, i));
       if (i === turns.length - 1) liveStatus = snap.status || "";
     }
-    if (t.reply) {
-      const st = t.reply.status || snap?.status || "completed";
+    const st = t.reply?.status || snap?.status || "";
+    const terminal = ["completed", "failed", "cancelled"].includes(st);
+    // Only finished turns get an Answer/Error node — a live turn ends on its
+    // newest action, breathing, until it resolves.
+    if (t.reply && terminal) {
       timeline.push({
         idx: i * 1000 + 900,
         type: st === "failed" ? "error" : "answer",
@@ -516,15 +528,49 @@ async function renderSession(session) {
   const tools = [...new Set(timeline.map((nd) => nd.tool).filter(Boolean))].slice(0, 8);
   const ctx = { provider: health?.default_provider || "", live: !!health?.cognition_live, tools, replayOk: false };
 
-  const sig = `${session.id}:${timeline.length}:${JSON.stringify(filters)}`;
+  // Live-aware signature: includes status so the final Answer node appears the
+  // moment the run resolves, and node count so streamed actions re-render.
+  const sig = `${session.id}:${timeline.length}:${liveStatus}:${JSON.stringify(filters)}`;
   if (sig !== lastFilterKey) {
     const grew = sig.split(":")[0] === lastFilterKey.split(":")[0];
     lastFilterKey = sig;
-    buildGraph(timeline, ctx, grew ? -1 : null); // new turns animate in
+    buildGraph(timeline, ctx, grew ? -1 : null); // new turns/actions animate in
   }
   const el = document.getElementById("mindRunId");
   if (el && !el.value) el.placeholder = `${turns.length} messages · ${timeline.length} nodes`;
   renderSessionState(session, turns, health);
+  // The always-on activity panel: the latest turn, read top-to-bottom.
+  renderActivity(timeline, liveStatus);
+}
+
+// Stream the current turn's events into the side panel — full titles + detail,
+// newest turn, auto-scrolled — so the agent's work reads without clicking.
+function renderActivity(timeline, status) {
+  const list = document.getElementById("mindActivityList");
+  if (!list) return;
+  const lastStep = timeline.reduce((m, n) => Math.max(m, n.step ?? 0), 0);
+  const turn = timeline.filter((n) => (n.step ?? 0) === lastStep);
+  list.innerHTML = "";
+  turn.forEach((nd) => {
+    const t = TYPES[nd.type] || TYPES.system;
+    const row = document.createElement("div");
+    row.className = "ma-row";
+    const d = (nd.detail || "").slice(0, 160);
+    row.innerHTML =
+      `<span class="ma-dot" style="background:${hex(t.color)}"></span>` +
+      `<div class="ma-body"><div class="ma-title">${escHtml(t.label)}` +
+      (nd.tool ? ` · <span class="ma-tool">${escHtml(nd.tool)}</span>` : "") +
+      `</div>` + (d ? `<div class="ma-detail">${escHtml(d)}</div>` : "") + `</div>`;
+    row.onclick = () => inspectNode(nd);
+    list.appendChild(row);
+  });
+  if (status === "running" || status === "waiting_approval") {
+    const w = document.createElement("div");
+    w.className = "ma-row ma-working";
+    w.innerHTML = `<span class="ma-dot ma-pulse"></span><div class="ma-body"><div class="ma-title">working…</div></div>`;
+    list.appendChild(w);
+  }
+  list.scrollTop = list.scrollHeight;
 }
 
 let prevMaxIdx = -1;
@@ -631,11 +677,10 @@ function renderRunState(id, snap, health, replay) {
 function frame() {
   raf = requestAnimationFrame(frame);
   clock += 0.016;
-  targetRotY += 0.0016;
-  curRotY += (targetRotY - curRotY) * 0.08;
-  curRotX += (targetRotX - curRotX) * 0.08;
-  world.rotation.y = curRotY;
-  world.rotation.x = curRotX;
+  // Eased pan toward target — the only world motion, and only when you drag.
+  panX += (targetPanX - panX) * 0.18;
+  panY += (targetPanY - panY) * 0.18;
+  world.position.set(panX, panY, 0);
 
   // Gentle, uniform halo breathing — a calm "alive" shimmer, not flashing.
   // (Errors get a slightly stronger pulse so they read as needing attention.)
