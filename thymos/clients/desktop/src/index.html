@@ -481,6 +481,18 @@
           </div>
 
           <div class="card">
+            <h3>Responses</h3>
+            <label class="adv-toggle" title="Render the model's reply token-by-token as it streams (experimental). Applies on the next runtime restart.">
+              <input type="checkbox" id="streamToggle" /> Stream responses live (experimental)
+            </label>
+            <p class="note">
+              Off by default. When on, replies appear as they're generated
+              instead of all at once. Falls back automatically for providers
+              that don't stream.
+            </p>
+          </div>
+
+          <div class="card">
             <h3>Ledger &amp; debug</h3>
             <div class="ledger-path-row">
               <span class="dim">ledger file</span>

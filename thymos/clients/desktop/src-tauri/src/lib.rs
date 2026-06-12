@@ -131,6 +131,31 @@ fn clear_workspace(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Persisted opt-in for token streaming (experimental). Passed to the runtime
+/// as THYMOS_STREAM on spawn; takes effect on the next runtime restart.
+fn streaming_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("streaming.on"))
+}
+fn streaming_enabled(app: &tauri::AppHandle) -> bool {
+    streaming_path(app).map(|p| p.exists()).unwrap_or(false)
+}
+#[tauri::command]
+fn get_streaming(app: tauri::AppHandle) -> bool {
+    streaming_enabled(&app)
+}
+#[tauri::command]
+fn set_streaming(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    if let Some(p) = streaming_path(&app) {
+        let _ = std::fs::create_dir_all(p.parent().unwrap());
+        if on {
+            std::fs::write(&p, "1").map_err(|e| format!("save: {e}"))?;
+        } else {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+    Ok(())
+}
+
 /// Inject the stored provider as env vars on the runtime child. Anthropic uses
 /// its dedicated key/base-URL vars; everything else (native `openai` plus every
 /// OpenAI-compatible preset) resolves the generic `OPENAI_API_KEY` /
@@ -273,6 +298,9 @@ fn start_runtime(app: tauri::AppHandle, state: State<Supervisor>) -> Result<Stri
     // folder is what makes "read/edit my project" actually work.
     if let Some(ws) = load_workspace(&app) {
         cmd.env("THYMOS_WORKSPACE", ws);
+    }
+    if streaming_enabled(&app) {
+        cmd.env("THYMOS_STREAM", "1");
     }
     apply_provider_env(&mut cmd, &load_provider_config(&app));
     let child = cmd
@@ -500,7 +528,9 @@ pub fn run() {
             delete_tool_manifest,
             get_workspace,
             pick_workspace,
-            clear_workspace
+            clear_workspace,
+            get_streaming,
+            set_streaming
         ])
         .on_window_event(|window, event| {
             // Don't orphan the runtime when the app window closes.

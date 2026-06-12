@@ -266,7 +266,32 @@ impl Cognition for OpenAiCognition {
             )));
         }
 
-        // 4. Usage — accumulate totals and capture this turn's usage.
+        // 4-6. Shared parse: usage, assistant message, tool calls → step.
+        self.finish_from_response(&resp_json, ctx)
+    }
+
+    fn step_streamed(
+        &mut self,
+        ctx: &CognitionContext<'_>,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Option<Result<CognitionStep>> {
+        match self.stream_request(ctx, on_token) {
+            Ok(resp_json) => Some(self.finish_from_response(&resp_json, ctx)),
+            // Couldn't establish/parse the stream → signal fallback to sync.
+            Err(_) => None,
+        }
+    }
+}
+
+impl OpenAiCognition {
+    /// Shared response → CognitionStep parse, used by both the sync `step` and
+    /// the streaming path so they stay identical in behavior.
+    fn finish_from_response(
+        &mut self,
+        resp_json: &Value,
+        ctx: &CognitionContext<'_>,
+    ) -> Result<CognitionStep> {
+        // Usage — accumulate totals and capture this turn's usage.
         let mut step_usage = crate::CognitionUsage::default();
         if let Some(usage) = resp_json.get("usage") {
             let input = usage
@@ -400,6 +425,124 @@ impl Cognition for OpenAiCognition {
             final_answer,
             usage: step_usage,
         })
+    }
+
+    /// Stream a chat completion (SSE), invoking `on_token` for each text delta,
+    /// and return a synthesized non-streaming-shaped response JSON so the shared
+    /// `finish_from_response` parser handles it identically to a normal turn.
+    /// Errors (including any setup failure) let the caller fall back to sync.
+    fn stream_request(
+        &self,
+        ctx: &CognitionContext<'_>,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Result<Value> {
+        use std::io::BufRead;
+
+        let mut req_body = json!({
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": self.messages,
+            "stream": true,
+            "stream_options": { "include_usage": true },
+        });
+        if matches!(self.tool_protocol, ToolProtocol::Native) {
+            let tools_payload = build_tools_payload(ctx.tools, ctx.writ);
+            if !tools_payload.is_empty() {
+                req_body["tools"] = json!(tools_payload);
+            }
+        }
+
+        let url = format!("{}/chat/completions", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&req_body)
+            .send()
+            .map_err(|e| Error::Other(format!("openai stream request failed: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(Error::Other(format!("openai stream HTTP {}", resp.status())));
+        }
+
+        let mut content = String::new();
+        let mut finish_reason = String::new();
+        let mut usage: Option<Value> = None;
+        // tool_calls accumulated by index: (id, name, arguments-string).
+        let mut tcs: Vec<(String, String, String)> = Vec::new();
+
+        let reader = std::io::BufReader::new(resp);
+        for line in reader.lines() {
+            let line = line.map_err(|e| Error::Other(format!("stream read: {e}")))?;
+            let data = match line.strip_prefix("data:") {
+                Some(d) => d.trim(),
+                None => continue,
+            };
+            if data == "[DONE]" {
+                break;
+            }
+            let Ok(chunk) = serde_json::from_str::<Value>(data) else { continue };
+            if let Some(u) = chunk.get("usage") {
+                if !u.is_null() {
+                    usage = Some(u.clone());
+                }
+            }
+            let Some(choice) = chunk.get("choices").and_then(|c| c.as_array()).and_then(|a| a.first())
+            else { continue };
+            if let Some(fr) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+                finish_reason = fr.to_string();
+            }
+            let Some(delta) = choice.get("delta") else { continue };
+            if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content.push_str(text);
+                    on_token(text);
+                }
+            }
+            if let Some(arr) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                for tc in arr {
+                    let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                    while tcs.len() <= idx {
+                        tcs.push((String::new(), String::new(), String::new()));
+                    }
+                    if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                        if !id.is_empty() { tcs[idx].0 = id.to_string(); }
+                    }
+                    if let Some(f) = tc.get("function") {
+                        if let Some(n) = f.get("name").and_then(|v| v.as_str()) {
+                            if !n.is_empty() { tcs[idx].1 = n.to_string(); }
+                        }
+                        if let Some(a) = f.get("arguments").and_then(|v| v.as_str()) {
+                            tcs[idx].2.push_str(a);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Synthesize the standard response shape for the shared parser.
+        let mut message = json!({ "role": "assistant", "content": content });
+        if !tcs.is_empty() {
+            message["tool_calls"] = json!(tcs
+                .into_iter()
+                .filter(|(_, name, _)| !name.is_empty())
+                .map(|(id, name, args)| json!({
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": name, "arguments": args },
+                }))
+                .collect::<Vec<_>>());
+        }
+        let mut out = json!({
+            "choices": [{
+                "message": message,
+                "finish_reason": if finish_reason.is_empty() { "stop".into() } else { finish_reason },
+            }],
+        });
+        if let Some(u) = usage {
+            out["usage"] = u;
+        }
+        Ok(out)
     }
 }
 

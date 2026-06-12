@@ -521,3 +521,5 @@ body.advanced .adv-only { display: revert; }
 @keyframes ma-blink { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
 @media (max-width: 760px) { .mind-activity { display: none; } }
 .ws-actions { display: flex; gap: 8px; margin-top: 10px; }
+.answer.streaming { opacity: 0.92; border-left: 2px solid var(--violet); }
+.answer.streaming::after { content: "▍"; animation: ma-blink 1s steps(1) infinite; color: var(--violet); }
