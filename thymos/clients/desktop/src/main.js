@@ -610,6 +610,45 @@ $("chatStop")?.addEventListener("click", async () => {
   }
 });
 
+// Render the suspended proposal's CONCRETE action: for fs_patch a real
+// before→after diff, for shell the command, otherwise pretty args. Reads the
+// full proposal from the ledger's pending_approval entry (the approval reason
+// only carries a truncated preview).
+async function renderPendingAction(runId, container) {
+  try {
+    const res = await getJSON(`/audit/entries?run_id=${encodeURIComponent(runId)}&kind=pending_approval&limit=5`);
+    const entries = res.entries || [];
+    const pa = entries[entries.length - 1]?.payload;
+    const plan = pa?.type === "pending_approval" ? pa?.proposal?.body?.plan : null;
+    if (!plan) return;
+    const box = document.createElement("div");
+    box.className = "approval-action";
+    const args = plan.args || {};
+    if (plan.tool === "fs_patch") {
+      const path = args.path || "?";
+      if (args.mode === "replace") {
+        box.innerHTML =
+          `<div class="aa-head">✏️ edit <code>${escapeHtml(path)}</code></div>` +
+          `<pre class="aa-del">- ${escapeHtml(String(args.anchor || "").slice(0, 600))}</pre>` +
+          `<pre class="aa-add">+ ${escapeHtml(String(args.replacement || "").slice(0, 600))}</pre>`;
+      } else {
+        box.innerHTML =
+          `<div class="aa-head">✏️ write <code>${escapeHtml(path)}</code> (full file)</div>` +
+          `<pre class="aa-add">${escapeHtml(String(args.content || "").slice(0, 800))}</pre>`;
+      }
+    } else if (plan.tool === "shell") {
+      box.innerHTML =
+        `<div class="aa-head">⌨ run command</div>` +
+        `<pre class="aa-cmd">$ ${escapeHtml(String(args.command || args.cmd || JSON.stringify(args)).slice(0, 600))}</pre>`;
+    } else {
+      box.innerHTML =
+        `<div class="aa-head">▣ ${escapeHtml(plan.tool || "action")}</div>` +
+        `<pre class="aa-cmd">${escapeHtml(JSON.stringify(args, null, 2).slice(0, 700))}</pre>`;
+    }
+    container.appendChild(box);
+  } catch (_) { /* ledger entry not readable — the reason text still shows */ }
+}
+
 function showApproval(runId, channel, why) {
   if (document.querySelector(`.approval-row[data-run="${runId}"]`)) return;
   const row = document.createElement("div");
@@ -622,6 +661,8 @@ function showApproval(runId, channel, why) {
     w.textContent = String(why).slice(0, 400);
     row.appendChild(w);
   }
+  // Async: enrich with the concrete proposed action (diff / command).
+  renderPendingAction(runId, row);
   const chan = document.createElement("input");
   chan.value = channel || "ops"; // prefilled with the actual pending channel
   chan.style.maxWidth = "120px";

@@ -577,3 +577,15 @@ body.advanced .adv-only { display: revert; }
   content: "applies in custom mode — type /grant in chat"; flex-basis: 100%;
   font-size: 11.5px; color: var(--muted); opacity: .9; margin-top: 4px;
 }
+
+/* Approval card: the concrete proposed action (diff / command) */
+.approval-action { flex-basis: 100%; margin: 6px 0 2px; }
+.aa-head { font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+.aa-head code { color: var(--cyan); }
+.approval-action pre {
+  margin: 0 0 4px; padding: 7px 10px; border-radius: 8px; overflow-x: auto;
+  font-size: 12px; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word;
+}
+.aa-del { background: rgba(255,107,138,.10); border: 1px solid rgba(255,107,138,.3); color: #ff9eb3; }
+.aa-add { background: rgba(70,211,154,.10); border: 1px solid rgba(70,211,154,.3); color: #7fe3b6; }
+.aa-cmd { background: var(--bg-2, rgba(0,0,0,.25)); border: 1px solid var(--line); color: var(--cyan); }

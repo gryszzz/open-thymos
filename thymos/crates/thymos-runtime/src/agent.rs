@@ -144,6 +144,13 @@ pub enum AgentTraceEvent {
         delay_ms: u64,
         message: String,
     },
+    /// Token usage the provider reported for one cognition step — lets
+    /// surfaces show live consumption.
+    UsageUpdated {
+        step_index: u32,
+        input_tokens: u64,
+        output_tokens: u64,
+    },
     RunFinished {
         trajectory_id: String,
         steps_executed: u32,

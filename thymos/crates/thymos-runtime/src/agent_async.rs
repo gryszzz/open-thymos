@@ -269,6 +269,18 @@ pub async fn run_agent_streaming<L: LedgerStore>(
 
         steps_executed += 1;
 
+        // Surface this step's provider-reported token usage (zero for mock).
+        if step.usage.input_tokens > 0 || step.usage.output_tokens > 0 {
+            emit_event(
+                trace_tx.as_ref(),
+                AgentTraceEvent::UsageUpdated {
+                    step_index: step_idx,
+                    input_tokens: step.usage.input_tokens,
+                    output_tokens: step.usage.output_tokens,
+                },
+            );
+        }
+
         if step.intents.is_empty() {
             final_answer = step.final_answer;
             terminated_by = Termination::CognitionDone;
