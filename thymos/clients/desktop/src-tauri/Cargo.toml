@@ -5,7 +5,7 @@
 
 [package]
 name = "thymos-desktop"
-version = "0.7.11"
+version = "0.7.12"
 edition = "2021"
 license = "Apache-2.0"
 description = "OpenThymos Desktop — a governed-cognition client that supervises a local runtime."

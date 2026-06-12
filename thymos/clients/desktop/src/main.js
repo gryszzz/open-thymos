@@ -406,6 +406,9 @@ function renderSnapshot(s) {
       });
     }
     activeRunId = null;
+    // Clear the live marker so Mind stops showing this run as in-flight; the
+    // finished turn is now a persisted reply it picks up normally.
+    if (window.thymosActiveRun === s.run_id) window.thymosActiveRun = null;
     setBusy(false);
   }
 }
@@ -1257,8 +1260,16 @@ async function loadAudit(runId) {
   trail.innerHTML = "<div class='hint'>loading…</div>";
   badge.innerHTML = "";
   try {
-    const entries = await getJSON(`/audit/entries?run_id=${encodeURIComponent(runId)}`);
-    const list = Array.isArray(entries) ? entries : entries.entries || [];
+    // Ledger entries are fetched softly: a run that failed before recording a
+    // trajectory (e.g. provider init error) legitimately has none and the
+    // endpoint 404s — that must NOT blank the whole view. The narrative below
+    // still tells the story.
+    let list = [];
+    let ledgerMissing = false;
+    try {
+      const entries = await getJSON(`/audit/entries?run_id=${encodeURIComponent(runId)}`);
+      list = Array.isArray(entries) ? entries : entries.entries || [];
+    } catch (_) { ledgerMissing = true; }
     trail.innerHTML = "";
 
     // --- What happened: the run's narrative, from the execution session log.
@@ -1297,6 +1308,14 @@ async function loadAudit(runId) {
     head2.className = "audit-subhead";
     head2.innerHTML = `<b>Ledger chain</b><span class="meta"> · authoritative, content-addressed, replay-verified</span>`;
     trail.appendChild(head2);
+    if (!list.length) {
+      const note = document.createElement("div");
+      note.className = "hint";
+      note.textContent = ledgerMissing
+        ? "No ledger entries for this run — it ended before committing anything (e.g. a provider error or an early rejection). The narrative above is the full story."
+        : "No ledger entries yet.";
+      trail.appendChild(note);
+    }
     list.forEach((e) => {
       const div = document.createElement("div");
       div.className = "item";
@@ -1305,15 +1324,17 @@ async function loadAudit(runId) {
         `<span class="meta">${escapeHtml((e.commit_id || e.id || "").slice(0, 12))}</span>`;
       trail.appendChild(div);
     });
-    // Replay always verifies integrity; a 200 means the chain folded cleanly.
-    try {
-      const rep = await getJSON(`/runs/${runId}/replay`);
-      badge.innerHTML =
-        `<span class="badge ok">replay ✓ verified</span> ` +
-        `<span class="meta">${rep.commits_replayed} commits · ` +
-        `${rep.rejected_proposals} rejected · head ${(rep.head_commit || "").slice(0, 12)}</span>`;
-    } catch (_) {
-      badge.innerHTML = `<span class="badge bad">replay could not verify</span>`;
+    // Replay verifies integrity; only meaningful if there's a chain to fold.
+    if (!ledgerMissing) {
+      try {
+        const rep = await getJSON(`/runs/${runId}/replay`);
+        badge.innerHTML =
+          `<span class="badge ok">replay ✓ verified</span> ` +
+          `<span class="meta">${rep.commits_replayed} commits · ` +
+          `${rep.rejected_proposals} rejected · head ${(rep.head_commit || "").slice(0, 12)}</span>`;
+      } catch (_) {
+        badge.innerHTML = `<span class="badge bad">replay could not verify</span>`;
+      }
     }
   } catch (e) { trail.innerHTML = `<div class='hint'>could not load trail: ${e}</div>`; }
 }
