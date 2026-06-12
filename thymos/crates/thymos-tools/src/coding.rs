@@ -35,12 +35,10 @@ pub struct CodingSandbox {
 
 impl Default for CodingSandbox {
     fn default() -> Self {
-        let cwd = std::env::current_dir()
-            .ok()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
         CodingSandbox {
-            allowed_roots: if cwd.is_empty() { vec![] } else { vec![cwd] },
+            // Honors THYMOS_WORKSPACE (the operator-chosen folder) then cwd, so
+            // the read/edit/search tools act on the user's actual project.
+            allowed_roots: crate::workspace_roots(),
             max_read_bytes: 256 * 1024,
             max_grep_matches: 256,
             max_list_entries: 512,

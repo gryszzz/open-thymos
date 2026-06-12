@@ -37,6 +37,21 @@ fn parse_retry_after_hint(msg: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
+/// Render a millisecond duration as a friendly "1h 17m" / "45s" string for
+/// rate-limit messages.
+pub fn humanize_duration_ms(ms: u64) -> String {
+    let secs = ms / 1000;
+    if secs >= 3600 {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        if m > 0 { format!("{h}h {m}m") } else { format!("{h}h") }
+    } else if secs >= 60 {
+        format!("{}m", secs.div_ceil(60))
+    } else {
+        format!("{}s", secs.max(1))
+    }
+}
+
 /// Map a raw provider/transport error to a short, plain-English sentence for
 /// the chat UI. Never echoes the raw JSON body (which can be noisy and, for
 /// some providers, embed request context). Unknown errors get a generic line.
@@ -198,12 +213,26 @@ pub async fn run_agent_streaming<L: LedgerStore>(
                         if !is_retryable || attempt > max_retries {
                             return Err(e);
                         }
-                        // Prefer the provider's own wait hint (e.g. Groq's
-                        // tokens-per-minute reset, surfaced as
-                        // `[retry_after_ms=N]`). A per-minute budget can't be
-                        // cleared by a sub-second local backoff, so honor the
-                        // server — capped so a pathological hint can't hang the
-                        // run, floored at the exponential as a sane minimum.
+                        // Fail fast on a long reset. If the provider's own wait
+                        // hint exceeds what we'd ever wait (e.g. a daily-token
+                        // limit that resets in over an hour), retrying at a
+                        // capped backoff is futile — it just burns attempts and
+                        // fails anyway. Return immediately with the real wait so
+                        // the user can switch models or come back later.
+                        if let Some(hint) = parse_retry_after_hint(&e.to_string()) {
+                            if hint > MAX_RETRY_BACKOFF_MS {
+                                return Err(thymos_core::error::Error::Other(format!(
+                                    "{} The limit resets in about {}. \
+                                     Switch models in Providers, or try again later. [{}]",
+                                    humanize_provider_error(&e.to_string()),
+                                    humanize_duration_ms(hint),
+                                    e
+                                )));
+                            }
+                        }
+                        // Otherwise prefer the provider's wait hint (e.g. Groq's
+                        // tokens-per-minute reset), floored at the exponential,
+                        // capped at MAX_RETRY_BACKOFF_MS.
                         let exp_ms = 1000 * 2u64.pow(attempt - 1); // 1s, 2s, 4s
                         let backoff_ms = parse_retry_after_hint(&e.to_string())
                             .map(|hint| hint.clamp(exp_ms, MAX_RETRY_BACKOFF_MS))

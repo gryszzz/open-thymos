@@ -99,6 +99,10 @@ pub struct ExecutionSession {
     /// UI can target the decision instead of asking the operator to guess.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_channel: Option<String>,
+    /// Growing partial reply while the model streams (opt-in THYMOS_STREAM).
+    /// Cleared when the turn resolves into the final answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial_answer: Option<String>,
     pub counters: ExecutionCounters,
     pub updated_at_ms: u64,
     pub log: Vec<ExecutionLogEntry>,
@@ -120,6 +124,7 @@ impl ExecutionSession {
             active_tool: None,
             final_answer: None,
             pending_channel: None,
+            partial_answer: None,
             counters: ExecutionCounters::default(),
             updated_at_ms: now_ms(),
             log: Vec::new(),
@@ -570,6 +575,7 @@ impl ExecutionSession {
         self.counters.rejections = summary.rejections;
         self.counters.failures = summary.failures;
         self.final_answer = summary.final_answer.clone();
+        self.partial_answer = None; // resolved into the final answer
         self.phase = ExecutionPhase::Result;
         self.status = if matches!(summary.terminated_by, Termination::CognitionDone) {
             ExecutionStatus::Completed
@@ -580,6 +586,12 @@ impl ExecutionSession {
             ExecutionStatus::Completed => "Task resolved and verified by runtime".into(),
             _ => format!("Run ended before completion: {:?}", summary.terminated_by),
         };
+        self.updated_at_ms = now_ms();
+    }
+
+    /// Append a streamed token chunk to the in-progress reply.
+    pub fn append_partial(&mut self, text: &str) {
+        self.partial_answer.get_or_insert_with(String::new).push_str(text);
         self.updated_at_ms = now_ms();
     }
 

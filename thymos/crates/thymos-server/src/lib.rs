@@ -1845,6 +1845,26 @@ async fn create_run(
         channels.insert(run_id.clone(), execution_tx);
     }
 
+    // Token bridge (opt-in streaming): mirror streamed text into the execution
+    // session's `partial_answer` so the desktop's existing snapshot stream
+    // shows the reply forming live. No-op unless the adapter emits tokens.
+    {
+        let mut token_rx = cognition_tx.subscribe();
+        let state_tok = state.clone();
+        let run_tok = run_id.clone();
+        let task_tok = req.task.clone();
+        let steps_tok = req.max_steps;
+        tokio::spawn(async move {
+            while let Ok(evt) = token_rx.recv().await {
+                if let CognitionEvent::Token { text } = evt {
+                    with_execution_session(&state_tok, &run_tok, &task_tok, steps_tok, |s| {
+                        s.append_partial(&text);
+                    });
+                }
+            }
+        });
+    }
+
     // Record the run as running.
     {
         let mut runs = state.runs.lock().unwrap();

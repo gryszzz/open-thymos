@@ -105,8 +105,49 @@ async function loadAdvanced() {
     try { lp.textContent = (await invoke("ledger_path")) || "(runtime not started yet)"; }
     catch (_) { lp.textContent = "—"; }
   }
+  // Working folder: the agent's sandbox root.
+  const ws = $("advWorkspace");
+  if (ws && invoke) {
+    try { const w = await invoke("get_workspace"); ws.textContent = w || "— none chosen —"; }
+    catch (_) { ws.textContent = "—"; }
+  }
+  // Streaming toggle state.
+  const st = $("streamToggle");
+  if (st && invoke) {
+    try { st.checked = await invoke("get_streaming"); } catch (_) {}
+  }
 }
 $("refreshAdvanced")?.addEventListener("click", loadAdvanced);
+$("pickWorkspace")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  try {
+    const chosen = await invoke("pick_workspace");
+    if (chosen) {
+      $("advWorkspace").textContent = chosen;
+      // Restart the runtime so the new root takes effect, then resync.
+      try { await invoke("stop_runtime"); } catch (_) {}
+      try { await invoke("start_runtime"); } catch (_) {}
+      setTimeout(() => { refreshStatus(); loadAdvanced(); }, 1500);
+    }
+  } catch (e) { alert("Could not set folder: " + e); }
+});
+$("clearWorkspace")?.addEventListener("click", async () => {
+  if (!invoke) return;
+  try {
+    await invoke("clear_workspace");
+    $("advWorkspace").textContent = "— none chosen —";
+    try { await invoke("stop_runtime"); await invoke("start_runtime"); } catch (_) {}
+    setTimeout(() => refreshStatus(), 1500);
+  } catch (_) {}
+});
+$("streamToggle")?.addEventListener("change", async (e) => {
+  if (!invoke) return;
+  try {
+    await invoke("set_streaming", { on: e.target.checked });
+    try { await invoke("stop_runtime"); await invoke("start_runtime"); } catch (_) {}
+    setTimeout(() => refreshStatus(), 1500);
+  } catch (_) {}
+});
 
 /* ---------- Advanced Mode ---------- */
 // Off by default: normal users never see raw runtime data, schemas, writs, or
@@ -377,6 +418,19 @@ function renderSnapshot(s) {
   // static "governing…" that reads as frozen.
   const wl = document.querySelector("#workingLine span:last-child");
   if (wl && s.operator_state) wl.textContent = s.operator_state.toLowerCase() + "…";
+  // Streaming (opt-in THYMOS_STREAM): show the reply forming live. Replaced by
+  // the final answer bubble when the run completes.
+  if (s.partial_answer && !["completed", "failed", "cancelled"].includes(s.status)) {
+    let p = document.getElementById("streamingAnswer");
+    if (!p) {
+      p = document.createElement("div");
+      p.id = "streamingAnswer";
+      p.className = "answer streaming";
+      feed.appendChild(p);
+    }
+    p.textContent = s.partial_answer;
+    feed.scrollTop = feed.scrollHeight;
+  }
   // Snapshot carries the full log; render only newly-arrived entries.
   (s.log || []).forEach((e) => {
     if (e.idx < renderedUpTo) return;
@@ -398,6 +452,8 @@ function renderSnapshot(s) {
     showApproval(s.run_id, s.pending_channel, req?.detail || "");
   }
   if (["completed", "failed", "cancelled"].includes(s.status)) {
+    // Drop the live streaming placeholder; the final answer bubble replaces it.
+    document.getElementById("streamingAnswer")?.remove();
     if (s.final_answer) {
       pushAnswer(s.status, s.final_answer);
       // Persist the answer with its ledger link (run/trajectory) for audit+replay.

@@ -5,7 +5,7 @@
 
 [package]
 name = "thymos-desktop"
-version = "0.7.14"
+version = "0.8.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "OpenThymos Desktop — a governed-cognition client that supervises a local runtime."
@@ -24,6 +24,8 @@ serde_json = "1"
 # Light blocking HTTP client for host-side model discovery + connection tests
 # (the webview's CSP can't reach provider URLs; the host does it locally).
 ureq = { version = "2", features = ["json", "tls"] }
+# Native folder picker for the agent's working directory (no JS plugin needed).
+rfd = "0.15"
 
 [features]
 # Tauri custom protocol assets in production builds.

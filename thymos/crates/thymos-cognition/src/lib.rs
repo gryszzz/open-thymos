@@ -98,12 +98,33 @@ pub struct CognitionStep {
 /// Cognition produces Intents. That is the entire contract.
 pub trait Cognition: Send {
     fn step(&mut self, ctx: &CognitionContext<'_>) -> Result<CognitionStep>;
+
+    /// Optional token-streaming step. Default `None` = not supported, so the
+    /// caller falls back to `step`. An implementor streams the model's text,
+    /// calling `on_token` for each chunk as it arrives, then returns the
+    /// fully-parsed step (identical shape to `step`). Returning `None` (even
+    /// after starting) signals "couldn't stream — use the sync path", so this
+    /// can never regress non-streaming behavior.
+    fn step_streamed(
+        &mut self,
+        _ctx: &CognitionContext<'_>,
+        _on_token: &mut dyn FnMut(&str),
+    ) -> Option<Result<CognitionStep>> {
+        None
+    }
 }
 
 /// Convenience: Cognition for a boxed trait object.
 impl Cognition for Box<dyn Cognition> {
     fn step(&mut self, ctx: &CognitionContext<'_>) -> Result<CognitionStep> {
         (**self).step(ctx)
+    }
+    fn step_streamed(
+        &mut self,
+        ctx: &CognitionContext<'_>,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Option<Result<CognitionStep>> {
+        (**self).step_streamed(ctx, on_token)
     }
 }
 
@@ -170,11 +191,33 @@ impl<C: Cognition + Send> StreamingCognition for NonStreamingAdapter<C> {
         // reject). Some callers and tests run on Tokio's current-thread
         // runtime, though, where `block_in_place` panics. Fall back to a
         // direct call in that environment instead of crashing.
-        let step_result = match tokio::runtime::Handle::try_current() {
+        // Opt-in token streaming (THYMOS_STREAM=1): try the cognition's
+        // streaming path, forwarding each chunk as a Token event. If the
+        // cognition doesn't support it (or couldn't stream), fall back to the
+        // single-shot `step` — so the default experience is unchanged.
+        let want_stream = std::env::var("THYMOS_STREAM")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let run_sync = |c: &mut C| match tokio::runtime::Handle::try_current() {
             Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
-                tokio::task::block_in_place(|| self.0.step(ctx))
+                tokio::task::block_in_place(|| c.step(ctx))
             }
-            _ => self.0.step(ctx),
+            _ => c.step(ctx),
+        };
+        let step_result = if want_stream {
+            let etx = event_tx.clone();
+            let streamed = tokio::task::block_in_place(|| {
+                let mut on_token = |chunk: &str| {
+                    let _ = etx.blocking_send(CognitionEvent::Token { text: chunk.to_string() });
+                };
+                self.0.step_streamed(ctx, &mut on_token)
+            });
+            match streamed {
+                Some(r) => r,
+                None => run_sync(&mut self.0), // unsupported → sync fallback
+            }
+        } else {
+            run_sync(&mut self.0)
         };
 
         match &step_result {
