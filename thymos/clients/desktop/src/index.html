@@ -373,24 +373,24 @@
       <section class="panel" id="tab-audit">
         <div class="panel-head"><h2>Audit</h2></div>
         <p class="tab-intro">
-          The complete, tamper-evident record of what the agent did — every
-          <b>intent</b> the model proposed, the runtime's <b>verdict</b> (permit /
-          deny / needs-approval), and every <b>commit</b> that changed state, under
-          which signed authority. <b>Replay</b> independently re-folds the ledger to
-          prove it's intact (it never re-runs a tool or calls the model).
+          The receipts. Every message you send becomes a recorded run; this is
+          the tamper-proof history of what actually happened — what the agent
+          tried, what the runtime allowed or blocked, and what it changed.
+          <b>Search</b> to find anything; leave it blank to browse <b>all
+          activity</b> by day; click any row to open that run's full story.
         </p>
         <form id="auditForm" class="inline-form">
-          <input id="auditSearch" placeholder="search everything — tasks, answers, events…" />
-          <input id="auditRunId" placeholder="run id (blank = all activity)" />
-          <button type="submit">Load</button>
+          <input id="auditSearch" placeholder="🔍 search tasks, answers, actions…" />
+          <input id="auditRunId" class="adv-only" placeholder="run id (optional)" />
+          <button type="submit">Search</button>
         </form>
         <div id="auditKinds" class="kind-chips">
-          <button type="button" class="chip on" data-kind="commit">✓ commits</button>
-          <button type="button" class="chip on" data-kind="rejection">⊘ rejections</button>
+          <button type="button" class="chip on" data-kind="commit">✓ committed</button>
+          <button type="button" class="chip on" data-kind="rejection">⊘ blocked</button>
           <button type="button" class="chip on" data-kind="pending_approval">⏸ approvals</button>
-          <button type="button" class="chip on" data-kind="delegation">⇄ delegations</button>
+          <button type="button" class="chip on" data-kind="delegation">⇄ delegated</button>
           <button type="button" class="chip on" data-kind="skill">✦ skills</button>
-          <button type="button" class="chip on" data-kind="root">◆ roots</button>
+          <button type="button" class="chip on" data-kind="root">◆ run starts</button>
         </div>
         <div id="replayBadge"></div>
         <div id="auditTrail" class="list"></div>

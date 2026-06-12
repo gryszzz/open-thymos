@@ -1281,7 +1281,7 @@ async function loadAudit(runId) {
       if (log.length) {
         const head = document.createElement("div");
         head.className = "audit-subhead";
-        head.innerHTML = `<b>What happened</b><span class="meta"> · the run's live narrative (status: ${escapeHtml(snap.status || "?")})</span>`;
+        head.innerHTML = `<b>What happened</b><span class="meta"> · step by step, in plain English (${escapeHtml(snap.status || "?")})</span>`;
         trail.appendChild(head);
         log.forEach((e) => {
           const [g, cls] = glyphFor(e);
@@ -1306,7 +1306,7 @@ async function loadAudit(runId) {
     // --- Ledger chain: the authoritative, hash-chained record.
     const head2 = document.createElement("div");
     head2.className = "audit-subhead";
-    head2.innerHTML = `<b>Ledger chain</b><span class="meta"> · authoritative, content-addressed, replay-verified</span>`;
+    head2.innerHTML = `<b>The proof</b><span class="meta"> · the signed, hash-chained ledger replay re-verifies</span>`;
     trail.appendChild(head2);
     if (!list.length) {
       const note = document.createElement("div");
@@ -1317,10 +1317,12 @@ async function loadAudit(runId) {
       trail.appendChild(note);
     }
     list.forEach((e) => {
+      const [g, cls, label] = kindLabel(e.kind);
       const div = document.createElement("div");
       div.className = "item";
       div.innerHTML =
-        `<span class="meta">#${e.seq}</span><b>${escapeHtml(e.kind)}</b>` +
+        `<span class="glyph ${cls}">${g}</span><b>${escapeHtml(label)}</b>` +
+        `<span class="meta">#${e.seq}</span>` +
         `<span class="meta">${escapeHtml((e.commit_id || e.id || "").slice(0, 12))}</span>`;
       trail.appendChild(div);
     });
@@ -1355,6 +1357,21 @@ document.querySelectorAll("#auditKinds .chip").forEach((c) =>
     if (!$("auditRunId").value.trim() && !$("auditSearch")?.value.trim()) loadExplorer();
   }));
 
+// Plain-English label + glyph for a raw ledger entry kind, so the Audit view
+// reads as a story instead of jargon ("root" → "Run started").
+function kindLabel(kind) {
+  const k = (kind || "").toLowerCase();
+  if (k.includes("commit")) return ["✓", "commit", "Action committed"];
+  if (k.includes("reject")) return ["⊘", "deny", "Proposal rejected"];
+  if (k.includes("approval") || k.includes("pending") || k.includes("suspend"))
+    return ["⏸", "suspend", "Waiting for approval"];
+  if (k.includes("delegation")) return ["⇄", "permit", "Authority delegated"];
+  if (k.includes("skill")) return ["✦", "permit", "Skill applied"];
+  if (k.includes("root")) return ["◆", "intent", "Run started"];
+  if (k.includes("branch")) return ["⑂", "sys", "Branched"];
+  return ["·", "sys", kind || "entry"];
+}
+
 /* ---------- Ledger Explorer: all activity, grouped by day ---------- */
 // The cross-run timeline (RFC: mind-cognitive-graph, stage 1). Every entry is
 // a real ledger record; clicking one drills into that run's full trail.
@@ -1378,7 +1395,7 @@ async function loadExplorer() {
       [...kinds].some((k) => (e.kind || "").toLowerCase().includes(k)));
     trail.innerHTML = "";
     if (!shown.length) {
-      trail.innerHTML = "<div class='hint'>no ledger activity yet — chat with the agent and every governed action lands here</div>";
+      trail.innerHTML = "<div class='hint'>Nothing here yet — send the agent a message in Chat and every governed action it takes will be recorded here.</div>";
       return;
     }
     // Newest first, grouped by day.
@@ -1395,20 +1412,21 @@ async function loadExplorer() {
         trail.appendChild(h);
       }
       const run = byTraj[e.trajectory_id];
+      const [g, cls, label] = kindLabel(e.kind);
       const div = document.createElement("div");
       div.className = "item";
       div.innerHTML =
-        `<span class="meta">#${e.seq}</span><b>${escapeHtml(e.kind || "")}</b>` +
-        (run ? `<span class="meta">${escapeHtml(String(run.task || "").slice(0, 60))}</span>` : "") +
+        `<span class="glyph ${cls}">${g}</span><b>${escapeHtml(label)}</b>` +
+        (run ? `<span class="meta">“${escapeHtml(String(run.task || "").slice(0, 56))}”</span>` : "") +
         `<span class="meta">${ts ? new Date(ts).toLocaleTimeString() : ""}</span>`;
       if (run) {
         div.style.cursor = "pointer";
-        div.title = "open this run's full trail";
+        div.title = "open this run's full story";
         div.onclick = () => { $("auditRunId").value = run.run_id; loadAudit(run.run_id); };
       }
       trail.appendChild(div);
     });
-    badge.innerHTML = `<span class="meta">${shown.length} entries · click any to open its run · clear filters with the chips above</span>`;
+    badge.innerHTML = `<span class="meta">${shown.length} recorded actions · click any to open its run</span>`;
   } catch (e) { trail.innerHTML = `<div class='hint'>could not load activity: ${e}</div>`; }
 }
 
