@@ -326,10 +326,11 @@ function renderModeUI() {
   const m = currentMode();
   document.querySelectorAll("#modeRow .mode-chip").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === m));
+  // The exact-tool picker lives in Advanced → Authority; it only applies in
+  // custom mode, so dim it otherwise (visible for discoverability).
   const grants = $("grants");
-  if (grants) grants.hidden = m !== "custom";
-  // The composer pill mirrors the active mode (the chat-rail mode row is now
-  // superseded by this + slash commands).
+  if (grants) grants.classList.toggle("inactive", m !== "custom");
+  // The composer pill mirrors the active mode (slash commands set it).
   const pill = $("modePill");
   if (pill) { pill.textContent = m; pill.className = "mode-pill mode-" + m; }
 }
@@ -762,7 +763,7 @@ const SLASH = [
   { cmd: "/auto", hint: "Full authority (dangerous tools still ask)", run: () => setMode("auto") },
   { cmd: "/edit", hint: "Read + local edits, no shell/network", run: () => setMode("edit") },
   { cmd: "/plan", hint: "Read-only: inspect & propose, never change", run: () => setMode("plan") },
-  { cmd: "/grant", hint: "Pick exact tools (custom authority)", run: () => { setMode("custom"); document.querySelector('.tab[data-tab="chat"]')?.click(); } },
+  { cmd: "/grant", hint: "Pick exact tools (custom authority)", run: () => { setMode("custom"); document.querySelector('.tab[data-tab="advanced"]')?.click(); } },
   { cmd: "/model", hint: "Set model override — /model <name>", run: (a) => { const cm = $("chatModel"); if (cm) { cm.value = a || ""; cm.onchange?.(); } pushLine("sys", `— model: ${a || "(default)"}`); } },
   { cmd: "/web", hint: "Attach a web page — /web <url>", run: (a) => addWeb(a) },
   { cmd: "/audit", hint: "Open the Audit / ledger explorer", run: () => document.querySelector('.tab[data-tab="audit"]')?.click() },

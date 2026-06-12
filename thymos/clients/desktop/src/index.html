@@ -71,18 +71,6 @@
                 <button type="button" class="mode-chip" data-mode="custom"
                   title="Pick exact tools with the grant chips below.">Custom</button>
               </div>
-              <div class="grants" id="grants" title="What this chat is allowed to do — the writ scope. The runtime rejects anything not granted. No selection = everything granted.">
-                <span class="grant-label">grant</span>
-                <!-- Chips are built from the live tool registry once the
-                     runtime is up (see renderGrantChips). These are the
-                     offline fallback. -->
-                <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
-                <button type="button" class="chip on" data-scope="grep">grep</button>
-                <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
-                <button type="button" class="chip" data-scope="shell">shell</button>
-                <button type="button" class="chip" data-scope="http">http</button>
-                <button type="button" class="chip" data-scope="test_run">test_run</button>
-              </div>
             </div>
           </aside>
 
@@ -100,25 +88,29 @@
                 </p>
               </div>
             </div>
-            <!-- Attached context (files / web pages) as removable chips -->
-            <div id="attachChips" class="attach-chips" hidden></div>
-            <!-- Slash-command palette (appears when the message starts with /) -->
-            <div id="slashMenu" class="slash-menu" hidden></div>
-            <!-- "+" add-content menu -->
-            <div id="plusMenu" class="plus-menu" hidden>
-              <button type="button" data-add="file">📎 Attach file from computer</button>
-              <button type="button" data-add="web">🌐 Add a web page</button>
-              <button type="button" data-add="folder">📁 Set working folder</button>
+            <!-- Composer wrap: the positioned anchor for the slash palette and
+                 "+" menu, so they pop up attached to the input (not the page). -->
+            <div class="composer-wrap">
+              <!-- Attached context (files / web pages) as removable chips -->
+              <div id="attachChips" class="attach-chips" hidden></div>
+              <!-- Slash-command palette (appears when the message starts with /) -->
+              <div id="slashMenu" class="slash-menu" hidden></div>
+              <!-- "+" add-content menu -->
+              <div id="plusMenu" class="plus-menu" hidden>
+                <button type="button" data-add="file">📎 Attach file from computer</button>
+                <button type="button" data-add="web">🌐 Add a web page</button>
+                <button type="button" data-add="folder">📁 Set working folder</button>
+              </div>
+              <form class="composer" id="composer">
+                <button type="button" id="plusBtn" class="composer-plus" title="Add content">＋</button>
+                <textarea id="taskInput" rows="1" autocomplete="off"
+                  placeholder="Message OpenThymos…   ( / for commands · ＋ to attach · Enter to send )"></textarea>
+                <span id="modePill" class="mode-pill" title="Authority — type /auto, /edit, /plan to change">auto</span>
+                <button type="button" id="regenBtn" class="ghost" disabled title="Re-run the last task on a fresh trajectory">↻</button>
+                <button type="submit" id="sendBtn">Send</button>
+                <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
+              </form>
             </div>
-            <form class="composer" id="composer">
-              <button type="button" id="plusBtn" class="composer-plus" title="Add content">＋</button>
-              <textarea id="taskInput" rows="1" autocomplete="off"
-                placeholder="Message OpenThymos…   ( / for commands · ＋ to attach · Enter to send )"></textarea>
-              <span id="modePill" class="mode-pill" title="Authority — type /auto, /edit, /plan to change">auto</span>
-              <button type="button" id="regenBtn" class="ghost" disabled title="Re-run the last task on a fresh trajectory">↻</button>
-              <button type="submit" id="sendBtn">Send</button>
-              <button type="button" id="chatStop" class="danger" hidden>■ Stop</button>
-            </form>
           </div>
         </div>
       </section>
@@ -470,10 +462,22 @@
             <h3>Authority</h3>
             <div id="advAuthority" class="state-card"></div>
             <p class="note">
-              Grants are the writ scope for new chats (left rail chips). Tools at
-              <b>high</b> risk (e.g. <code>shell</code>) always pause for your
-              approval — tune with <code>THYMOS_APPROVE_RISK</code>.
+              Set the mode in chat with <code>/auto</code>, <code>/edit</code>,
+              <code>/plan</code> — or pick exact tools below
+              (<code>/grant</code> brings you here). High-risk tools (e.g.
+              <code>shell</code>) always pause for your approval.
             </p>
+            <div class="grants" id="grants" title="Exact tools new chats may use (custom mode). No selection = everything granted.">
+              <span class="grant-label">tools</span>
+              <!-- Chips are rebuilt from the live registry (renderGrantChips);
+                   these are the offline fallback. -->
+              <button type="button" class="chip on" data-scope="fs_read">fs_read</button>
+              <button type="button" class="chip on" data-scope="grep">grep</button>
+              <button type="button" class="chip" data-scope="fs_patch">fs_patch</button>
+              <button type="button" class="chip" data-scope="shell">shell</button>
+              <button type="button" class="chip" data-scope="http">http</button>
+              <button type="button" class="chip" data-scope="test_run">test_run</button>
+            </div>
           </div>
 
           <div class="card">
