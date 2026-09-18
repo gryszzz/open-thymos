@@ -284,6 +284,7 @@ The runtime is implemented as a Rust workspace under [`thymos/`](thymos):
 | `thymos-runtime` | IPC cycle, approvals, delegation, projection, resume |
 | `thymos-cognition` | Provider abstraction — emits intents, no authority |
 | `thymos-tools` | Rust tool contracts, JSON manifests, MCP bridges, observed effects |
+| `thymos-worker` | Process-isolation binary for tool execution (substance in `thymos-tools`) |
 | `thymos-server` | HTTP runtime server — sessions, approvals, SSE streams |
 | `thymos-cli` | Terminal access to the runtime — `thymos replay`, `thymos run` |
 
@@ -435,4 +436,3 @@ OpenThymos separates intent from authority, authority from compilation, and comp
 The goal is not to maximize surface area. The goal is to define small, durable runtime semantics for governed cognition  semantics that remain legible decades from now.
 
 <img width="1402" height="1122" alt="0700A45D-0DDB-4919-B931-23FCAC999AAA" src="https://github.com/user-attachments/assets/132526e7-a94b-47fe-b80b-9dc72c88e9a2" />
-
