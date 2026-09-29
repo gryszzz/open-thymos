@@ -196,7 +196,9 @@ jobs:
           linuxdeploy="$linuxdeploy_dir/linuxdeploy-x86_64.AppImage"
 
           test -f "$appimage"
+          appimage="$(realpath "$appimage")"
           test -d "$appdir"
+          appdir="$(realpath "$appdir")"
           test -f "$appdir/OpenThymos.png"
           test -x "$linuxdeploy"
 
