@@ -184,6 +184,59 @@ jobs:
             --target ${{ matrix.target }}
             --bundles ${{ matrix.bundle }}
             --config src-tauri/tauri.release.conf.json
+      - name: Repair and verify Linux AppImage
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="thymos/clients/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage"
+          appdir="$bundle_root/OpenThymos.AppDir"
+          appimage="$(find "$bundle_root" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          linuxdeploy_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          linuxdeploy="$linuxdeploy_dir/linuxdeploy-x86_64.AppImage"
+
+          test -f "$appimage"
+          test -d "$appdir"
+          test -f "$appdir/OpenThymos.png"
+          test -x "$linuxdeploy"
+
+          # Tauri 2.11.2 writes .DirIcon as an absolute link into the build
+          # workspace. AppImage consumers cannot resolve that path, so store
+          # the already bundled application icon directly in the AppDir root.
+          rm -f "$appdir/.DirIcon"
+          install -m 0644 "$appdir/OpenThymos.png" "$appdir/.DirIcon"
+
+          # Recreate the AppImage from the repaired AppDir using the same
+          # linuxdeploy binary Tauri downloaded for its initial bundle.
+          rm -f "$appimage"
+          ARCH=x86_64 \
+            APPIMAGE_EXTRACT_AND_RUN=1 \
+            OUTPUT="$appimage" \
+            "$linuxdeploy" \
+              --appimage-extract-and-run \
+              --verbosity 1 \
+              --appdir "$appdir" \
+              --plugin gtk \
+              --output appimage
+
+          chmod +x "$appimage"
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          (
+            cd "$verify_dir"
+            "$appimage" --appimage-extract
+          )
+          extracted="$verify_dir/squashfs-root"
+
+          test -d "$extracted"
+          test -f "$extracted/.DirIcon"
+          cmp "$extracted/OpenThymos.png" "$extracted/.DirIcon"
+          test -f "$extracted/OpenThymos.desktop"
+          desktop_file="$extracted/usr/share/applications/OpenThymos.desktop"
+          test -f "$desktop_file"
+          grep -Fxq 'Type=Application' "$desktop_file"
+          grep -Fxq 'Icon=thymos-desktop' "$desktop_file"
+          test -f "$extracted/usr/share/icons/hicolor/256x256@2/apps/thymos-desktop.png"
       - name: Normalize desktop asset name
         shell: bash
         run: |
